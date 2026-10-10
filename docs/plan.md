@@ -44,6 +44,8 @@ Separately licensed SOLIDWORKS products (Simulation Premium, Flow, Plastics, Ele
 
 Full feature list: [solidworks-feature-catalog.md](solidworks-feature-catalog.md).
 
+Current implementation and remaining work: [Phase 1 status](phase-1-status.md).
+
 Open question: timeline per phase. The first release is targeted at 1–2 weeks; phases 2–8 are not yet scheduled.
 
 ## Tech stack
@@ -57,7 +59,7 @@ OpenForge is a clean-codebase restart: a Rust CAD core that calls OpenCASCADE, w
 | 3D viewport | three.js (WebGL) | Fast rendering; custom renderer possible later |
 | CAD core | Rust, running alongside the UI | Document model, feature tree, rebuilds, topological naming, file format, scripting API |
 | Geometry kernel | OpenCASCADE (C++), called from Rust through a thin bridge | Only mature open-source B-rep kernel; solids, surfaces, booleans, fillets, STEP/IGES, hidden-line removal for drawings |
-| Sketch solver | PlaneGCS (C++, from FreeCAD), via the same bridge | Proven 2D constraint solver |
+| Sketch solver | Native Rust solver in `of-sketch` | Damped least squares, constraint diagnostics and degrees-of-freedom analysis; retained by owner decision on 2026-10-10 |
 | Assembly mate solver | OndselSolver (C++), via the same bridge | Open-source mate and kinematics solver |
 | Simulation (later phases) | Gmsh + CalculiX | Open-source meshing and FEA |
 
@@ -65,7 +67,7 @@ How it fits together:
 
 1. The UI process (Electron + React) handles everything the user sees and clicks.
 2. It talks to the Rust core, which owns the document and rebuilds the model.
-3. The core calls OpenCASCADE for geometry, PlaneGCS for sketches and OndselSolver for mates.
+3. The core calls OpenCASCADE for geometry and solves sketches in Rust. OndselSolver is planned for assembly mates in Phase 3.
 4. After each rebuild, the core sends meshes, edge lines and stable face/edge IDs back to the viewport.
 
 Keeping face and edge references stable across edits (topological naming) is designed into the core from day one.
@@ -114,7 +116,7 @@ To make contributing easy from day one:
 
 OpenForge's own code is dual-licensed Apache-2.0 / MIT and built as a clean-room reimplementation.
 
-- License: Apache-2.0 / MIT for OpenForge code. OpenCASCADE (LGPL-2.1 with exception), PlaneGCS and OndselSolver keep their own licenses.
+- License: Apache-2.0 / MIT for OpenForge code. OpenCASCADE (LGPL-2.1 with exception) and future OndselSolver integration keep their own licenses.
 - Clean-room: features are built from how SolidWorks behaves and from public documentation, never from its code, binaries or file internals.
 - Branding: no SolidWorks names, logos, icons or screenshots in the app or marketing.
 - Name: OpenForge is a working name.

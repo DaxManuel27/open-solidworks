@@ -46,6 +46,10 @@ pub enum Geometry {
         start: Id,
         end: Id,
     },
+    /// A cubic spline segment stored with exact Bezier control points.
+    Bezier {
+        points: [Id; 4],
+    },
     /// Interpolating spline through `points`.
     Spline {
         points: Vec<Id>,
@@ -83,6 +87,7 @@ impl Entity {
             Geometry::Circle { center, .. } => vec![*center],
             Geometry::Arc { center, start, end } => vec![*center, *start, *end],
             Geometry::Spline { points, .. } => points.clone(),
+            Geometry::Bezier { points } => points.to_vec(),
         }
     }
 }
@@ -138,6 +143,70 @@ impl Default for Sketch {
 }
 
 impl Sketch {
+    /// Validate deserialized sketches before numerical routines index references.
+    pub fn validate(&self) -> Result<()> {
+        if self.point(ORIGIN)? != DVec2::ZERO {
+            return Err(SketchError::Invalid(
+                "the sketch origin must remain at zero".into(),
+            ));
+        }
+        if self
+            .entities
+            .keys()
+            .chain(self.constraints.keys())
+            .any(|id| *id >= self.next_id)
+            || self
+                .constraints
+                .keys()
+                .any(|id| self.entities.contains_key(id))
+        {
+            return Err(SketchError::Invalid("invalid sketch ID allocation".into()));
+        }
+        for e in self.entities.values() {
+            for p in e.point_refs() {
+                self.point(p)?;
+            }
+            match &e.geo {
+                Geometry::Point { p } if !p.is_finite() => {
+                    return Err(SketchError::Invalid(
+                        "point coordinates must be finite".into(),
+                    ));
+                }
+                Geometry::Circle { radius, .. } if !radius.is_finite() || *radius <= 0.0 => {
+                    return Err(SketchError::Invalid(
+                        "circle radius must be positive".into(),
+                    ));
+                }
+                Geometry::Spline { points, .. } if points.len() < 2 => {
+                    return Err(SketchError::Invalid("a spline needs two points".into()));
+                }
+                _ => {}
+            }
+        }
+        for c in self.constraints.values() {
+            c.validate(self)?;
+            if let ConstraintKind::Fix { entity, at } = &c.kind {
+                let e = self.entity(*entity)?;
+                let expected = match e.geo {
+                    Geometry::Point { .. } => 2,
+                    Geometry::Circle { .. } => 3,
+                    _ => e.point_refs().len() * 2,
+                };
+                if at.len() != expected || at.iter().any(|v| !v.is_finite()) {
+                    return Err(SketchError::Invalid(
+                        "invalid fixed geometry coordinates".into(),
+                    ));
+                }
+            }
+            if c.kind.value().is_some_and(|v| !v.is_finite()) {
+                return Err(SketchError::Invalid(
+                    "dimension values must be finite".into(),
+                ));
+            }
+        }
+        Ok(())
+    }
+
     pub fn new() -> Sketch {
         let mut entities = BTreeMap::new();
         entities.insert(ORIGIN, Entity::new(Geometry::Point { p: DVec2::ZERO }));
@@ -348,6 +417,14 @@ impl Sketch {
                 center: self.point(*center)?,
                 start: self.point(*start)?,
                 end: self.point(*end)?,
+            },
+            Geometry::Bezier { points } => Curve2::Bezier {
+                points: [
+                    self.point(points[0])?,
+                    self.point(points[1])?,
+                    self.point(points[2])?,
+                    self.point(points[3])?,
+                ],
             },
             Geometry::Spline { points, closed } => Curve2::Spline {
                 points: points

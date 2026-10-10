@@ -138,6 +138,14 @@ pub mod ffi {
         ) -> Result<UniquePtr<Shape>>;
         fn make_wire(frame: &Frame, curves: &[Curve]) -> Result<UniquePtr<Shape>>;
         fn half_space(face: &Shape, inside: &Vec3) -> Result<UniquePtr<Shape>>;
+        fn offset_face(face: &Shape, distance: f64, toward: &Vec3) -> Result<UniquePtr<Shape>>;
+        fn revol_until(
+            s: &Shape,
+            until: &Shape,
+            origin: &Vec3,
+            dir: &Vec3,
+            hist: &mut Vec<HistoryEntry>,
+        ) -> Result<UniquePtr<Shape>>;
 
         fn prism(s: &Shape, dir: &Vec3, hist: &mut Vec<HistoryEntry>) -> Result<UniquePtr<Shape>>;
         fn revol(

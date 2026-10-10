@@ -241,6 +241,55 @@ pub fn trim(sk: &mut Sketch, id: Id, pick: DVec2) -> Result<Created> {
     let hi = inner.iter().find(|(u, _)| *u > t).copied();
     let mut out = Created::default();
 
+    if matches!(geo, Geometry::Spline { .. } | Geometry::Bezier { .. }) {
+        let intervals = if curve.is_closed() {
+            let all = cuts(sk, id, &curve);
+            if all.len() < 2 {
+                sk.delete(&[id]);
+                return Ok(out);
+            }
+            let after = all.iter().find(|(u, _)| *u > t).unwrap_or(&all[0]).0;
+            let before = all
+                .iter()
+                .rev()
+                .find(|(u, _)| *u < t)
+                .unwrap_or(all.last().unwrap())
+                .0;
+            if after < before {
+                vec![(after, before)]
+            } else {
+                vec![(after, 1.0), (0.0, before)]
+            }
+        } else {
+            let mut keep = Vec::new();
+            if let Some((u, _)) = lo {
+                keep.push((0.0, u));
+            }
+            if let Some((u, _)) = hi {
+                keep.push((u, 1.0));
+            }
+            keep
+        };
+        let spans = curve.beziers();
+        let construction = sk.entity(id)?.construction;
+        for (a, b) in intervals {
+            for (i, span) in spans.iter().enumerate() {
+                let lo = (a * spans.len() as f64 - i as f64).max(0.0);
+                let hi = (b * spans.len() as f64 - i as f64).min(1.0);
+                if hi - lo > 1e-9 {
+                    insert_bezier(
+                        sk,
+                        crate::geom2::bezier_part(*span, lo, hi),
+                        construction,
+                        &mut out,
+                    )?;
+                }
+            }
+        }
+        sk.delete(&[id]);
+        return Ok(out);
+    }
+
     match geo {
         Geometry::Circle { center, .. } => {
             // Periodic: keep the arc from the cut after the pick round to the cut before it.
@@ -353,6 +402,37 @@ pub fn trim(sk: &mut Sketch, id: Id, pick: DVec2) -> Result<Created> {
     Ok(out)
 }
 
+fn endpoint_at(sk: &mut Sketch, p: DVec2) -> Id {
+    sk.entities
+        .iter()
+        .find_map(|(id, e)| match e.geo {
+            Geometry::Point { p: q } if p.distance(q) < 1e-8 => Some(*id),
+            _ => None,
+        })
+        .unwrap_or_else(|| sk.add_point(p))
+}
+
+fn insert_bezier(
+    sk: &mut Sketch,
+    p: [DVec2; 4],
+    construction: bool,
+    out: &mut Created,
+) -> Result<Id> {
+    let points = [
+        endpoint_at(sk, p[0]),
+        sk.add_point(p[1]),
+        sk.add_point(p[2]),
+        endpoint_at(sk, p[3]),
+    ];
+    let id = sk.add_entity(Entity {
+        geo: Geometry::Bezier { points },
+        construction,
+        external: None,
+    })?;
+    out.entities.push(id);
+    Ok(id)
+}
+
 /// Point a curve's start (`at_start`) or end at a different point.
 fn set_end(sk: &mut Sketch, id: Id, at_start: bool, p: Id) {
     let old = match &mut sk.entities.get_mut(&id).unwrap().geo {
@@ -414,6 +494,9 @@ fn retarget_kind(k: &K, from: Id, to: Id) -> Option<K> {
 
 /// Extend a line from the end nearest `pick` to the next curve it meets.
 pub fn extend(sk: &mut Sketch, id: Id, pick: DVec2) -> Result<Created> {
+    if !matches!(sk.entity(id)?.geo, Geometry::Line { .. }) {
+        return extend_curve(sk, id, pick);
+    }
     let Geometry::Line { a, b } = sk.entity(id)?.geo else {
         return Err(SketchError::Invalid("extend works on lines".into()));
     };
@@ -445,7 +528,17 @@ pub fn extend(sk: &mut Sketch, id: Id, pick: DVec2) -> Result<Created> {
                     .filter(|p| (oc.closest_point(*p) - *p).length() < 1e-7)
                     .collect()
             }
-            Curve2::Spline { .. } => vec![],
+            Curve2::Spline { .. } | Curve2::Bezier { .. } => {
+                let (lo, hi) = oc.bounds();
+                let length = moving.distance(lo).max(moving.distance(hi)) * 2.0 + 1.0;
+                intersect(
+                    &Curve2::Line {
+                        a: moving,
+                        b: moving + dir * length,
+                    },
+                    &oc,
+                )
+            }
         };
         for p in hits {
             let d = (p - moving).dot(dir);
@@ -465,6 +558,99 @@ pub fn extend(sk: &mut Sketch, id: Id, pick: DVec2) -> Result<Created> {
         sk,
         K::PointOnCurve {
             point: p,
+            curve: other,
+        },
+    );
+    Ok(out)
+}
+
+/// Arcs extend on their circle; open splines extend along their endpoint tangent.
+fn extend_curve(sk: &mut Sketch, id: Id, pick: DVec2) -> Result<Created> {
+    let curve = sk.curve(id)?;
+    if curve.is_closed() {
+        return Err(SketchError::Invalid(
+            "a closed curve has no end to extend".into(),
+        ));
+    }
+    let at_start = pick.distance(curve.start()) < pick.distance(curve.end());
+    let moving = if at_start { curve.start() } else { curve.end() };
+    let mut best: Option<(f64, DVec2, Id)> = None;
+    let round = if let Curve2::Arc { center, start, end } = curve {
+        Some((
+            center,
+            start.distance(center),
+            arc_angles(center, start, end).1,
+        ))
+    } else {
+        None
+    };
+    let dir = curve
+        .tangent_at(if at_start { 0.0 } else { 1.0 })
+        .normalize_or(DVec2::X)
+        * if at_start { -1.0 } else { 1.0 };
+    for other in sk.curve_ids().filter(|o| *o != id).collect::<Vec<_>>() {
+        let oc = sk.curve(other)?;
+        let extension = if let Some((center, radius, _)) = round {
+            Curve2::Circle { center, radius }
+        } else {
+            let (lo, hi) = oc.bounds();
+            Curve2::Line {
+                a: moving,
+                b: moving + dir * (moving.distance(lo).max(moving.distance(hi)) * 2.0 + 1.0),
+            }
+        };
+        for p in intersect(&extension, &oc) {
+            let d = if let Some((center, _, sweep)) = round {
+                let delta = ((p - center).to_angle() - (moving - center).to_angle())
+                    * if at_start { -1.0 } else { 1.0 };
+                let delta = delta.rem_euclid(TAU);
+                if delta + sweep >= TAU - 1e-7 {
+                    continue;
+                }
+                delta
+            } else {
+                (p - moving).dot(dir)
+            };
+            if d > 1e-7 && best.is_none_or(|b| d < b.0) {
+                best = Some((d, p, other));
+            }
+        }
+    }
+    let Some((_, p, other)) = best else {
+        return Err(SketchError::Invalid("nothing to extend to".into()));
+    };
+    let mut out = Created::default();
+    let new_point = sk.add_point(p);
+    if round.is_some() {
+        set_end(sk, id, at_start, new_point);
+    } else {
+        let endpoint = match &sk.entity(id)?.geo {
+            Geometry::Spline { points, .. } => {
+                if at_start {
+                    points[0]
+                } else {
+                    *points.last().unwrap()
+                }
+            }
+            Geometry::Bezier { points } => points[if at_start { 0 } else { 3 }],
+            _ => unreachable!(),
+        };
+        let line = sk.add_line(endpoint, new_point)?;
+        sk.entities.get_mut(&line).unwrap().construction = sk.entity(id)?.construction;
+        out.entities.push(line);
+        out.c(
+            sk,
+            K::Tangent {
+                a: id,
+                b: line,
+                inside: false,
+            },
+        );
+    }
+    out.c(
+        sk,
+        K::PointOnCurve {
+            point: new_point,
             curve: other,
         },
     );
@@ -494,6 +680,9 @@ pub fn offset(sk: &mut Sketch, ids: &[Id], distance: f64) -> Result<Created> {
         return Ok(out);
     }
     let chain = order_chain(sk, ids)?;
+    if chain.iter().any(|c| !c.c.beziers().is_empty()) {
+        return offset_splines(sk, &chain, distance);
+    }
     let n = chain.len();
     let closed = n > 1 && (chain[0].start() - chain[n - 1].end()).length() < 1e-6;
     let offs: Vec<Oriented> = chain
@@ -533,6 +722,121 @@ pub fn offset(sk: &mut Sketch, ids: &[Id], distance: f64) -> Result<Created> {
             }
         };
         out.entities.push(id);
+    }
+    Ok(out)
+}
+
+/// Offset cubic curves to 0.0001 mm fitting tolerance, retaining cubic output.
+fn offset_splines(sk: &mut Sketch, chain: &[Oriented], distance: f64) -> Result<Created> {
+    use crate::geom2::{bezier_at, bezier_part, bezier_tangent};
+    fn fit(p: [DVec2; 4], d: f64, depth: usize, out: &mut Vec<Curve2>) -> Result<()> {
+        let offset = |t: f64| -> Result<DVec2> {
+            let v = bezier_tangent(p, t);
+            if v.length() < 1e-10 {
+                return Err(SketchError::Invalid("cannot offset a spline cusp".into()));
+            }
+            Ok(bezier_at(p, t) + v.normalize().perp() * d)
+        };
+        let derivative =
+            |t: f64| -> Result<DVec2> { Ok((offset(t + 1e-5)? - offset(t - 1e-5)?) / 2e-5) };
+        let a = offset(0.0)?;
+        let b = offset(1.0)?;
+        let q = [a, a + derivative(0.0)? / 3.0, b - derivative(1.0)? / 3.0, b];
+        let mut error = 0.0_f64;
+        for k in 0..=8 {
+            let t = k as f64 / 8.0;
+            if derivative(t)?.dot(bezier_tangent(p, t)) <= 1e-12 {
+                return Err(SketchError::Invalid(
+                    "offset creates a cusp; reduce the distance".into(),
+                ));
+            }
+            error = error.max(bezier_at(q, t).distance(offset(t)?));
+        }
+        if error <= 1e-4 {
+            out.push(Curve2::Bezier { points: q });
+            return Ok(());
+        }
+        if depth == 12 {
+            return Err(SketchError::Invalid(
+                "spline offset could not meet tolerance".into(),
+            ));
+        }
+        fit(bezier_part(p, 0.0, 0.5), d, depth + 1, out)?;
+        fit(bezier_part(p, 0.5, 1.0), d, depth + 1, out)
+    }
+    let mut curves = Vec::new();
+    for c in chain {
+        let mut spans = c.c.beziers();
+        if !spans.is_empty() {
+            if c.rev {
+                spans.reverse();
+                for p in &mut spans {
+                    p.reverse();
+                }
+            }
+            for p in spans {
+                fit(p, distance, 0, &mut curves)?;
+            }
+        } else {
+            let o = c.offset(distance)?;
+            curves.push(if o.rev {
+                match o.c {
+                    Curve2::Line { a, b } => Curve2::Line { a: b, b: a },
+                    other => other,
+                }
+            } else {
+                o.c
+            });
+        }
+    }
+    let mut out = Created::default();
+    for c in curves {
+        match c {
+            Curve2::Bezier { points } => {
+                insert_bezier(sk, points, false, &mut out)?;
+            }
+            Curve2::Line { a, b } => {
+                let a = endpoint_at(sk, a);
+                let b = endpoint_at(sk, b);
+                out.entities.push(sk.add_line(a, b)?);
+            }
+            Curve2::Arc { center, start, end } => {
+                let center = sk.add_point(center);
+                let start = endpoint_at(sk, start);
+                let end = endpoint_at(sk, end);
+                out.entities.push(sk.add_arc(center, start, end)?);
+            }
+            _ => unreachable!(),
+        }
+    }
+    // Bridge sharp joints by round joins at the original corner.
+    let closed = chain
+        .first()
+        .unwrap()
+        .start()
+        .distance(chain.last().unwrap().end())
+        < 1e-6;
+    for i in 0..if closed { chain.len() } else { chain.len() - 1 } {
+        let a = &chain[i];
+        let b = &chain[(i + 1) % chain.len()];
+        let normal = |c: &Oriented, end: bool| {
+            let t = if end != c.rev { 1.0 } else { 0.0 };
+            c.c.tangent_at(t).normalize().perp() * if c.rev { -1.0 } else { 1.0 }
+        };
+        let center = a.end();
+        let p = center + normal(a, true) * distance;
+        let q = center + normal(b, false) * distance;
+        if p.distance(q) > 1e-7 {
+            let center = sk.add_point(center);
+            let p = endpoint_at(sk, p);
+            let q = endpoint_at(sk, q);
+            let (_, sweep) = arc_angles(sk.point(center)?, sk.point(p)?, sk.point(q)?);
+            out.entities.push(if sweep <= PI {
+                sk.add_arc(center, p, q)?
+            } else {
+                sk.add_arc(center, q, p)?
+            });
+        }
     }
     Ok(out)
 }
@@ -706,6 +1010,9 @@ pub fn mirror(sk: &mut Sketch, ids: &[Id], about: Id) -> Result<Created> {
                 start: point_for(sk, &mut out, end),
                 end: point_for(sk, &mut out, start),
             },
+            Geometry::Bezier { points } => Geometry::Bezier {
+                points: points.map(|p| point_for(sk, &mut out, p)),
+            },
             Geometry::Spline { points, closed } => Geometry::Spline {
                 points: points.iter().map(|p| point_for(sk, &mut out, *p)).collect(),
                 closed,
@@ -726,6 +1033,21 @@ pub fn mirror(sk: &mut Sketch, ids: &[Id], about: Id) -> Result<Created> {
 
 /// Round the corner where two lines meet at `corner` with an arc of `radius`.
 pub fn sketch_fillet(sk: &mut Sketch, corner: Id, radius: f64) -> Result<Created> {
+    if !radius.is_finite() || radius <= 0.0 {
+        return Err(SketchError::Invalid("the radius must be positive".into()));
+    }
+    let touching: Vec<Id> = sk
+        .curve_ids()
+        .filter(|id| curve_ends(sk, *id).is_some_and(|(a, b)| a == corner || b == corner))
+        .collect();
+    if touching.len() == 2
+        && touching
+            .iter()
+            .any(|id| !matches!(sk.entities[id].geo, Geometry::Line { .. }))
+    {
+        return curved_fillet(sk, corner, radius, [touching[0], touching[1]]);
+    }
+
     let lines: Vec<Id> = sk
         .entities
         .iter()
@@ -820,10 +1142,265 @@ pub fn sketch_fillet(sk: &mut Sketch, corner: Id, radius: f64) -> Result<Created
     Ok(out)
 }
 
+fn curve_ends(sk: &Sketch, id: Id) -> Option<(Id, Id)> {
+    match &sk.entities[&id].geo {
+        Geometry::Line { a, b } => Some((*a, *b)),
+        Geometry::Arc { start, end, .. } => Some((*start, *end)),
+        Geometry::Bezier { points } => Some((points[0], points[3])),
+        Geometry::Spline {
+            points,
+            closed: false,
+        } => Some((points[0], *points.last().unwrap())),
+        _ => None,
+    }
+}
+
+fn curved_fillet(sk: &mut Sketch, corner: Id, radius: f64, ids: [Id; 2]) -> Result<Created> {
+    let curves = [sk.curve(ids[0])?, sk.curve(ids[1])?];
+    let starts = ids.map(|id| curve_ends(sk, id).unwrap().0 == corner);
+    let center_at = |i: usize, t: f64, sign: f64| {
+        let c = &curves[i];
+        c.point_at(t) + c.tangent_at(t).normalize_or(DVec2::X).perp() * radius * sign
+    };
+    let mut best: Option<(f64, [f64; 2], DVec2)> = None;
+    for sa in [-1.0, 1.0] {
+        for sb in [-1.0, 1.0] {
+            let pa: Vec<_> = (0..=64)
+                .map(|k| center_at(0, k as f64 / 64.0, sa))
+                .collect();
+            let pb: Vec<_> = (0..=64)
+                .map(|k| center_at(1, k as f64 / 64.0, sb))
+                .collect();
+            for (i, a) in pa.windows(2).enumerate() {
+                for (j, b) in pb.windows(2).enumerate() {
+                    if line_line(a[0], a[1], b[0], b[1], false).is_none() {
+                        continue;
+                    }
+                    let (mut t, mut u) = ((i as f64 + 0.5) / 64.0, (j as f64 + 0.5) / 64.0);
+                    for _ in 0..24 {
+                        let delta = center_at(0, t, sa) - center_at(1, u, sb);
+                        let deriv = |k: usize, x: f64, sign: f64| {
+                            (center_at(k, (x + 1e-5_f64).min(1.0), sign)
+                                - center_at(k, (x - 1e-5_f64).max(0.0), sign))
+                                / 2e-5
+                        };
+                        let da = deriv(0, t, sa);
+                        let db = deriv(1, u, sb);
+                        let den = da.perp_dot(db);
+                        if den.abs() < 1e-12 {
+                            break;
+                        }
+                        t = (t - delta.perp_dot(db) / den).clamp(0.0, 1.0);
+                        u = (u - delta.perp_dot(da) / den).clamp(0.0, 1.0);
+                    }
+                    let center = center_at(0, t, sa);
+                    if center.distance(center_at(1, u, sb)) > 1e-6
+                        || !(1e-7..1.0 - 1e-7).contains(&t)
+                        || !(1e-7..1.0 - 1e-7).contains(&u)
+                    {
+                        continue;
+                    }
+                    let cost = center.distance_squared(sk.point(corner)?);
+                    if best.is_none_or(|b| cost < b.0) {
+                        best = Some((cost, [t, u], center));
+                    }
+                }
+            }
+        }
+    }
+    let Some((_, params, center)) = best else {
+        return Err(SketchError::Invalid(
+            "no tangent fillet fits; reduce the radius".into(),
+        ));
+    };
+    let mut out = Created::default();
+    let mut tangent_ids = ids;
+    let ends = [
+        endpoint_at(sk, curves[0].point_at(params[0])),
+        endpoint_at(sk, curves[1].point_at(params[1])),
+    ];
+    for i in 0..2 {
+        let spans = curves[i].beziers();
+        if spans.is_empty() {
+            set_end(sk, ids[i], starts[i], ends[i]);
+        } else {
+            let construction = sk.entity(ids[i])?.construction;
+            let (lo, hi) = if starts[i] {
+                (params[i], 1.0)
+            } else {
+                (0.0, params[i])
+            };
+            let mut kept = Vec::new();
+            for (j, p) in spans.iter().enumerate() {
+                let a = (lo * spans.len() as f64 - j as f64).max(0.0);
+                let b = (hi * spans.len() as f64 - j as f64).min(1.0);
+                if b - a > 1e-9 {
+                    kept.push(insert_bezier(
+                        sk,
+                        crate::geom2::bezier_part(*p, a, b),
+                        construction,
+                        &mut out,
+                    )?);
+                }
+            }
+            tangent_ids[i] = if starts[i] {
+                kept[0]
+            } else {
+                *kept.last().unwrap()
+            };
+            sk.delete(&[ids[i]]);
+        }
+    }
+    let cid = sk.add_point(center);
+    let sweep = arc_angles(center, sk.point(ends[0])?, sk.point(ends[1])?).1;
+    let arc = if sweep <= PI {
+        sk.add_arc(cid, ends[0], ends[1])?
+    } else {
+        sk.add_arc(cid, ends[1], ends[0])?
+    };
+    out.entities.push(arc);
+    for id in tangent_ids {
+        out.c(
+            sk,
+            K::Tangent {
+                a: id,
+                b: arc,
+                inside: false,
+            },
+        );
+    }
+    out.c(
+        sk,
+        K::Radius {
+            curve: arc,
+            value: radius,
+        },
+    );
+    if !sk
+        .entities
+        .values()
+        .any(|e| e.point_refs().contains(&corner))
+    {
+        sk.delete(&[corner]);
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::SolveStatus;
+
+    #[test]
+    fn trim_spline_preserves_the_retained_curve() {
+        let mut sk = Sketch::new();
+        let pts = [
+            DVec2::new(0.0, 0.0),
+            DVec2::new(10.0, 4.0),
+            DVec2::new(20.0, 0.0),
+        ]
+        .map(|p| sk.add_point(p));
+        let spline = sk.add_spline(pts.to_vec(), false).unwrap();
+        let original = sk.curve(spline).unwrap();
+        for x in [5.0, 15.0] {
+            let (id, _, _) = sk.add_line_at(DVec2::new(x, -5.0), DVec2::new(x, 10.0));
+            sk.entities.get_mut(&id).unwrap().construction = true;
+        }
+        let made = trim(&mut sk, spline, DVec2::new(10.0, 4.0)).unwrap();
+        assert_eq!(made.entities.len(), 2);
+        assert!(!sk.entities.contains_key(&spline));
+        for id in made.entities {
+            for p in sk.curve(id).unwrap().sample(0.001) {
+                assert!(p.x <= 5.0 + 1e-6 || p.x >= 15.0 - 1e-6);
+                assert!(p.distance(original.closest_point(p)) < 1e-6);
+            }
+        }
+    }
+
+    #[test]
+    fn spline_offset_stays_at_the_requested_distance() {
+        let mut sk = Sketch::new();
+        let points = [
+            DVec2::ZERO,
+            DVec2::new(10.0, 0.0),
+            DVec2::new(20.0, 5.0),
+            DVec2::new(30.0, 5.0),
+        ]
+        .map(|p| sk.add_point(p));
+        let id = sk
+            .add_entity(Entity::new(Geometry::Bezier { points }))
+            .unwrap();
+        let curve = sk.curve(id).unwrap();
+        let made = offset(&mut sk, &[id], 1.0).unwrap();
+        assert!(!made.entities.is_empty());
+        for id in made.entities {
+            for p in sk.curve(id).unwrap().sample(0.01) {
+                assert!((p.distance(curve.closest_point(p)) - 1.0).abs() < 2e-4);
+            }
+        }
+    }
+
+    #[test]
+    fn extend_arc_and_spline_to_boundaries() {
+        let mut sk = Sketch::new();
+        let c = sk.add_point(DVec2::ZERO);
+        let a = sk.add_point(DVec2::new(10.0, 0.0));
+        let b = sk.add_point(DVec2::new(0.0, 10.0));
+        let arc = sk.add_arc(c, a, b).unwrap();
+        sk.add_line_at(DVec2::new(-20.0, -5.0), DVec2::new(0.0, -5.0));
+        extend(&mut sk, arc, DVec2::new(0.0, 10.0)).unwrap();
+        assert!(
+            sk.curve(arc)
+                .unwrap()
+                .end()
+                .distance(DVec2::new(-75.0_f64.sqrt(), -5.0))
+                < 1e-6
+        );
+        let mut sk = Sketch::new();
+        let pts =
+            [DVec2::ZERO, DVec2::new(5.0, 0.0), DVec2::new(10.0, 0.0)].map(|p| sk.add_point(p));
+        let spline = sk.add_spline(pts.to_vec(), false).unwrap();
+        sk.add_line_at(DVec2::new(15.0, -5.0), DVec2::new(15.0, 5.0));
+        let made = extend(&mut sk, spline, DVec2::new(10.0, 0.0)).unwrap();
+        assert_eq!(made.entities.len(), 1);
+        assert_eq!(sk.solve().status, SolveStatus::Solved);
+        assert!(
+            sk.curve(made.entities[0])
+                .unwrap()
+                .end()
+                .distance(DVec2::new(15.0, 0.0))
+                < 1e-6
+        );
+    }
+
+    #[test]
+    fn fillet_line_arc_and_line_spline() {
+        for spline in [false, true] {
+            let mut sk = Sketch::new();
+            let corner = sk.add_point(DVec2::ZERO);
+            let right = sk.add_point(DVec2::new(10.0, 0.0));
+            sk.add_line(corner, right).unwrap();
+            if spline {
+                let points = [
+                    corner,
+                    sk.add_point(DVec2::new(0.0, 3.0)),
+                    sk.add_point(DVec2::new(-1.0, 7.0)),
+                    sk.add_point(DVec2::new(-3.0, 10.0)),
+                ];
+                sk.add_entity(Entity::new(Geometry::Bezier { points }))
+                    .unwrap();
+            } else {
+                let c = sk.add_point(DVec2::new(-10.0, 0.0));
+                let e = sk.add_point(DVec2::new(-10.0, 10.0));
+                sk.add_arc(c, corner, e).unwrap();
+            }
+            let made = sketch_fillet(&mut sk, corner, 1.0).unwrap();
+            let arc = *made.entities.last().unwrap();
+            assert!((sk.circle(arc).unwrap().1 - 1.0).abs() < 1e-6);
+            assert!(sk.constraints.values().all(|c| c.error(&sk) < 1e-5));
+            assert_eq!(sk.solve().status, SolveStatus::Solved);
+        }
+    }
 
     #[test]
     fn rectangle_slot_polygon_solve() {

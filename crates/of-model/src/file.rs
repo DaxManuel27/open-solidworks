@@ -35,6 +35,13 @@ pub fn from_str(text: &str) -> Result<Document, String> {
             f.version
         ));
     }
+    for feature in &f.document.features {
+        if let crate::FeatureKind::Sketch(s) = &feature.kind {
+            s.sketch
+                .validate()
+                .map_err(|e| format!("invalid sketch {}: {e}", feature.id))?;
+        }
+    }
     Ok(f.document)
 }
 

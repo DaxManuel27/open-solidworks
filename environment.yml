@@ -1,0 +1,5 @@
+name: openforge
+channels:
+  - conda-forge
+dependencies:
+  - occt=7.9

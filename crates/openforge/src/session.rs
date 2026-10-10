@@ -25,8 +25,6 @@ pub struct Session {
     redo: Vec<Document>,
     /// Feature being edited: the model is shown as it was just before it.
     editing: Option<FeatureId>,
-    /// Live preview of a feature being set up.
-    preview: Option<State>,
 }
 
 type R = Result<Value, RpcError>;
@@ -191,7 +189,6 @@ impl Session {
             undo: Vec::new(),
             redo: Vec::new(),
             editing: None,
-            preview: None,
         }
     }
 
@@ -220,7 +217,6 @@ impl Session {
     fn replace_doc(&mut self, doc: Document) {
         self.model = Model::new(doc);
         self.editing = None;
-        self.preview = None;
     }
 
     /// The model as shown: before the feature being edited, else at the rollback bar.
@@ -231,12 +227,10 @@ impl Session {
         }
     }
 
-    /// The model the user is picking on: the preview if there is one.
+    /// The model the user is picking on. Previews are drawn over it but
+    /// never picked, so picked references always exist in the real model.
     fn visible(&mut self) -> State {
-        match &self.preview {
-            Some(p) => p.clone(),
-            None => self.display().clone(),
-        }
+        self.display().clone()
     }
 
     fn snapshot(&mut self) -> Value {
@@ -364,7 +358,6 @@ impl Session {
                 let p: P = args(params)?;
                 self.checkpoint();
                 self.model.doc.rollback = p.index.filter(|i| *i < self.model.doc.features.len());
-                self.preview = None;
                 self.full()
             }
             "doc.topology" => self.topology(),
@@ -381,7 +374,6 @@ impl Session {
                     self.model.doc.feature_mut(id).unwrap().name = n;
                 }
                 self.model.invalidate(id);
-                self.preview = None;
                 self.editing = None;
                 let mut v = self.full()?;
                 v["id"] = json!(id);
@@ -402,7 +394,6 @@ impl Session {
                     .ok_or_else(|| RpcError::params("no such feature"))?;
                 f.kind = p.feature;
                 self.model.invalidate(p.id);
-                self.preview = None;
                 self.editing = None;
                 self.full()
             }
@@ -422,7 +413,6 @@ impl Session {
                 let deleted = self.model.doc.delete(&p.ids);
                 self.model.invalidate_from(first);
                 self.editing = None;
-                self.preview = None;
                 let mut v = self.full()?;
                 v["deleted"] = json!(deleted);
                 Ok(v)
@@ -489,19 +479,14 @@ impl Session {
                 }
                 let p: P = args(params)?;
                 let Some(kind) = p.feature else {
-                    self.preview = None;
                     return Ok(json!({ "scene": null, "error": null }));
                 };
                 match self.model.preview(&kind, p.editing) {
                     Ok(state) => {
                         let scene = views::scene(&self.model.doc, &state).map_err(fail)?;
-                        self.preview = Some(state);
                         Ok(json!({ "scene": scene, "error": null }))
                     }
-                    Err(e) => {
-                        self.preview = None;
-                        Ok(json!({ "scene": null, "error": e }))
-                    }
+                    Err(e) => Ok(json!({ "scene": null, "error": e })),
                 }
             }
             "edit.begin" => {
@@ -515,12 +500,10 @@ impl Session {
                     .feature(p.id)
                     .ok_or_else(|| RpcError::params("no such feature"))?;
                 self.editing = Some(p.id);
-                self.preview = None;
                 self.full()
             }
             "edit.end" => {
                 self.editing = None;
-                self.preview = None;
                 self.full()
             }
             "sketch.new" => {
@@ -539,7 +522,6 @@ impl Session {
                 }));
                 self.model.invalidate(id);
                 self.editing = Some(id);
-                self.preview = None;
                 let mut v = self.full()?;
                 v["id"] = json!(id);
                 v["sketch"] = self.sketch_view(id)?;
@@ -567,7 +549,6 @@ impl Session {
             }
             "sketch.close" => {
                 self.editing = None;
-                self.preview = None;
                 self.full()
             }
             "select.ref" => {
@@ -593,6 +574,21 @@ impl Session {
                 let state = self.visible();
                 match state.index_of(&p.r#ref) {
                     Ok((kind, index)) => Ok(json!({ "kind": kind, "index": index })),
+                    Err(_) => Ok(json!(null)),
+                }
+            }
+            "select.plane" => {
+                // The plane of a planar face or reference, for "Normal To".
+                #[derive(Deserialize)]
+                struct P {
+                    r#ref: Ref,
+                }
+                let p: P = args(params)?;
+                let state = self.visible();
+                match of_model::resolve(&state, &p.r#ref).and_then(|r| r.plane()) {
+                    Ok(pl) => Ok(
+                        json!({ "origin": [pl.origin.x, pl.origin.y, pl.origin.z], "x_dir": [pl.x_dir.x, pl.x_dir.y, pl.x_dir.z], "normal": [pl.normal.x, pl.normal.y, pl.normal.z] }),
+                    ),
                     Err(_) => Ok(json!(null)),
                 }
             }

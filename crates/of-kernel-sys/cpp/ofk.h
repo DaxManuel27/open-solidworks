@@ -62,6 +62,9 @@ std::unique_ptr<Shape> make_faces(const Frame &frame, rust::Slice<const Curve> c
                                   rust::Slice<const uint32_t> face_loops);
 std::unique_ptr<Shape> make_wire(const Frame &frame, rust::Slice<const Curve> curves);
 std::unique_ptr<Shape> half_space(const Shape &face, const Vec3 &inside);
+std::unique_ptr<Shape> offset_face(const Shape &face, double distance, const Vec3 &toward);
+std::unique_ptr<Shape> revol_until(const Shape &s, const Shape &until, const Vec3 &origin,
+                                  const Vec3 &d, rust::Vec<HistoryEntry> &hist);
 
 std::unique_ptr<Shape> prism(const Shape &s, const Vec3 &dir, rust::Vec<HistoryEntry> &hist);
 std::unique_ptr<Shape> revol(const Shape &s, const Vec3 &origin, const Vec3 &dir, double angle,

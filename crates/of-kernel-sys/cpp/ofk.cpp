@@ -6,6 +6,7 @@
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
+#include <BRepAlgoAPI_Splitter.hxx>
 #include <BRepBndLib.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
@@ -37,8 +38,15 @@
 #include <GC_MakeSegment.hxx>
 #include <GProp_GProps.hxx>
 #include <GProp_PrincipalProps.hxx>
-#include <GeomAPI_Interpolate.hxx>
 #include <Geom_Circle.hxx>
+#include <Geom_BezierCurve.hxx>
+#include <Geom_BSplineCurve.hxx>
+#include <TColgp_Array1OfPnt.hxx>
+#include <TColStd_Array1OfReal.hxx>
+#include <TColStd_Array1OfInteger.hxx>
+#include <Geom_OffsetSurface.hxx>
+#include <GeomAPI_ProjectPointOnSurf.hxx>
+#include <GeomLProp_SLProps.hxx>
 #include <IFSelect_ReturnStatus.hxx>
 #include <Message.hxx>
 #include <Message_Messenger.hxx>
@@ -54,7 +62,6 @@
 #include <ShapeFix_Shape.hxx>
 #include <StlAPI_Writer.hxx>
 #include <Standard_Version.hxx>
-#include <TColgp_HArray1OfPnt.hxx>
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
@@ -69,6 +76,8 @@
 #include <gp_Trsf.hxx>
 
 #include <stdexcept>
+#include <cmath>
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -188,12 +197,37 @@ TopoDS_Edge make_edge(const gp_Ax3 &ax, const Curve &c) {
   case 4: {
     size_t n = d.size() / 2;
     if (n < 2) throw std::invalid_argument("spline needs at least two points");
-    Handle(TColgp_HArray1OfPnt) pts = new TColgp_HArray1OfPnt(1, static_cast<int>(n));
-    for (size_t i = 0; i < n; ++i) pts->SetValue(static_cast<int>(i + 1), to3d(ax, d[2 * i], d[2 * i + 1]));
-    GeomAPI_Interpolate interp(pts, c.kind == 4, Precision::Confusion());
-    interp.Perform();
-    if (!interp.IsDone()) throw std::runtime_error("could not fit spline");
-    return BRepBuilderAPI_MakeEdge(interp.Curve());
+    const bool closed = c.kind == 4;
+    auto get = [&](int i) {
+      if (closed) i = (i % static_cast<int>(n) + static_cast<int>(n)) % static_cast<int>(n);
+      if (i < 0) return to3d(ax, 2*d[0]-d[2], 2*d[1]-d[3]).XYZ();
+      if (i >= static_cast<int>(n)) return to3d(ax, 2*d[2*n-2]-d[2*n-4], 2*d[2*n-1]-d[2*n-3]).XYZ();
+      return to3d(ax, d[2*i], d[2*i+1]).XYZ();
+    };
+    const int spans = static_cast<int>(closed ? n : n-1);
+    TColgp_Array1OfPnt poles(1, spans*3+1);
+    TColStd_Array1OfReal knots(1, spans+1);
+    TColStd_Array1OfInteger mults(1, spans+1);
+    for (int i = 0; i < spans; ++i) {
+      const gp_XYZ a = get(i), b = get(i+1);
+      poles.SetValue(3*i+1, gp_Pnt(a));
+      poles.SetValue(3*i+2, gp_Pnt(a+(b-get(i-1))/6.0));
+      poles.SetValue(3*i+3, gp_Pnt(b-(get(i+2)-a)/6.0));
+    }
+    poles.SetValue(spans*3+1, gp_Pnt(get(spans)));
+    for (int i = 0; i <= spans; ++i) {
+      knots.SetValue(i+1, i);
+      mults.SetValue(i+1, i == 0 || i == spans ? 4 : 3);
+    }
+    Handle(Geom_BSplineCurve) curve = new Geom_BSplineCurve(poles, knots, mults, 3);
+    return BRepBuilderAPI_MakeEdge(curve);
+  }
+  case 5: {
+    need(8);
+    TColgp_Array1OfPnt poles(1,4);
+    for (int i = 0; i < 4; ++i) poles.SetValue(i+1, to3d(ax,d[2*i],d[2*i+1]));
+    Handle(Geom_BezierCurve) curve = new Geom_BezierCurve(poles);
+    return BRepBuilderAPI_MakeEdge(curve);
   }
   default:
     throw std::invalid_argument("unknown sketch curve kind");
@@ -303,6 +337,142 @@ std::unique_ptr<Shape> half_space(const Shape &face, const Vec3 &inside) {
   TopExp_Explorer ex(face.shape, TopAbs_FACE);
   if (!ex.More()) throw std::invalid_argument("half space needs a face");
   return wrap(BRepPrimAPI_MakeHalfSpace(TopoDS::Face(ex.Current()), pnt(inside)).Solid());
+}
+
+std::unique_ptr<Shape> offset_face(const Shape &face, double distance, const Vec3 &toward) {
+  TopExp_Explorer ex(face.shape, TopAbs_FACE);
+  if (!ex.More() || !std::isfinite(distance))
+    throw std::invalid_argument("offset needs a face and a finite distance");
+  const TopoDS_Face f = TopoDS::Face(ex.Current());
+  double u0, u1, v0, v1;
+  BRepTools::UVBounds(f, u0, u1, v0, v1);
+  Handle(Geom_Surface) base = BRep_Tool::Surface(f);
+  GeomAPI_ProjectPointOnSurf projection(pnt(toward), base);
+  if (projection.NbPoints() == 0) throw std::runtime_error("cannot find the offset side of the surface");
+  double u, v;
+  projection.LowerDistanceParameters(u, v);
+  GeomLProp_SLProps props(base, u, v, 1, 1e-7);
+  if (!props.IsNormalDefined()) throw std::runtime_error("the target surface has no normal");
+  const double side = gp_Vec(projection.NearestPoint(), pnt(toward)).Dot(gp_Vec(props.Normal()));
+  if (std::abs(side) < 1e-7) throw std::invalid_argument("the sketch touches the target surface");
+  Handle(Geom_OffsetSurface) offset = new Geom_OffsetSurface(base, side > 0 ? distance : -distance);
+  // Preserve analytic planes/cylinders so downstream sketches and axes can
+  // still recognize them after an offset.
+  Handle(Geom_Surface) surface = offset->Surface();
+  if (surface.IsNull()) surface = offset;
+  BRepBuilderAPI_MakeFace op(surface, u0, u1, v0, v1, 1e-7);
+  if (!op.IsDone()) throw std::runtime_error("surface offset failed");
+  TopoDS_Shape out = op.Face();
+  out.Orientation(f.Orientation());
+  require_valid(out, "surface offset");
+  return wrap(out);
+}
+
+std::unique_ptr<Shape> revol_until(const Shape &s, const Shape &until, const Vec3 &origin,
+                                  const Vec3 &d, rust::Vec<HistoryEntry> &hist) {
+  const gp_Ax1 axis(pnt(origin), dir(d));
+  BRepPrimAPI_MakeRevol sweep(s.shape, axis, 2.0 * std::acos(-1.0), false);
+  sweep.Build();
+  if (!sweep.IsDone()) throw std::runtime_error("revolve failed");
+  require_valid(sweep.Shape(), "revolve");
+  BRepAlgoAPI_Splitter op;
+  TopTools_ListOfShape args, tools;
+  args.Append(sweep.Shape());
+  tools.Append(s.shape);
+  tools.Append(until.shape);
+  op.SetArguments(args);
+  op.SetTools(tools);
+  op.Build();
+  if (!op.IsDone()) throw std::runtime_error("the revolve cannot terminate at the selected surface");
+
+  // Identify the starting caps by topology. Their outward normals must
+  // oppose the forward tangential velocity. This is exact even for very
+  // small angles and does not depend on a probe size or model scale.
+  TopTools_IndexedMapOfShape starts, source_faces;
+  TopExp::MapShapes(s.shape, TopAbs_FACE, source_faces);
+  std::vector<TopTools_IndexedMapOfShape> source_starts(source_faces.Extent());
+  std::vector<double> covered(source_faces.Extent(), 0.0);
+  for (int i = 1; i <= source_faces.Extent(); ++i) {
+    starts.Add(source_faces(i));
+    source_starts[i - 1].Add(source_faces(i));
+    for (const TopoDS_Shape &f : op.Modified(source_faces(i))) {
+      starts.Add(f);
+      source_starts[i - 1].Add(f);
+    }
+  }
+  TopTools_IndexedMapOfShape ends;
+  for (TopExp_Explorer ex(until.shape, TopAbs_FACE); ex.More(); ex.Next()) {
+    ends.Add(ex.Current());
+    for (const TopoDS_Shape &f : op.Modified(ex.Current())) ends.Add(f);
+  }
+  TopoDS_Compound out;
+  BRep_Builder builder;
+  builder.MakeCompound(out);
+  int kept = 0, total = 0;
+  for (TopExp_Explorer ex(op.Shape(), TopAbs_SOLID); ex.More(); ex.Next()) {
+    ++total;
+    bool forward = false, terminated = false;
+    for (TopExp_Explorer fx(ex.Current(), TopAbs_FACE); fx.More(); fx.Next()) {
+      if (ends.Contains(fx.Current())) terminated = true;
+      if (!starts.Contains(fx.Current())) continue;
+      const TopoDS_Face cap = TopoDS::Face(fx.Current());
+      BRepAdaptor_Surface surface(cap);
+      if (surface.GetType() != GeomAbs_Plane) continue;
+      gp_Vec normal(surface.Plane().Axis().Direction());
+      if (cap.Orientation() == TopAbs_REVERSED) normal.Reverse();
+      GProp_GProps props;
+      BRepGProp::SurfaceProperties(cap, props);
+      const gp_Vec velocity = gp_Vec(axis.Direction()).Crossed(
+          gp_Vec(axis.Location(), props.CentreOfMass()));
+      if (normal.Dot(velocity) < -1e-9) {
+        forward = true;
+        for (int i = 1; i <= source_faces.Extent(); ++i)
+          if (source_starts[i - 1].Contains(cap)) covered[i - 1] += props.Mass();
+      }
+    }
+    if (forward) {
+      if (!terminated)
+        throw std::invalid_argument("the selected surface must terminate every sketch contour");
+      builder.Add(out, ex.Current());
+      ++kept;
+    }
+  }
+  if (kept == 0 || kept == total)
+    throw std::invalid_argument("the selected surface does not terminate the revolve ahead of the sketch");
+  for (int i = 1; i <= source_faces.Extent(); ++i) {
+    GProp_GProps props;
+    BRepGProp::SurfaceProperties(source_faces(i), props);
+    if (std::abs(covered[i - 1] - props.Mass()) > 1e-7 * std::max(1.0, props.Mass()))
+      throw std::invalid_argument("the selected surface must terminate every sketch contour");
+  }
+  require_valid(out, "revolve up to surface");
+  Maps maps(out);
+  // Carry each generated side through the partition so sketch edge names
+  // survive target edits. The start and termination faces get cap names.
+  TopTools_IndexedMapOfShape edges;
+  TopExp::MapShapes(s.shape, TopAbs_EDGE, edges);
+  for (int i = 1; i <= edges.Extent(); ++i) {
+    for (const TopoDS_Shape &generated : sweep.Generated(edges(i))) {
+      int same = maps.m[0].FindIndex(generated);
+      if (same > 0) push(hist, 0, 1, i, GENERATED, 0, same);
+      for (const TopoDS_Shape &modified : op.Modified(generated)) {
+        int index = maps.m[0].FindIndex(modified);
+        if (index > 0) push(hist, 0, 1, i, GENERATED, 0, index);
+      }
+    }
+  }
+  TopTools_IndexedMapOfShape faces;
+  TopExp::MapShapes(s.shape, TopAbs_FACE, faces);
+  for (int i = 1; i <= faces.Extent(); ++i) {
+    int same = maps.m[0].FindIndex(faces(i));
+    if (same > 0) push(hist, 0, 0, i, FIRST_CAP, 0, same);
+    for (const TopoDS_Shape &modified : op.Modified(faces(i))) {
+      int index = maps.m[0].FindIndex(modified);
+      if (index > 0) push(hist, 0, 0, i, FIRST_CAP, 0, index);
+    }
+  }
+  record_history(op, until.shape, 1, maps, hist);
+  return wrap(out);
 }
 
 std::unique_ptr<Shape> prism(const Shape &s, const Vec3 &d, rust::Vec<HistoryEntry> &hist) {
@@ -591,7 +761,9 @@ rust::Vec<double> edge_samples(const Shape &s, uint32_t edge, double linear, dou
 
 MassProps mass_props(const Shape &s) {
   GProp_GProps vp, sp;
-  BRepGProp::VolumeProperties(s.shape, vp);
+  // Adaptive integration matters for faces trimmed by offset surfaces.
+  const double error = BRepGProp::VolumePropertiesGK(s.shape, vp, 1e-9, false, true, true, true);
+  if (error < 0) throw std::runtime_error("volume integration failed");
   BRepGProp::SurfaceProperties(s.shape, sp);
   MassProps out{};
   out.volume = vp.Mass();

@@ -303,6 +303,20 @@ impl Shape {
         Ok(Shape(ffi::half_space(&face.0, &v3(inside))?))
     }
 
+    /// Offset a supporting surface toward a point (negative distance moves away).
+    pub fn offset_face(&self, distance: f64, toward: DVec3) -> Result<Shape> {
+        Ok(Shape(ffi::offset_face(&self.0, distance, &v3(toward))?))
+    }
+
+    pub fn revolve_until(&self, until: &Shape, origin: DVec3, axis: DVec3) -> Result<OpResult> {
+        let mut h = Vec::new();
+        let shape = ffi::revol_until(&self.0, &until.0, &v3(origin), &v3(axis), &mut h)?;
+        Ok(OpResult {
+            shape: Shape(shape),
+            history: convert_history(h),
+        })
+    }
+
     /// An open or closed wire from 2D curves in a plane.
     pub fn wire(plane: &Plane, curves: &[Curve2]) -> Result<Shape> {
         let raw: Vec<ffi::Curve> = curves.iter().map(Curve2::to_ffi).collect();

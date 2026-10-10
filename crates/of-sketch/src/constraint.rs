@@ -144,6 +144,19 @@ pub(crate) trait Geo {
         }
     }
 
+    fn spline(&self, id: Id) -> crate::Curve2 {
+        match &self.sketch().entities[&id].geo {
+            Geometry::Spline { points, closed } => crate::Curve2::Spline {
+                points: points.iter().map(|p| self.pt(*p)).collect(),
+                closed: *closed,
+            },
+            Geometry::Bezier { points } => crate::Curve2::Bezier {
+                points: points.map(|p| self.pt(p)),
+            },
+            _ => unreachable!("spline constraint validated"),
+        }
+    }
+
     /// A point's position, or a circle's or arc's center.
     fn locus(&self, id: Id) -> DVec2 {
         match self.sketch().entities[&id].geo {
@@ -188,7 +201,7 @@ fn shape_of(sk: &Sketch, id: Id) -> Result<Shape> {
         Geometry::Point { .. } => Shape::Point,
         Geometry::Line { .. } => Shape::Line,
         Geometry::Circle { .. } | Geometry::Arc { .. } => Shape::Round,
-        Geometry::Spline { .. } => Shape::Spline,
+        Geometry::Spline { .. } | Geometry::Bezier { .. } => Shape::Spline,
     })
 }
 
@@ -267,16 +280,12 @@ impl ConstraintKind {
     }
 
     /// Number of equations this constraint contributes.
-    pub(crate) fn equation_count(&self, sk: &Sketch) -> usize {
+    pub(crate) fn equation_count(&self, _sk: &Sketch) -> usize {
         use ConstraintKind::*;
         match self {
             Coincident { .. } | Midpoint { .. } | Concentric { .. } | Symmetric { .. } => 2,
             Collinear { .. } => 2,
             Fix { at, .. } => at.len(),
-            PointOnCurve { curve, .. } => match sk.entities[curve].geo {
-                Geometry::Spline { .. } => 0,
-                _ => 1,
-            },
             _ => 1,
         }
     }
@@ -299,6 +308,19 @@ impl ConstraintKind {
                     }
                     Geometry::Circle { .. } | Geometry::Arc { .. } => {
                         out.push((p - g.locus(*curve)).length() - g.radius(*curve));
+                    }
+                    Geometry::Spline { ref points, closed } => {
+                        let curve = crate::Curve2::Spline {
+                            points: points.iter().map(|p| g.pt(*p)).collect(),
+                            closed,
+                        };
+                        out.push(spline_distance(&curve, p));
+                    }
+                    Geometry::Bezier { points } => {
+                        let curve = crate::Curve2::Bezier {
+                            points: points.map(|p| g.pt(p)),
+                        };
+                        out.push(spline_distance(&curve, p));
                     }
                     _ => {}
                 }
@@ -349,6 +371,15 @@ impl ConstraintKind {
                     let normal_of = |id: Id, at: DVec2| -> DVec2 {
                         if shape_of(sk, id).ok() == Some(Shape::Line) {
                             dir(g.line(id)).perp()
+                        } else if shape_of(sk, id).ok() == Some(Shape::Spline) {
+                            let c = g.spline(id);
+                            let t = if c.start().distance_squared(at) < c.end().distance_squared(at)
+                            {
+                                0.0
+                            } else {
+                                1.0
+                            };
+                            c.tangent_at(t).normalize_or(DVec2::X).perp()
                         } else {
                             (at - g.locus(id)).normalize_or(DVec2::X)
                         }
@@ -415,6 +446,11 @@ fn shared_end(sk: &Sketch, a: Id, b: Id) -> Option<(Id, Id)> {
         match sk.entities.get(&id).map(|e| &e.geo) {
             Some(Geometry::Line { a, b }) => vec![*a, *b],
             Some(Geometry::Arc { start, end, .. }) => vec![*start, *end],
+            Some(Geometry::Bezier { points }) => vec![points[0], points[3]],
+            Some(Geometry::Spline {
+                points,
+                closed: false,
+            }) => vec![points[0], *points.last().unwrap()],
             _ => vec![],
         }
     };
@@ -432,6 +468,19 @@ fn shared_end(sk: &Sketch, a: Id, b: Id) -> Option<(Id, Id)> {
         }
     }
     None
+}
+
+fn spline_distance(curve: &crate::Curve2, p: DVec2) -> f64 {
+    let t = curve.param_of(p);
+    let d = p - curve.point_at(t);
+    let normal = curve.tangent_at(t).normalize_or(DVec2::X).perp();
+    let signed = d.dot(normal);
+    if !(1e-8..=1.0 - 1e-8).contains(&t) {
+        d.length()
+            .copysign(if signed == 0.0 { 1.0 } else { signed })
+    } else {
+        signed
+    }
 }
 
 fn dir((a, b): (DVec2, DVec2)) -> DVec2 {
@@ -530,7 +579,7 @@ impl Constraint {
             }
             PointOnCurve { .. } => {
                 want(0, &[pt], "point")?;
-                want(1, &[ln, rd], "line, circle or arc")
+                want(1, &[ln, rd, Shape::Spline], "curve")
             }
             Midpoint { .. } | Symmetric { .. } => {
                 want(0, &[pt], "point")?;
@@ -558,9 +607,14 @@ impl Constraint {
                 want(0, &[ln, rd], "line, circle or arc")?;
                 want(1, &[shapes[0]], "entity of the same kind")
             }
-            Tangent { .. } => {
-                want(0, &[ln, rd], "line, circle or arc")?;
-                want(1, &[ln, rd], "line, circle or arc")?;
+            Tangent { a, b, .. } => {
+                want(0, &[ln, rd, Shape::Spline], "curve")?;
+                if shapes.contains(&Shape::Spline) && shared_end(sk, *a, *b).is_none() {
+                    return Err(SketchError::Invalid(
+                        "spline tangency needs a shared endpoint".into(),
+                    ));
+                }
+                want(1, &[ln, rd, Shape::Spline], "curve")?;
                 if shapes[0] == ln && shapes[1] == ln {
                     return Err(SketchError::Invalid("two lines can't be tangent".into()));
                 }

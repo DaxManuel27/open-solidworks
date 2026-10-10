@@ -4,6 +4,333 @@ use of_geom::{DVec2, DVec3, Kind};
 use of_model::sketch::{ConstraintKind as K, Sketch, tools};
 use of_model::*;
 
+fn reference_revolve(angle: RevolveAngle, reverse: bool) -> (Model, FeatureId) {
+    let mut doc = Document::new();
+    let mut sk = Sketch::new();
+    tools::corner_rectangle(&mut sk, DVec2::new(10.0, 0.0), DVec2::new(20.0, 5.0));
+    let (axis, _, _) = sk.add_line_at(DVec2::ZERO, DVec2::Y);
+    sk.entities.get_mut(&axis).unwrap().construction = true;
+    let s = doc.add(FeatureKind::Sketch(SketchFeature {
+        plane: Ref::FrontPlane,
+        sketch: sk,
+    }));
+    let r = doc.add(FeatureKind::Revolve(Revolve {
+        end2: None,
+        sketch: s,
+        axis: Ref::SketchEntity {
+            sketch: s,
+            entity: axis,
+        },
+        angle,
+        reverse,
+        cut: false,
+        thin: None,
+        merge: true,
+    }));
+    (Model::new(doc), r)
+}
+
+#[test]
+fn revolve_to_surface_and_offset() {
+    for reverse in [false, true] {
+        let (m, _) = reference_revolve(
+            RevolveAngle::UpToSurface {
+                target: Ref::RightPlane,
+            },
+            reverse,
+        );
+        no_errors(&m);
+        assert_close(volume(&m), PI * 300.0 * 5.0 / 4.0, 1e-4);
+        let b = m.state().body.as_ref().unwrap().shape.bbox().unwrap();
+        if reverse {
+            assert!(b.min.z > -1e-5);
+        } else {
+            assert!(b.max.z < 1e-5);
+        }
+    }
+    for reverse_offset in [false, true] {
+        let (m, _) = reference_revolve(
+            RevolveAngle::OffsetFromSurface {
+                target: Ref::RightPlane,
+                offset: 2.0,
+                reverse_offset,
+            },
+            false,
+        );
+        no_errors(&m);
+        let x = if reverse_offset { -2.0 } else { 2.0 };
+        let area = |r: f64| (r * r * (x / r).acos() - x * (r * r - x * x).sqrt()) / 2.0;
+        assert_close(volume(&m), (area(20.0) - area(10.0)) * 5.0, 1e-3);
+    }
+}
+
+#[test]
+fn revolve_to_point_rebuilds_and_rejects_axis_target() {
+    let (mut m, r) = reference_revolve(RevolveAngle::Blind { angle: PI }, false);
+    // Put the reference point before the revolve in the tree.
+    let p = m.doc.add(FeatureKind::Point(PointDef::Coordinates {
+        x: 0.0,
+        y: 0.0,
+        z: -30.0,
+    }));
+    m.doc.reorder(p, 1).unwrap();
+    if let FeatureKind::Revolve(rev) = &mut m.doc.feature_mut(r).unwrap().kind {
+        rev.angle = RevolveAngle::UpToVertex {
+            target: Ref::Feature { id: p },
+        };
+    }
+    assert!(m.doc.feature(r).unwrap().kind.depends_on().contains(&p));
+    m.rebuild_all();
+    no_errors(&m);
+    assert_close(volume(&m), PI * 300.0 * 5.0 / 4.0, 1e-4);
+    m.doc.feature_mut(p).unwrap().kind = FeatureKind::Point(PointDef::Coordinates {
+        x: 0.0,
+        y: 0.0,
+        z: 30.0,
+    });
+    m.rebuild_all();
+    no_errors(&m);
+    assert_close(volume(&m), 3.0 * PI * 300.0 * 5.0 / 4.0, 1e-4);
+    m.doc.feature_mut(p).unwrap().kind = FeatureKind::Point(PointDef::Coordinates {
+        x: 0.0,
+        y: 2.0,
+        z: 0.0,
+    });
+    m.rebuild_all();
+    assert!(m.statuses().iter().any(|s| s.id == r && s.error.is_some()));
+}
+
+#[test]
+fn extrude_offset_from_cylinder_stops_at_near_side() {
+    for (offset, reverse_offset, radius) in
+        [(0.0, false, 20.0), (2.0, false, 22.0), (2.0, true, 18.0)]
+    {
+        let (mut m, _) = reference_revolve(RevolveAngle::Blind { angle: TAU }, false);
+        let original = volume(&m);
+        let body = m.state().body.as_ref().unwrap();
+        let face = (0..body.shape.count(Kind::Face))
+            .find(|&i| {
+                let info = body.shape.face_info(i).unwrap();
+                info.kind == of_geom::SurfaceKind::Cylinder && (info.radius - 20.0).abs() < 1e-6
+            })
+            .unwrap();
+        let target = m.state().ref_for(Kind::Face, face).unwrap();
+        let plane = m.doc.add(FeatureKind::Plane(PlaneDef::Offset {
+            reference: Ref::FrontPlane,
+            distance: -30.0,
+            flip: false,
+        }));
+        let sketch = rect_sketch(
+            &mut m.doc,
+            Ref::Feature { id: plane },
+            DVec2::new(-2.0, 1.0),
+            DVec2::new(2.0, 4.0),
+        );
+        let mut e = blind(sketch, 1.0);
+        e.merge = false;
+        e.end1 = EndCondition::OffsetFromSurface {
+            target,
+            offset,
+            reverse_offset,
+        };
+        m.doc.add(FeatureKind::Extrude(e));
+        m.rebuild();
+        no_errors(&m);
+        // Integrate sqrt(radius² - x²) between x=-2 and x=2.
+        let under_curve =
+            2.0 * (radius * radius - 4.0_f64).sqrt() + radius * radius * (2.0 / radius).asin();
+        assert_close(volume(&m) - original, 3.0 * (120.0 - under_curve), 1e-3);
+        assert_eq!(m.state().body.as_ref().unwrap().shape.count(Kind::Solid), 2);
+    }
+}
+
+#[test]
+fn revolve_to_curved_surface_and_offset() {
+    for offset in [0.0, 2.0] {
+        let (mut m, r) = reference_revolve(RevolveAngle::Blind { angle: PI }, false);
+        let mut circle = Sketch::new();
+        circle.add_circle_at(DVec2::new(0.0, 30.0), 25.0);
+        let s = m.doc.add(FeatureKind::Sketch(SketchFeature {
+            plane: Ref::TopPlane,
+            sketch: circle,
+        }));
+        m.doc.reorder(s, 0).unwrap();
+        let e = m.doc.add(FeatureKind::Extrude(blind(s, 5.0)));
+        m.doc.reorder(e, 1).unwrap();
+        m.doc.rollback = Some(2);
+        m.rebuild_all();
+        no_errors(&m);
+        let original = volume(&m);
+        let shape = &m.state().body.as_ref().unwrap().shape;
+        let i = (0..shape.count(Kind::Face))
+            .find(|&i| shape.face_info(i).unwrap().kind == of_geom::SurfaceKind::Cylinder)
+            .unwrap();
+        let target = m.state().ref_for(Kind::Face, i).unwrap();
+        if let FeatureKind::Revolve(rev) = &mut m.doc.feature_mut(r).unwrap().kind {
+            rev.angle = RevolveAngle::OffsetFromSurface {
+                target,
+                offset,
+                reverse_offset: false,
+            };
+        }
+        m.doc.rollback = None;
+        m.rebuild_all();
+        no_errors(&m);
+        // Independent Simpson integration in polar coordinates. At each
+        // radius, the terminating circle gives sin(theta) by the cosine rule.
+        let target_radius = 25.0 + offset;
+        let f = |radius: f64| {
+            radius
+                * ((radius * radius + 900.0 - target_radius * target_radius) / (60.0 * radius))
+                    .asin()
+        };
+        let mut integral = f(10.0) + f(20.0);
+        for k in 1..1000 {
+            integral += if k % 2 == 0 { 2.0 } else { 4.0 } * f(10.0 + k as f64 * 0.01);
+        }
+        assert_close(volume(&m) - original, integral * 0.01 / 3.0 * 5.0, 1e-3);
+    }
+}
+
+#[test]
+fn revolve_surface_rejects_nonterminating_target_and_round_trips() {
+    let (m, r) = reference_revolve(
+        RevolveAngle::UpToSurface {
+            target: Ref::TopPlane,
+        },
+        false,
+    );
+    assert!(m.statuses().iter().any(|s| s.id == r && s.error.is_some()));
+    let (m, _) = reference_revolve(
+        RevolveAngle::OffsetFromSurface {
+            target: Ref::RightPlane,
+            offset: 2.0,
+            reverse_offset: true,
+        },
+        false,
+    );
+    let json = serde_json::to_string(&m.doc).unwrap();
+    let restored = Model::new(serde_json::from_str(&json).unwrap());
+    no_errors(&restored);
+    assert_close(volume(&m), volume(&restored), 1e-6);
+}
+
+#[test]
+fn revolve_surface_fillet_survives_offset_edit() {
+    let (mut m, r) = reference_revolve(
+        RevolveAngle::OffsetFromSurface {
+            target: Ref::RightPlane,
+            offset: 2.0,
+            reverse_offset: false,
+        },
+        false,
+    );
+    no_errors(&m);
+    let end = face_with_normal(&m, DVec3::NEG_X);
+    let edges = edges_of(&m, DVec3::NEG_X);
+    m.doc.add(FeatureKind::Fillet(Fillet {
+        edges: vec![edges[0].clone()],
+        faces: vec![],
+        radius: 0.2,
+    }));
+    m.rebuild();
+    no_errors(&m);
+    if let FeatureKind::Revolve(rev) = &mut m.doc.feature_mut(r).unwrap().kind {
+        rev.angle = RevolveAngle::OffsetFromSurface {
+            target: Ref::RightPlane,
+            offset: 3.0,
+            reverse_offset: false,
+        };
+    }
+    m.invalidate(r);
+    m.rebuild();
+    no_errors(&m);
+    let plane = resolve(m.state(), &end).unwrap().plane().unwrap();
+    assert_close(plane.origin.x, 3.0, 1e-6);
+}
+
+#[test]
+fn reference_termination_works_for_thin_revolves_and_cuts() {
+    let (mut m, r) = reference_revolve(
+        RevolveAngle::UpToSurface {
+            target: Ref::RightPlane,
+        },
+        false,
+    );
+    if let FeatureKind::Revolve(rev) = &mut m.doc.feature_mut(r).unwrap().kind {
+        rev.thin = Some(Thin {
+            kind: ThinKind::MidPlane,
+            thickness: 1.0,
+            thickness2: 0.0,
+            reverse: false,
+        });
+    }
+    m.invalidate(r);
+    m.rebuild();
+    no_errors(&m);
+    assert_close(volume(&m), PI / 4.0 * (330.0 * 6.0 - 270.0 * 4.0), 1e-3);
+
+    let (mut m, r) = reference_revolve(RevolveAngle::Blind { angle: TAU }, false);
+    let original = volume(&m);
+    let FeatureKind::Revolve(mut cut) = m.doc.feature(r).unwrap().kind.clone() else {
+        unreachable!()
+    };
+    cut.cut = true;
+    cut.angle = RevolveAngle::UpToSurface {
+        target: Ref::RightPlane,
+    };
+    m.doc.add(FeatureKind::Revolve(cut));
+    m.rebuild();
+    no_errors(&m);
+    assert_close(volume(&m), original * 0.75, 1e-4);
+}
+
+#[test]
+fn revolve_surface_must_terminate_every_contour() {
+    let mut doc = Document::new();
+    let plane = doc.add(FeatureKind::Plane(PlaneDef::Offset {
+        reference: Ref::RightPlane,
+        distance: 15.0,
+        flip: false,
+    }));
+    let mut sk = Sketch::new();
+    for x in [10.0, 18.0] {
+        tools::corner_rectangle(&mut sk, DVec2::new(x, 0.0), DVec2::new(x + 2.0, 5.0));
+    }
+    let (axis, _, _) = sk.add_line_at(DVec2::ZERO, DVec2::Y);
+    sk.entities.get_mut(&axis).unwrap().construction = true;
+    let s = doc.add(FeatureKind::Sketch(SketchFeature {
+        plane: Ref::FrontPlane,
+        sketch: sk,
+    }));
+    let r = doc.add(FeatureKind::Revolve(Revolve {
+        end2: None,
+        sketch: s,
+        axis: Ref::SketchEntity {
+            sketch: s,
+            entity: axis,
+        },
+        angle: RevolveAngle::UpToSurface {
+            target: Ref::Feature { id: plane },
+        },
+        reverse: false,
+        cut: false,
+        thin: None,
+        merge: true,
+    }));
+    let m = Model::new(doc);
+    assert!(
+        m.statuses().iter().any(|s| {
+            s.id == r
+                && s.error
+                    .as_deref()
+                    .is_some_and(|e| e.contains("every sketch contour"))
+        }),
+        "{:?}",
+        m.statuses()
+    );
+}
+
 fn volume(m: &Model) -> f64 {
     m.state()
         .body
@@ -236,6 +563,7 @@ fn revolve_shell_chamfer() {
         sketch: sk,
     }));
     doc.add(FeatureKind::Revolve(Revolve {
+        end2: None,
         sketch: s,
         axis: Ref::SketchEntity {
             sketch: s,
@@ -586,4 +914,262 @@ fn sketch_relations_drive_geometry() {
     m.invalidate(s);
     m.rebuild();
     assert_close(volume(&m), 1500.0, 1e-6);
+}
+
+#[test]
+fn independent_revolve_directions_round_trip_and_rebuild() {
+    let (mut m, r) = reference_revolve(
+        RevolveAngle::UpToSurface {
+            target: Ref::RightPlane,
+        },
+        false,
+    );
+    let p = m.doc.add(FeatureKind::Point(PointDef::Coordinates {
+        x: 20.0,
+        y: 0.0,
+        z: 20.0,
+    }));
+    m.doc.reorder(p, 1).unwrap();
+    if let FeatureKind::Revolve(rev) = &mut m.doc.feature_mut(r).unwrap().kind {
+        rev.end2 = Some(RevolveAngle::UpToVertex {
+            target: Ref::Feature { id: p },
+        });
+    }
+    assert!(m.doc.feature(r).unwrap().kind.depends_on().contains(&p));
+    m.rebuild_all();
+    no_errors(&m);
+    assert_close(volume(&m), PI * 300.0 * 5.0 * 3.0 / 8.0, 1e-4);
+    let mut m = Model::new(file::from_str(&file::to_string(&m.doc)).unwrap());
+    no_errors(&m);
+    m.doc.feature_mut(p).unwrap().kind = FeatureKind::Point(PointDef::Coordinates {
+        x: 0.0,
+        y: 0.0,
+        z: 20.0,
+    });
+    m.invalidate(p);
+    m.rebuild();
+    no_errors(&m);
+    assert_close(volume(&m), PI * 300.0 * 5.0 / 2.0, 1e-4);
+}
+
+#[test]
+fn dressups_repeat_with_their_base_features() {
+    for mode in 0..3 {
+        let (mut m, _, base) = block();
+        let top = face_with_normal(&m, DVec3::Z);
+        let edges = edges_of(&m, DVec3::Z);
+        let dressup = m.doc.add(match mode {
+            0 => FeatureKind::Fillet(Fillet {
+                edges,
+                faces: vec![],
+                radius: 1.0,
+            }),
+            1 => FeatureKind::Chamfer(Chamfer {
+                edges,
+                faces: vec![],
+                mode: ChamferMode::Equal { distance: 1.0 },
+                flip: false,
+            }),
+            _ => FeatureKind::Shell(ShellDef {
+                faces: vec![top],
+                thickness: 1.0,
+                outward: false,
+            }),
+        });
+        m.rebuild();
+        no_errors(&m);
+        let original = volume(&m);
+        m.doc.add(FeatureKind::LinearPattern(LinearPattern {
+            features: vec![dressup, base], // Selection order must not change feature semantics.
+            direction1: PatternDirection {
+                reference: Ref::RightPlane,
+                spacing: 50.0,
+                count: 3,
+                reverse: false,
+            },
+            direction2: None,
+        }));
+        m.rebuild();
+        no_errors(&m);
+        assert_close(volume(&m), 3.0 * original, 0.01);
+        m.doc.add(FeatureKind::Mirror(MirrorDef {
+            features: vec![dressup, base],
+            plane: Ref::RightPlane,
+        }));
+        m.rebuild();
+        no_errors(&m);
+        assert_close(volume(&m), 4.0 * original, 0.01);
+        let loaded = Model::new(file::from_str(&file::to_string(&m.doc)).unwrap());
+        no_errors(&loaded);
+        assert_close(volume(&loaded), volume(&m), 1e-6);
+    }
+}
+
+#[test]
+fn spline_profile_matches_sketch_area_and_trimmed_curves_extrude() {
+    let mut sk = Sketch::new();
+    let points =
+        [DVec2::ZERO, DVec2::new(10.0, 5.0), DVec2::new(20.0, 0.0)].map(|p| sk.add_point(p));
+    let spline = sk.add_spline(points.to_vec(), false).unwrap();
+    let samples = sk.curve(spline).unwrap().sample(1e-5);
+    let area = samples
+        .windows(2)
+        .map(|p| (p[1].x - p[0].x) * (p[0].y + p[1].y) * 0.5)
+        .sum::<f64>();
+    sk.add_line(points[2], points[0]).unwrap();
+    let mut doc = Document::new();
+    let s = doc.add(FeatureKind::Sketch(SketchFeature {
+        plane: Ref::FrontPlane,
+        sketch: sk.clone(),
+    }));
+    doc.add(FeatureKind::Extrude(blind(s, 3.0)));
+    let m = Model::new(doc);
+    no_errors(&m);
+    assert_close(volume(&m), area * 3.0, 0.001);
+    // Retain the left side of the spline and close it with a vertical line.
+    let (boundary, _, _) = sk.add_line_at(DVec2::new(10.0, -5.0), DVec2::new(10.0, 10.0));
+    sk.entities.get_mut(&boundary).unwrap().construction = true;
+    tools::trim(&mut sk, spline, DVec2::new(17.0, 2.0)).unwrap();
+    let bottom = sk
+        .curve_ids()
+        .find(|id| {
+            matches!(sk.entities[id].geo, of_model::sketch::Geometry::Line { .. })
+                && *id != boundary
+        })
+        .unwrap();
+    tools::trim(&mut sk, bottom, DVec2::new(17.0, 0.0)).unwrap();
+    sk.add_line_at(DVec2::new(10.0, 0.0), DVec2::new(10.0, 5.0));
+    let mut doc = Document::new();
+    let s = doc.add(FeatureKind::Sketch(SketchFeature {
+        plane: Ref::FrontPlane,
+        sketch: sk,
+    }));
+    doc.add(FeatureKind::Extrude(blind(s, 3.0)));
+    let m = Model::new(doc);
+    no_errors(&m);
+    assert_close(volume(&m), area * 1.5, 0.001);
+}
+
+#[test]
+fn extrude_to_freeform_surface_and_normal_offset() {
+    use of_model::sketch::{Curve2, Entity, Geometry};
+    let control = [
+        DVec2::new(0.0, -5.0),
+        DVec2::new(6.0, -5.0),
+        DVec2::new(14.0, -9.0),
+        DVec2::new(20.0, -9.0),
+    ];
+    let curve = Curve2::Bezier { points: control };
+    for offset in [0.0, 1.0] {
+        let mut sk = Sketch::new();
+        let points = control.map(|p| sk.add_point(p));
+        sk.add_entity(Entity::new(Geometry::Bezier { points }))
+            .unwrap();
+        let a = sk.add_point(DVec2::new(20.0, -15.0));
+        let b = sk.add_point(DVec2::new(0.0, -15.0));
+        sk.add_line(points[3], a).unwrap();
+        sk.add_line(a, b).unwrap();
+        sk.add_line(b, points[0]).unwrap();
+        let mut doc = Document::new();
+        let s = doc.add(FeatureKind::Sketch(SketchFeature {
+            plane: Ref::TopPlane,
+            sketch: sk,
+        }));
+        doc.add(FeatureKind::Extrude(blind(s, 10.0)));
+        let mut m = Model::new(doc);
+        no_errors(&m);
+        let original = volume(&m);
+        let shape = &m.state().body.as_ref().unwrap().shape;
+        let face = (0..shape.count(Kind::Face))
+            .find(|&i| shape.face_info(i).unwrap().kind == of_geom::SurfaceKind::Other)
+            .unwrap();
+        let target = m.state().ref_for(Kind::Face, face).unwrap();
+        let s = rect_sketch(
+            &mut m.doc,
+            Ref::FrontPlane,
+            DVec2::new(2.0, 2.0),
+            DVec2::new(18.0, 8.0),
+        );
+        let mut e = blind(s, 1.0);
+        e.merge = false;
+        e.end1 = EndCondition::OffsetFromSurface {
+            target,
+            offset,
+            reverse_offset: false,
+        };
+        m.doc.add(FeatureKind::Extrude(e));
+        m.rebuild();
+        no_errors(&m);
+        // Independently integrate the normal-offset boundary, clipped to the profile width.
+        let samples: Vec<_> = (0..=10000)
+            .map(|i| {
+                let t = i as f64 / 10000.0;
+                curve.point_at(t) + curve.tangent_at(t).normalize().perp() * offset
+            })
+            .collect();
+        let area: f64 = samples
+            .windows(2)
+            .map(|p| {
+                let lo = p[0].x.max(2.0);
+                let hi = p[1].x.min(18.0);
+                if hi <= lo {
+                    return 0.0;
+                }
+                let y = |x| p[0].y + (p[1].y - p[0].y) * (x - p[0].x) / (p[1].x - p[0].x);
+                -(hi - lo) * (y(lo) + y(hi)) * 0.5
+            })
+            .sum();
+        assert_close(volume(&m) - original, area * 6.0, 0.01);
+    }
+}
+
+#[test]
+fn invalid_surface_offset_leaves_the_existing_body_intact() {
+    let (mut m, _) = reference_revolve(RevolveAngle::Blind { angle: TAU }, false);
+    let original = volume(&m);
+    let shape = &m.state().body.as_ref().unwrap().shape;
+    let face = (0..shape.count(Kind::Face))
+        .find(|&i| {
+            let info = shape.face_info(i).unwrap();
+            info.kind == of_geom::SurfaceKind::Cylinder && (info.radius - 20.0).abs() < 1e-6
+        })
+        .unwrap();
+    let target = m.state().ref_for(Kind::Face, face).unwrap();
+    let plane = m.doc.add(FeatureKind::Plane(PlaneDef::Offset {
+        reference: Ref::FrontPlane,
+        distance: -30.0,
+        flip: false,
+    }));
+    let s = rect_sketch(
+        &mut m.doc,
+        Ref::Feature { id: plane },
+        DVec2::new(-2.0, 1.0),
+        DVec2::new(2.0, 4.0),
+    );
+    let mut e = blind(s, 1.0);
+    e.end1 = EndCondition::OffsetFromSurface {
+        target,
+        offset: 20.0,
+        reverse_offset: true,
+    };
+    let id = m.doc.add(FeatureKind::Extrude(e));
+    m.rebuild();
+    assert!(m.status(id).unwrap().error.is_some());
+    assert_close(volume(&m), original, 1e-6);
+}
+
+#[test]
+fn corrupt_sketch_file_is_rejected_before_rebuild() {
+    let (mut m, s, _) = block();
+    let FeatureKind::Sketch(sketch) = &mut m.doc.feature_mut(s).unwrap().kind else {
+        unreachable!()
+    };
+    let line = sketch.sketch.curve_ids().next().unwrap();
+    sketch.sketch.entities.get_mut(&line).unwrap().geo =
+        of_model::sketch::Geometry::Line { a: 9999, b: 9998 };
+    assert!(
+        file::from_str(&file::to_string(&m.doc))
+            .unwrap_err()
+            .contains("invalid sketch")
+    );
 }

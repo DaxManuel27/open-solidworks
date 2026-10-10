@@ -224,9 +224,39 @@ fn yes() -> bool {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RevolveAngle {
-    Blind { angle: f64 },
-    MidPlane { angle: f64 },
-    TwoDirection { angle1: f64, angle2: f64 },
+    Blind {
+        angle: f64,
+    },
+    MidPlane {
+        angle: f64,
+    },
+    TwoDirection {
+        angle1: f64,
+        angle2: f64,
+    },
+    UpToVertex {
+        target: Ref,
+    },
+    UpToSurface {
+        target: Ref,
+    },
+    OffsetFromSurface {
+        target: Ref,
+        offset: f64,
+        #[serde(default)]
+        reverse_offset: bool,
+    },
+}
+
+impl RevolveAngle {
+    pub fn target(&self) -> Option<&Ref> {
+        match self {
+            Self::UpToVertex { target }
+            | Self::UpToSurface { target }
+            | Self::OffsetFromSurface { target, .. } => Some(target),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -235,6 +265,9 @@ pub struct Revolve {
     /// A sketch line, reference axis or straight edge.
     pub axis: Ref,
     pub angle: RevolveAngle,
+    /// Optional independent end condition in the opposite direction.
+    #[serde(default)]
+    pub end2: Option<RevolveAngle>,
     #[serde(default)]
     pub reverse: bool,
     #[serde(default)]

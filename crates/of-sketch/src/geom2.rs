@@ -22,6 +22,9 @@ pub enum Curve2 {
         center: DVec2,
         radius: f64,
     },
+    Bezier {
+        points: [DVec2; 4],
+    },
     Spline {
         points: Vec<DVec2>,
         closed: bool,
@@ -78,9 +81,12 @@ impl Curve2 {
                 *center + DVec2::from_angle(a0 + sweep * t) * r
             }
             Curve2::Circle { center, radius } => *center + DVec2::from_angle(TAU * t) * *radius,
+            Curve2::Bezier { points } => bezier_at(*points, t),
             Curve2::Spline { .. } => {
-                let pts = self.sample(0.01);
-                polyline_point_at(&pts, t)
+                let spans = self.beziers();
+                let u = t.clamp(0.0, 1.0) * spans.len() as f64;
+                let i = (u.floor() as usize).min(spans.len() - 1);
+                bezier_at(spans[i], u - i as f64)
             }
         }
     }
@@ -108,9 +114,28 @@ impl Curve2 {
                 }
             }
             Curve2::Circle { center, .. } => (p - *center).to_angle().rem_euclid(TAU) / TAU,
-            Curve2::Spline { .. } => {
-                let pts = self.sample(0.01);
-                polyline_param_of(&pts, p)
+            Curve2::Spline { .. } | Curve2::Bezier { .. } => {
+                // Locate the best span before refining; a spline may have several minima.
+                let n = self.beziers().len() * 64;
+                let i = (0..=n)
+                    .min_by(|a, b| {
+                        self.point_at(*a as f64 / n as f64)
+                            .distance_squared(p)
+                            .total_cmp(&self.point_at(*b as f64 / n as f64).distance_squared(p))
+                    })
+                    .unwrap();
+                let mut lo = i.saturating_sub(1) as f64 / n as f64;
+                let mut hi = (i + 1).min(n) as f64 / n as f64;
+                for _ in 0..48 {
+                    let a = lo + (hi - lo) / 3.0;
+                    let b = hi - (hi - lo) / 3.0;
+                    if self.point_at(a).distance_squared(p) < self.point_at(b).distance_squared(p) {
+                        hi = b;
+                    } else {
+                        lo = a;
+                    }
+                }
+                (lo + hi) * 0.5
             }
         }
     }
@@ -139,7 +164,13 @@ impl Curve2 {
                     .map(|i| self.point_at(i as f64 / n as f64))
                     .collect()
             }
-            Curve2::Spline { points, closed } => catmull_rom(points, *closed, 16),
+            Curve2::Spline { .. } | Curve2::Bezier { .. } => {
+                let mut out = vec![self.start()];
+                for span in self.beziers() {
+                    sample_bezier(span, tol, 0, &mut out);
+                }
+                out
+            }
         }
     }
 
@@ -163,7 +194,7 @@ impl Curve2 {
                 sweep * (*start - *center).length()
             }
             Curve2::Circle { radius, .. } => TAU * radius,
-            Curve2::Spline { .. } => self
+            Curve2::Spline { .. } | Curve2::Bezier { .. } => self
                 .sample(0.01)
                 .windows(2)
                 .map(|w| (w[1] - w[0]).length())
@@ -185,70 +216,90 @@ fn segments_for(r: f64, sweep: f64, tol: f64) -> usize {
     ((sweep / step).ceil() as usize).clamp(4, 512)
 }
 
-fn catmull_rom(points: &[DVec2], closed: bool, per_segment: usize) -> Vec<DVec2> {
-    let n = points.len();
-    if n < 2 {
-        return points.to_vec();
-    }
-    let get = |i: isize| -> DVec2 {
-        if closed {
-            points[i.rem_euclid(n as isize) as usize]
-        } else if i < 0 {
-            points[0] * 2.0 - points[1]
-        } else if i as usize >= n {
-            points[n - 1] * 2.0 - points[n - 2]
-        } else {
-            points[i as usize]
-        }
-    };
-    let segs = if closed { n } else { n - 1 };
-    let mut out = Vec::with_capacity(segs * per_segment + 1);
-    for s in 0..segs as isize {
-        let (p0, p1, p2, p3) = (get(s - 1), get(s), get(s + 1), get(s + 2));
-        for k in 0..per_segment {
-            let t = k as f64 / per_segment as f64;
-            let t2 = t * t;
-            let t3 = t2 * t;
-            out.push(
-                0.5 * ((2.0 * p1)
-                    + (-p0 + p2) * t
-                    + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2
-                    + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3),
-            );
-        }
-    }
-    out.push(if closed { points[0] } else { points[n - 1] });
-    out
+/// Cubic evaluation and restriction use the same polynomial as the kernel.
+pub fn bezier_at(p: [DVec2; 4], t: f64) -> DVec2 {
+    let a = p[0].lerp(p[1], t);
+    let b = p[1].lerp(p[2], t);
+    let c = p[2].lerp(p[3], t);
+    a.lerp(b, t).lerp(b.lerp(c, t), t)
 }
 
-fn polyline_point_at(pts: &[DVec2], t: f64) -> DVec2 {
-    let total: f64 = pts.windows(2).map(|w| (w[1] - w[0]).length()).sum();
-    let mut target = t.clamp(0.0, 1.0) * total;
-    for w in pts.windows(2) {
-        let l = (w[1] - w[0]).length();
-        if target <= l || l == 0.0 && target <= 0.0 {
-            return w[0].lerp(w[1], if l > 0.0 { target / l } else { 0.0 });
-        }
-        target -= l;
-    }
-    *pts.last().unwrap()
+pub fn bezier_tangent(p: [DVec2; 4], t: f64) -> DVec2 {
+    3.0 * ((p[1] - p[0]) * (1.0 - t).powi(2)
+        + 2.0 * (p[2] - p[1]) * (1.0 - t) * t
+        + (p[3] - p[2]) * t * t)
 }
 
-fn polyline_param_of(pts: &[DVec2], p: DVec2) -> f64 {
-    let total: f64 = pts.windows(2).map(|w| (w[1] - w[0]).length()).sum();
-    let (mut best, mut best_d, mut acc) = (0.0, f64::MAX, 0.0);
-    for w in pts.windows(2) {
-        let seg = Curve2::Line { a: w[0], b: w[1] };
-        let t = seg.param_of(p);
-        let d = (seg.point_at(t) - p).length();
-        let l = (w[1] - w[0]).length();
-        if d < best_d {
-            best_d = d;
-            best = acc + t * l;
-        }
-        acc += l;
+pub fn bezier_part(p: [DVec2; 4], a: f64, b: f64) -> [DVec2; 4] {
+    let first = bezier_at(p, a);
+    let last = bezier_at(p, b);
+    [
+        first,
+        first + bezier_tangent(p, a) * (b - a) / 3.0,
+        last - bezier_tangent(p, b) * (b - a) / 3.0,
+        last,
+    ]
+}
+
+fn sample_bezier(p: [DVec2; 4], tol: f64, depth: usize, out: &mut Vec<DVec2>) {
+    let chord = Curve2::Line { a: p[0], b: p[3] };
+    let error = p[1]
+        .distance(chord.closest_point(p[1]))
+        .max(p[2].distance(chord.closest_point(p[2])));
+    if error <= tol || depth == 20 {
+        out.push(p[3]);
+        return;
     }
-    if total > 0.0 { best / total } else { 0.0 }
+    sample_bezier(bezier_part(p, 0.0, 0.5), tol, depth + 1, out);
+    sample_bezier(bezier_part(p, 0.5, 1.0), tol, depth + 1, out);
+}
+
+impl Curve2 {
+    pub fn tangent_at(&self, t: f64) -> DVec2 {
+        match self {
+            Self::Line { a, b } => *b - *a,
+            Self::Circle { center, .. } => (self.point_at(t) - *center).perp() * TAU,
+            Self::Arc { center, start, end } => {
+                (self.point_at(t) - *center).perp() * arc_angles(*center, *start, *end).1
+            }
+            _ => {
+                let spans = self.beziers();
+                let u = t.clamp(0.0, 1.0) * spans.len() as f64;
+                let i = (u.floor() as usize).min(spans.len() - 1);
+                bezier_tangent(spans[i], u - i as f64) * spans.len() as f64
+            }
+        }
+    }
+
+    /// Exact cubic spans of an interpolating Catmull–Rom spline.
+    pub fn beziers(&self) -> Vec<[DVec2; 4]> {
+        match self {
+            Self::Bezier { points } => vec![*points],
+            Self::Spline { points, closed } => {
+                let n = points.len();
+                let get = |i: isize| {
+                    if *closed {
+                        points[i.rem_euclid(n as isize) as usize]
+                    } else if i < 0 {
+                        2.0 * points[0] - points[1]
+                    } else if i as usize >= n {
+                        2.0 * points[n - 1] - points[n - 2]
+                    } else {
+                        points[i as usize]
+                    }
+                };
+                (0..if *closed { n } else { n - 1 })
+                    .map(|i| {
+                        let i = i as isize;
+                        let a = get(i);
+                        let b = get(i + 1);
+                        [a, a + (b - get(i - 1)) / 6.0, b - (get(i + 2) - a) / 6.0, b]
+                    })
+                    .collect()
+            }
+            _ => vec![],
+        }
+    }
 }
 
 /// Intersections of two curves, as points.
@@ -268,7 +319,20 @@ pub fn intersect(a: &Curve2, b: &Curve2) -> Vec<DVec2> {
             for w in pa.windows(2) {
                 for v in pb.windows(2) {
                     if let Some(p) = line_line(w[0], w[1], v[0], v[1], false) {
-                        out.push(p);
+                        let (mut t, mut u) = (a.param_of(p), b.param_of(p));
+                        for _ in 0..16 {
+                            let delta = a.point_at(t) - b.point_at(u);
+                            let (da, db) = (a.tangent_at(t), b.tangent_at(u));
+                            let den = da.perp_dot(db);
+                            if den.abs() < 1e-14 {
+                                break;
+                            }
+                            t = (t - delta.perp_dot(db) / den).clamp(0.0, 1.0);
+                            u = (u - delta.perp_dot(da) / den).clamp(0.0, 1.0);
+                        }
+                        if a.point_at(t).distance(b.point_at(u)) < 1e-6 {
+                            out.push(a.point_at(t));
+                        }
                     }
                 }
             }

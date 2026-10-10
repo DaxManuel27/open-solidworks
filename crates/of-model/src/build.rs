@@ -54,6 +54,7 @@ pub struct State {
     /// Each sketch's plane and solved geometry.
     pub sketches: HashMap<FeatureId, (Plane, Sketch)>,
     pub(crate) tools: HashMap<FeatureId, Vec<Tool>>,
+    pub(crate) tool_order: Vec<FeatureId>,
 }
 
 /// How a feature's rebuild went.
@@ -283,6 +284,7 @@ fn build_sketch(prev: &State, s: &SketchFeature) -> RResult<(Plane, Sketch, Solv
     let plane = resolve(prev, &s.plane)?.plane()?;
     let mut sketch = s.sketch.clone();
     update_external(prev, &plane, &mut sketch)?;
+    sketch.validate().map_err(|e| e.to_string())?;
     let report = sketch.solve();
     Ok((plane, sketch, report))
 }

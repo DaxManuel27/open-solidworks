@@ -12,8 +12,8 @@ Read [docs/plan.md](docs/plan.md) first for the vision, phases and architecture.
   exposes a CLI and an MCP server.
 - Crate dependencies point one way: `openforge` → `of-model`, `of-io`, `of-protocol` →
   `of-sketch`, `of-geom` → `of-kernel-sys`. Lower crates never depend on higher ones.
-- `of-kernel-sys` is the only crate that touches C++ (OpenCASCADE, PlaneGCS). All `unsafe` lives
-  there. Everything above it is safe Rust.
+- `of-kernel-sys` is the only crate that touches C++ (OpenCASCADE). All `unsafe` lives
+  there. Everything above it is safe Rust. The sketch solver lives in `of-sketch`.
 - Topological naming: faces and edges get stable IDs in `of-model`. Features reference geometry
   through those IDs, never through raw kernel indices.
 

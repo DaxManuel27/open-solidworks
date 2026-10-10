@@ -22,6 +22,9 @@ pub enum Curve2 {
         center: DVec2,
         radius: f64,
     },
+    Bezier {
+        points: [DVec2; 4],
+    },
     Spline {
         points: Vec<DVec2>,
         closed: bool,
@@ -38,6 +41,7 @@ impl Curve2 {
                 end: e,
             } => (1, vec![c.x, c.y, s.x, s.y, e.x, e.y]),
             Curve2::Circle { center: c, radius } => (2, vec![c.x, c.y, *radius]),
+            Curve2::Bezier { points } => (5, points.iter().flat_map(|p| [p.x, p.y]).collect()),
             Curve2::Spline { points, closed } => (
                 if *closed { 4 } else { 3 },
                 points.iter().flat_map(|p| [p.x, p.y]).collect(),
@@ -53,12 +57,14 @@ impl Curve2 {
             Curve2::Arc { start, .. } => *start,
             Curve2::Circle { center, radius } => *center + DVec2::new(*radius, 0.0),
             Curve2::Spline { points, .. } => points[0],
+            Curve2::Bezier { points } => points[0],
         }
     }
 
     pub fn end(&self) -> DVec2 {
         match self {
             Curve2::Line { b, .. } => *b,
+            Curve2::Bezier { points } => points[3],
             Curve2::Arc { end, .. } => *end,
             Curve2::Circle { .. } => self.start(),
             Curve2::Spline { points, closed } => {

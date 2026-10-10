@@ -107,7 +107,9 @@ pub fn resolve(state: &State, r: &Ref) -> RResult<Resolved> {
                     origin: plane.to_world(sk.point(*center).unwrap()),
                     dir: plane.normal,
                 },
-                Geometry::Spline { .. } => return Err("a spline can't be used here".into()),
+                Geometry::Spline { .. } | Geometry::Bezier { .. } => {
+                    return Err("a spline can't be used here".into());
+                }
             }
         }
     })

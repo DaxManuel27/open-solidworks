@@ -295,6 +295,12 @@ impl<'a> System<'a> {
                     continue;
                 };
                 let trial: Vec<f64> = x.iter().zip(step.iter()).map(|(a, s)| a - s).collect();
+                if trial.iter().any(|v| !v.is_finite())
+                    || self.radius_idx.values().any(|i| trial[*i] <= 0.0)
+                {
+                    lambda *= 4.0;
+                    continue;
+                }
                 let rt = self.residual(eqs, &trial);
                 let ct = rt.norm_squared();
                 if ct < cost {
@@ -334,6 +340,9 @@ impl<'a> System<'a> {
 }
 
 pub(crate) fn solve(sk: &mut Sketch, drags: &[(Id, DVec2)]) -> SolveReport {
+    if sk.validate().is_err() || drags.iter().any(|(_, p)| !p.is_finite()) {
+        return invalid_report(sk);
+    }
     let snapshot = sk.clone();
     let sys = System::new(&snapshot, drags);
     let hard: Vec<&Equation> = sys
@@ -359,6 +368,9 @@ pub(crate) fn solve(sk: &mut Sketch, drags: &[(Id, DVec2)]) -> SolveReport {
 }
 
 pub(crate) fn analyse(sk: &Sketch) -> SolveReport {
+    if sk.validate().is_err() {
+        return invalid_report(sk);
+    }
     let sys = System::new(sk, &[]);
     let eqs: Vec<&Equation> = sys.eqs.iter().collect();
     let x = sys.x0.clone();
@@ -368,6 +380,25 @@ pub(crate) fn analyse(sk: &Sketch) -> SolveReport {
         report.status = SolveStatus::Failed;
     }
     report
+}
+
+fn invalid_report(sk: &Sketch) -> SolveReport {
+    SolveReport {
+        status: SolveStatus::Failed,
+        dof: 0,
+        entities: sk
+            .entities
+            .keys()
+            .map(|id| (*id, Definition::Over))
+            .collect(),
+        conflicting: sk
+            .constraints
+            .iter()
+            .filter(|(_, c)| c.driving)
+            .map(|(id, _)| *id)
+            .collect(),
+        redundant: vec![],
+    }
 }
 
 fn analyse_with(sys: &System, eqs: &[&Equation], x: &[f64]) -> SolveReport {
@@ -387,9 +418,12 @@ fn analyse_with(sys: &System, eqs: &[&Equation], x: &[f64]) -> SolveReport {
                 continue;
             }
             v /= norm;
-            for q in &basis {
-                let d = v.dot(q);
-                v -= q * d;
+            // Reorthogonalize to avoid rank drift in larger sketches.
+            for _ in 0..2 {
+                for q in &basis {
+                    let d = v.dot(q);
+                    v -= q * d;
+                }
             }
             if v.norm() > 1e-6 {
                 let len = v.norm();
@@ -414,21 +448,9 @@ fn analyse_with(sys: &System, eqs: &[&Equation], x: &[f64]) -> SolveReport {
     let dof = n.saturating_sub(rank);
 
     // A parameter is free if it moves in some direction the constraints allow.
-    let mut free = vec![false; n];
-    if dof > 0 {
-        let jtj = j.transpose() * &j;
-        let eig = jtj.symmetric_eigen();
-        let scale = eig.eigenvalues.amax().max(1.0);
-        for (k, &ev) in eig.eigenvalues.iter().enumerate() {
-            if ev.abs() < 1e-9 * scale {
-                for (i, f) in free.iter_mut().enumerate() {
-                    if eig.eigenvectors[(i, k)].abs() > 1e-6 {
-                        *f = true;
-                    }
-                }
-            }
-        }
-    }
+    let free: Vec<bool> = (0..n)
+        .map(|i| dof > 0 && 1.0 - basis.iter().map(|q| q[i] * q[i]).sum::<f64>() > 1e-8)
+        .collect();
 
     let over: Vec<Id> = conflicting
         .iter()
@@ -463,7 +485,7 @@ fn analyse_with(sys: &System, eqs: &[&Equation], x: &[f64]) -> SolveReport {
 
 #[cfg(test)]
 mod tests {
-    use crate::{ConstraintKind as K, Definition, Sketch, SolveStatus};
+    use crate::{ConstraintKind as K, Definition, Geometry, Sketch, SolveStatus};
     use glam::DVec2;
 
     fn rectangle(sk: &mut Sketch) -> ([u32; 4], [u32; 4]) {
@@ -484,6 +506,100 @@ mod tests {
         sk.add_constraint(K::Vertical { line: l[1] }).unwrap();
         sk.add_constraint(K::Vertical { line: l[3] }).unwrap();
         (p, l)
+    }
+
+    #[test]
+    fn larger_sketch_keeps_rank_and_survives_conflicts() {
+        let mut sk = Sketch::new();
+        for i in 0..20 {
+            let x = i as f64 * 25.0;
+            let (line, a, _) = sk.add_line_at(DVec2::new(x, 0.1), DVec2::new(x + 9.8, -0.1));
+            sk.add_constraint(K::Fix {
+                entity: a,
+                at: vec![],
+            })
+            .unwrap();
+            sk.add_constraint(K::Horizontal { line }).unwrap();
+            sk.add_constraint(K::Length { line, value: 10.0 }).unwrap();
+        }
+        let r = sk.solve();
+        assert_eq!(r.status, SolveStatus::Solved, "{r:?}");
+        assert_eq!(r.dof, 0);
+        assert!(r.redundant.is_empty());
+        let line = sk.curve_ids().next().unwrap();
+        sk.add_constraint(K::Length { line, value: 12.0 }).unwrap();
+        let before = sk.clone();
+        assert_eq!(sk.solve().status, SolveStatus::Failed);
+        assert_eq!(sk, before, "a failed solve must preserve geometry");
+    }
+
+    #[test]
+    fn dimensions_solve_across_part_scales() {
+        for size in [0.001, 1.0, 1000.0, 100_000.0] {
+            let mut sk = Sketch::new();
+            let (line, a, b) = sk.add_line_at(DVec2::ZERO, DVec2::new(size * 0.9, size * 0.1));
+            sk.add_constraint(K::Coincident {
+                a,
+                b: crate::ORIGIN,
+            })
+            .unwrap();
+            sk.add_constraint(K::Horizontal { line }).unwrap();
+            sk.add_constraint(K::Length { line, value: size }).unwrap();
+            let r = sk.solve();
+            assert_eq!(r.status, SolveStatus::Solved, "size={size}: {r:?}");
+            assert_eq!(r.dof, 0);
+            assert!(sk.point(b).unwrap().distance(DVec2::new(size, 0.0)) < 1e-7);
+        }
+    }
+
+    #[test]
+    fn malformed_geometry_and_nonfinite_drags_fail_safely() {
+        let mut sk = Sketch::new();
+        let (line, a, _) = sk.add_line_at(DVec2::ZERO, DVec2::X);
+        let before = sk.clone();
+        assert_eq!(
+            sk.drag(a, DVec2::splat(f64::NAN)).status,
+            SolveStatus::Failed
+        );
+        assert_eq!(sk, before);
+        sk.entities.get_mut(&line).unwrap().geo = Geometry::Line { a, b: 999 };
+        assert_eq!(sk.solve().status, SolveStatus::Failed);
+        let mut sk = before;
+        let fix = sk
+            .add_constraint(K::Fix {
+                entity: line,
+                at: vec![],
+            })
+            .unwrap();
+        sk.constraints.get_mut(&fix).unwrap().kind = K::Fix {
+            entity: line,
+            at: vec![f64::INFINITY],
+        };
+        assert_eq!(sk.solve().status, SolveStatus::Failed);
+    }
+
+    #[test]
+    fn point_on_spline_solves_to_the_visible_curve() {
+        let mut sk = Sketch::new();
+        let points =
+            [DVec2::ZERO, DVec2::new(10.0, 5.0), DVec2::new(20.0, 0.0)].map(|p| sk.add_point(p));
+        let spline = sk.add_spline(points.to_vec(), false).unwrap();
+        sk.add_constraint(K::Fix {
+            entity: spline,
+            at: vec![],
+        })
+        .unwrap();
+        let p = sk.add_point(DVec2::new(7.0, 3.0));
+        sk.add_constraint(K::PointOnCurve {
+            point: p,
+            curve: spline,
+        })
+        .unwrap();
+        let r = sk.solve();
+        assert_eq!(r.status, SolveStatus::Solved, "{r:?}");
+        assert_eq!(r.dof, 1);
+        let p = sk.point(p).unwrap();
+        assert!(p.distance(sk.curve(spline).unwrap().closest_point(p)) < 1e-7);
     }
 
     #[test]

@@ -24,7 +24,7 @@ pub(crate) fn build(
     prev: &State,
     state: &mut State,
 ) -> RResult<()> {
-    match kind {
+    let result = match kind {
         FeatureKind::Extrude(e) => extrude(fid, e, prev, state),
         FeatureKind::Revolve(r) => revolve(fid, r, prev, state),
         FeatureKind::Fillet(f) => fillet(fid, f, prev, state),
@@ -36,7 +36,11 @@ pub(crate) fn build(
         FeatureKind::Mirror(m) => mirror(fid, m, prev, state),
         FeatureKind::Import(i) => import(fid, i, state),
         _ => Ok(()),
+    };
+    if result.is_ok() && state.tools.contains_key(&fid) {
+        state.tool_order.push(fid);
     }
+    result
 }
 
 fn geo(e: impl std::fmt::Display) -> String {
@@ -46,6 +50,7 @@ fn geo(e: impl std::fmt::Display) -> String {
 pub(crate) fn to_geom(c: &SCurve) -> GCurve {
     match c {
         SCurve::Line { a, b } => GCurve::Line { a: *a, b: *b },
+        SCurve::Bezier { points } => GCurve::Bezier { points: *points },
         SCurve::Arc { center, start, end } => GCurve::Arc {
             center: *center,
             start: *start,
@@ -214,6 +219,7 @@ fn sample(c: &GCurve) -> Vec<DVec2> {
             center: *center,
             radius: *radius,
         },
+        GCurve::Bezier { points } => SCurve::Bezier { points: *points },
         GCurve::Spline { points, closed } => SCurve::Spline {
             points: points.clone(),
             closed: *closed,
@@ -265,6 +271,9 @@ fn copy_chain(from: &Sketch, ids: &[of_sketch::Id], to: &mut Sketch) -> Vec<of_s
                 Geometry::Circle { center, radius } => Geometry::Circle {
                     center: pt(to, center),
                     radius,
+                },
+                Geometry::Bezier { points } => Geometry::Bezier {
+                    points: points.map(|p| pt(to, p)),
                 },
                 Geometry::Spline { points, closed } => Geometry::Spline {
                     points: points.iter().map(|p| pt(to, *p)).collect(),
@@ -414,24 +423,26 @@ fn extrude_side(
                     }
                     let (s, n) = blind(long, &prof.shape)?;
                     let face = big_face(prev, &tp)?;
-                    clip_by_face(fid, prefix, &s, &n, &face, plane.origin)
+                    clip_by_face(fid, prefix, &s, &n, &face, &prof.shape)
                 }
                 Err(_) => {
-                    if offset != 0.0 {
-                        return Err("offset from surface needs a flat face or plane".into());
-                    }
                     let Resolved::Face { index, .. } = res else {
                         return Err("select a face, plane or surface to extrude up to".into());
                     };
-                    let face = prev
+                    let mut face = prev
                         .body
                         .as_ref()
                         .unwrap()
                         .shape
                         .sub_shape(Kind::Face, index)
                         .map_err(geo)?;
+                    if offset != 0.0 {
+                        face = face
+                            .offset_face(offset, prof.shape.face_info(0).map_err(geo)?.centroid)
+                            .map_err(geo)?;
+                    }
                     let (s, n) = blind(long, &prof.shape)?;
-                    clip_by_face(fid, prefix, &s, &n, &face, plane.origin)
+                    clip_by_face(fid, prefix, &s, &n, &face, &prof.shape)
                 }
             }
         }
@@ -499,24 +510,17 @@ fn clip_by_face(
     sweep: &Shape,
     names: &Naming,
     face: &Shape,
-    inside: DVec3,
+    start: &Shape,
 ) -> RResult<(Shape, Naming)> {
+    let inside = start.face_info(0).map_err(geo)?.centroid;
     let half = Shape::half_space(face, inside).map_err(geo)?;
     let r = sweep.boolean(BoolOp::Common, &half).map_err(geo)?;
     if r.shape.count(Kind::Solid) == 0 {
         return Err("the extrude doesn't reach the surface".into());
     }
-    let mut generate = |_: &HistoryEntry| Some(format!("{fid}.{prefix}end"));
-    let n = Naming::from_history(
-        &r.shape,
-        &r.history,
-        Inputs {
-            named: [Some(names), None],
-        },
-        &mut generate,
-        &fid.to_string(),
-    );
-    Ok((r.shape, n))
+    // A curved surface can intersect the sweep again on its far side.
+    // Keep only material connected to the starting profile.
+    keep_touching(fid, prefix, r, names, &Naming::default(), start)
 }
 
 /// Combine a tool with the body and remember it for patterns.
@@ -649,22 +653,79 @@ fn rotation_about(origin: DVec3, dir: DVec3, angle: f64) -> DAffine3 {
 }
 
 fn revolve(fid: FeatureId, r: &Revolve, prev: &State, state: &mut State) -> RResult<()> {
+    let (mut shape, mut names) = revolve_side(fid, r, prev, "")?;
+    if let Some(end2) = &r.end2 {
+        let single = |a: &RevolveAngle| {
+            !matches!(
+                a,
+                RevolveAngle::MidPlane { .. } | RevolveAngle::TwoDirection { .. }
+            )
+        };
+        if !single(&r.angle) || !single(end2) {
+            return Err(
+                "independent directions cannot use mid-plane or two-direction angles".into(),
+            );
+        }
+        let mut opposite = r.clone();
+        opposite.reverse = !r.reverse;
+        opposite.angle = end2.clone();
+        opposite.end2 = None;
+        let (other, other_names) = revolve_side(fid, &opposite, prev, "d2.")?;
+        let combined = shape.boolean(BoolOp::Fuse, &other).map_err(geo)?;
+        names = Naming::from_history(
+            &combined.shape,
+            &combined.history,
+            Inputs {
+                named: [Some(&names), Some(&other_names)],
+            },
+            &mut |_| None,
+            &fid.to_string(),
+        );
+        shape = combined.shape;
+    }
+    let op = if r.cut { BoolOp::Cut } else { BoolOp::Fuse };
+    apply_tool(fid, state, shape, names, op, r.merge)
+}
+
+fn revolve_side(
+    fid: FeatureId,
+    r: &Revolve,
+    prev: &State,
+    prefix: &str,
+) -> RResult<(Shape, Naming)> {
     let prof = sketch_profile(prev, r.sketch, r.thin.as_ref())?;
     let (origin, mut dir) = resolve(prev, &r.axis)?.axis()?;
     if r.reverse {
         dir = -dir;
     }
-    let (start, total) = match r.angle {
-        RevolveAngle::Blind { angle } => (0.0, angle),
-        RevolveAngle::MidPlane { angle } => (-angle / 2.0, angle),
+    let (start, total) = match &r.angle {
+        RevolveAngle::Blind { angle } => (0.0, *angle),
+        RevolveAngle::MidPlane { angle } => (-angle / 2.0, *angle),
         RevolveAngle::TwoDirection { angle1, angle2 } => (-angle2, angle1 + angle2),
+        RevolveAngle::UpToVertex { target } => {
+            let radial = |p: DVec3| {
+                let v = p - origin;
+                v - dir * v.dot(dir)
+            };
+            let from = radial(prof.shape.face_info(0).map_err(geo)?.centroid);
+            let to = radial(resolve(prev, target)?.point()?);
+            if from.length() < 1e-9 || to.length() < 1e-9 {
+                return Err("the revolve target must be away from its axis".into());
+            }
+            let angle = dir.dot(from.cross(to)).atan2(from.dot(to)).rem_euclid(TAU);
+            (0.0, angle)
+        }
+        RevolveAngle::UpToSurface { .. } | RevolveAngle::OffsetFromSurface { .. } => (0.0, TAU),
     };
-    if total <= 1e-9 || total > TAU + 1e-9 {
+    if !total.is_finite() || total <= 1e-9 || total > TAU + 1e-9 {
         return Err("the revolve angle must be between 0° and 360°".into());
     }
     // The axis must not pass through the profile's interior.
     let local_dir = DVec2::new(dir.dot(prof.plane.x_dir), dir.dot(prof.plane.y_dir()));
-    if dir.dot(prof.plane.normal).abs() > 1e-6 || local_dir.length() < 1e-9 {
+    if dir.dot(prof.plane.normal).abs() > 1e-6
+        || local_dir.length() < 1e-9
+        || prof.plane.distance(origin).abs() > 1e-6
+    {
         return Err("the axis must lie in the sketch plane".into());
     }
     let face = if start != 0.0 {
@@ -675,14 +736,61 @@ fn revolve(fid: FeatureId, r: &Revolve, prev: &State, state: &mut State) -> RRes
     } else {
         prof.shape.clone()
     };
-    let res = face.revolve(origin, dir, total.min(TAU)).map_err(|e| {
+    let until = match &r.angle {
+        RevolveAngle::UpToSurface { target } | RevolveAngle::OffsetFromSurface { target, .. } => {
+            let resolved = resolve(prev, target)?;
+            let mut target_face = match resolved.plane() {
+                Ok(p) => big_face(prev, &p)?,
+                Err(_) => match resolved {
+                    Resolved::Face { index, .. } => body_of(prev)?
+                        .shape
+                        .sub_shape(Kind::Face, index)
+                        .map_err(geo)?,
+                    _ => return Err("select a face or plane to revolve up to".into()),
+                },
+            };
+            if let RevolveAngle::OffsetFromSurface {
+                offset,
+                reverse_offset,
+                ..
+            } = &r.angle
+            {
+                if !offset.is_finite() || *offset < 0.0 {
+                    return Err("the surface offset must be finite and nonnegative".into());
+                }
+                if *offset > 0.0 {
+                    target_face = target_face
+                        .offset_face(
+                            if *reverse_offset { -*offset } else { *offset },
+                            prof.shape.face_info(0).map_err(geo)?.centroid,
+                        )
+                        .map_err(geo)?;
+                }
+            }
+            Some(target_face)
+        }
+        _ => None,
+    };
+    let res = if let Some(until) = &until {
+        face.revolve_until(until, origin, dir)
+    } else {
+        face.revolve(origin, dir, total.min(TAU))
+    }
+    .map_err(|e| {
         if e.0.contains("invalid") {
             "the profile crosses the axis of revolution".to_string()
         } else {
             e.0
         }
     })?;
-    let mut generate = sweep_names(fid, "", &prof.edge_names);
+    let mut sides = sweep_names(fid, prefix, &prof.edge_names);
+    let mut generate = |h: &HistoryEntry| {
+        if h.input == 1 && h.to_kind == Kind::Face {
+            Some(format!("{fid}.{prefix}end"))
+        } else {
+            sides(h)
+        }
+    };
     let names = Naming::from_history(
         &res.shape,
         &res.history,
@@ -692,8 +800,7 @@ fn revolve(fid: FeatureId, r: &Revolve, prev: &State, state: &mut State) -> RRes
         &mut generate,
         &fid.to_string(),
     );
-    let op = if r.cut { BoolOp::Cut } else { BoolOp::Fuse };
-    apply_tool(fid, state, res.shape, names, op, r.merge)
+    Ok((res.shape, names))
 }
 
 fn body_of(prev: &State) -> RResult<&Body> {
@@ -758,6 +865,43 @@ fn dressup_names(fid: FeatureId, tag: &str, body: &Body, r: &of_geom::OpResult) 
     )
 }
 
+/// Store exact added/removed volumes so a dress-up can be repeated like a cut
+/// or boss, including concave fillets and outward shells which add material.
+fn remember_dressup(
+    fid: FeatureId,
+    before: &Body,
+    after: &Shape,
+    names: &Naming,
+    state: &mut State,
+) -> RResult<()> {
+    let mut tools = Vec::new();
+    for (a, an, b, bn, op) in [
+        (&before.shape, &before.names, after, names, BoolOp::Cut),
+        (after, names, &before.shape, &before.names, BoolOp::Fuse),
+    ] {
+        let delta = a.boolean(BoolOp::Cut, b).map_err(geo)?;
+        if delta.shape.count(Kind::Solid) == 0 {
+            continue;
+        }
+        let names = Naming::from_history(
+            &delta.shape,
+            &delta.history,
+            Inputs {
+                named: [Some(an), Some(bn)],
+            },
+            &mut |_| None,
+            &format!("{fid}.delta"),
+        );
+        tools.push(Tool {
+            shape: delta.shape,
+            names,
+            op,
+        });
+    }
+    state.tools.insert(fid, tools);
+    Ok(())
+}
+
 fn fillet(fid: FeatureId, f: &Fillet, prev: &State, state: &mut State) -> RResult<()> {
     if f.radius <= 0.0 {
         return Err("the radius must be more than zero".into());
@@ -766,6 +910,7 @@ fn fillet(fid: FeatureId, f: &Fillet, prev: &State, state: &mut State) -> RResul
     let edges = edge_set(prev, &f.edges, &f.faces)?;
     let r = body.shape.fillet(&edges, f.radius).map_err(geo)?;
     let names = dressup_names(fid, "f", body, &r);
+    remember_dressup(fid, body, &r.shape, &names, state)?;
     state.body = Some(Body {
         shape: r.shape,
         names,
@@ -794,6 +939,7 @@ fn chamfer(fid: FeatureId, c: &Chamfer, prev: &State, state: &mut State) -> RRes
     let edges = edge_set(prev, &c.edges, &c.faces)?;
     let r = body.shape.chamfer(&edges, d1, d2).map_err(geo)?;
     let names = dressup_names(fid, "c", body, &r);
+    remember_dressup(fid, body, &r.shape, &names, state)?;
     state.body = Some(Body {
         shape: r.shape,
         names,
@@ -816,6 +962,7 @@ fn shell(fid: FeatureId, s: &ShellDef, prev: &State, state: &mut State) -> RResu
     let t = if s.outward { -s.thickness } else { s.thickness };
     let r = body.shape.shell(&faces, t).map_err(geo)?;
     let names = dressup_names(fid, "s", body, &r);
+    remember_dressup(fid, body, &r.shape, &names, state)?;
     state.body = Some(Body {
         shape: r.shape,
         names,
@@ -968,6 +1115,18 @@ fn hole(fid: FeatureId, h: &Hole, prev: &State, state: &mut State) -> RResult<()
     apply_tool(fid, state, tool, names, BoolOp::Cut, true)
 }
 
+/// Replay selections in feature-tree order, regardless of click order.
+fn ordered_seeds<'a>(prev: &'a State, selected: &[FeatureId]) -> RResult<Vec<&'a FeatureId>> {
+    if selected.iter().any(|id| !prev.tools.contains_key(id)) {
+        return Err("select solid features that rebuilt successfully".into());
+    }
+    Ok(prev
+        .tool_order
+        .iter()
+        .filter(|id| selected.contains(id))
+        .collect())
+}
+
 /// Repeat the tools of `features` at each transform.
 fn repeat(
     fid: FeatureId,
@@ -980,9 +1139,9 @@ fn repeat(
         return Err("select features to pattern".into());
     }
     let mut seeds: Vec<Tool> = Vec::new();
-    for f in features {
+    for f in ordered_seeds(prev, features)? {
         let tools = prev.tools.get(f).ok_or_else(|| {
-            "only extrudes, revolves, cuts, holes and patterns can be patterned (or the seed feature failed)".to_string()
+            "select a solid feature that rebuilt successfully to pattern".to_string()
         })?;
         seeds.extend(tools.iter().cloned());
     }
@@ -1070,12 +1229,12 @@ fn mirror(fid: FeatureId, m: &MirrorDef, prev: &State, state: &mut State) -> RRe
             .prefixed(&r.shape, &r.history, &format!("{fid}.m."));
         return apply_tool(fid, state, r.shape, names, BoolOp::Fuse, true);
     }
-    for f in &m.features {
+    for f in ordered_seeds(prev, &m.features)? {
         let tools = prev
             .tools
             .get(f)
             .ok_or_else(|| {
-                "only extrudes, revolves, cuts, holes and patterns can be mirrored".to_string()
+                "select a solid feature that rebuilt successfully to mirror".to_string()
             })?
             .clone();
         for (j, seed) in tools.iter().enumerate() {

@@ -133,6 +133,8 @@ impl FeatureKind {
             FeatureKind::Revolve(r) => {
                 out.push(r.sketch);
                 refs.push(&r.axis);
+                refs.extend(r.angle.target());
+                refs.extend(r.end2.as_ref().and_then(RevolveAngle::target));
             }
             FeatureKind::Hole(h) => out.push(h.sketch),
             FeatureKind::LinearPattern(p) => {

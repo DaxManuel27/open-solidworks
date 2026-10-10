@@ -69,6 +69,7 @@ impl UnionFind {
 fn ends(sk: &Sketch, id: Id) -> Option<(Id, Id)> {
     match &sk.entities[&id].geo {
         Geometry::Line { a, b } => Some((*a, *b)),
+        Geometry::Bezier { points } => Some((points[0], points[3])),
         Geometry::Arc { start, end, .. } => Some((*start, *end)),
         Geometry::Spline {
             points,

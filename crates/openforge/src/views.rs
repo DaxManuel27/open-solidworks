@@ -129,7 +129,7 @@ pub fn sketch(id: u32, plane: &Plane, sk: &Sketch, report: &SolveReport) -> Valu
                     Geometry::Line { .. } => "line",
                     Geometry::Circle { .. } => "circle",
                     Geometry::Arc { .. } => "arc",
-                    Geometry::Spline { .. } => "spline",
+                    Geometry::Spline { .. } | Geometry::Bezier { .. } => "spline",
                     Geometry::Point { .. } => unreachable!(),
                 };
                 curves.push(json!({
