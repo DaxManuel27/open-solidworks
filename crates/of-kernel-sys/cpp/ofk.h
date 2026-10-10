@@ -81,6 +81,7 @@ std::unique_ptr<Shape> mirror(const Shape &s, const Vec3 &origin, const Vec3 &no
 
 rust::Vec<uint32_t> edge_faces(const Shape &s);
 rust::Vec<uint32_t> face_edges(const Shape &s);
+rust::Vec<uint32_t> vertex_faces(const Shape &s);
 Mesh tessellate(const Shape &s, double linear, double angular);
 rust::Vec<double> edge_samples(const Shape &s, uint32_t edge, double linear, double angular);
 MassProps mass_props(const Shape &s);

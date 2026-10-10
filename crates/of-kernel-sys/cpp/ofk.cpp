@@ -40,6 +40,9 @@
 #include <GeomAPI_Interpolate.hxx>
 #include <Geom_Circle.hxx>
 #include <IFSelect_ReturnStatus.hxx>
+#include <Message.hxx>
+#include <Message_Messenger.hxx>
+#include <Message_PrinterOStream.hxx>
 #include <IGESControl_Controller.hxx>
 #include <IGESControl_Reader.hxx>
 #include <IGESControl_Writer.hxx>
@@ -205,6 +208,16 @@ TopoDS_Wire make_wire_from(const gp_Ax3 &ax, rust::Slice<const Curve> curves, si
     if (!mw.IsDone()) throw std::runtime_error("sketch contour is not connected");
   }
   return mw.Wire();
+}
+
+// Data exchange prints progress to stdout, which the core uses for its
+// protocol. Silence it once.
+void quiet() {
+  static bool done = false;
+  if (!done) {
+    Message::DefaultMessenger()->RemovePrinters(STANDARD_TYPE(Message_PrinterOStream));
+    done = true;
+  }
 }
 
 TopoDS_Shape fix(const TopoDS_Shape &s) {
@@ -487,6 +500,22 @@ rust::Vec<uint32_t> face_edges(const Shape &s) {
   return out;
 }
 
+rust::Vec<uint32_t> vertex_faces(const Shape &s) {
+  TopTools_IndexedMapOfShape fm, vm;
+  TopExp::MapShapes(s.shape, TopAbs_FACE, fm);
+  TopExp::MapShapes(s.shape, TopAbs_VERTEX, vm);
+  TopTools_IndexedDataMapOfShapeListOfShape vf;
+  TopExp::MapShapesAndUniqueAncestors(s.shape, TopAbs_VERTEX, TopAbs_FACE, vf);
+  rust::Vec<uint32_t> out;
+  for (int i = 1; i <= vm.Extent(); ++i) {
+    const TopTools_ListOfShape *faces = vf.Seek(vm(i));
+    out.push_back(faces ? static_cast<uint32_t>(faces->Extent()) : 0);
+    if (faces)
+      for (const TopoDS_Shape &f : *faces) out.push_back(static_cast<uint32_t>(fm.FindIndex(f) - 1));
+  }
+  return out;
+}
+
 Mesh tessellate(const Shape &s, double linear, double angular) {
   BRepMesh_IncrementalMesh mesher(s.shape, linear, false, angular, true);
   Mesh mesh;
@@ -712,6 +741,7 @@ Distance distance(const Shape &a, const Shape &b) {
 }
 
 void write_step(const Shape &s, rust::Str path) {
+  quiet();
   STEPControl_Writer w;
   Interface_Static::SetCVal("write.step.unit", "MM");
   Interface_Static::SetCVal("write.step.product.name", "OpenForge part");
@@ -720,6 +750,7 @@ void write_step(const Shape &s, rust::Str path) {
 }
 
 std::unique_ptr<Shape> read_step(rust::Str path) {
+  quiet();
   STEPControl_Reader r;
   if (r.ReadFile(std::string(path).c_str()) != IFSelect_RetDone) throw std::runtime_error("could not read STEP file");
   r.TransferRoots();
@@ -729,6 +760,7 @@ std::unique_ptr<Shape> read_step(rust::Str path) {
 }
 
 void write_iges(const Shape &s, rust::Str path) {
+  quiet();
   IGESControl_Controller::Init();
   IGESControl_Writer w("MM", 1);
   if (!w.AddShape(s.shape)) throw std::runtime_error("could not convert part to IGES");
@@ -737,6 +769,7 @@ void write_iges(const Shape &s, rust::Str path) {
 }
 
 std::unique_ptr<Shape> read_iges(rust::Str path) {
+  quiet();
   IGESControl_Controller::Init();
   IGESControl_Reader r;
   if (r.ReadFile(std::string(path).c_str()) != IFSelect_RetDone) throw std::runtime_error("could not read IGES file");
@@ -747,6 +780,7 @@ std::unique_ptr<Shape> read_iges(rust::Str path) {
 }
 
 void write_stl(const Shape &s, rust::Str path, double linear, double angular, bool ascii) {
+  quiet();
   BRepMesh_IncrementalMesh mesher(s.shape, linear, false, angular, true);
   StlAPI_Writer w;
   w.ASCIIMode() = ascii;

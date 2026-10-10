@@ -403,6 +403,11 @@ impl Shape {
         unflatten(&ffi::face_edges(&self.0))
     }
 
+    /// For each vertex, the indices of the faces that meet there.
+    pub fn vertex_faces(&self) -> Vec<Vec<u32>> {
+        unflatten(&ffi::vertex_faces(&self.0))
+    }
+
     /// Triangulate for display. `linear` is the max chord deviation in mm,
     /// `angular` the max angle between segments in radians.
     pub fn mesh(&self, linear: f64, angular: f64) -> Result<Mesh> {

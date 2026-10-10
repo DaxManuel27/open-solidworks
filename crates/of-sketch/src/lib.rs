@@ -101,9 +101,34 @@ pub type Result<T> = std::result::Result<T, SketchError>;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Sketch {
+    #[serde(with = "id_map")]
     pub entities: BTreeMap<Id, Entity>,
+    #[serde(with = "id_map")]
     pub constraints: BTreeMap<Id, Constraint>,
     next_id: Id,
+}
+
+/// Id-keyed maps serialize as `[[id, value], ...]`: JSON object keys are
+/// strings, which don't survive being nested in tagged enums.
+mod id_map {
+    use std::collections::BTreeMap;
+
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    use crate::Id;
+
+    pub fn serialize<S: Serializer, T: Serialize>(
+        m: &BTreeMap<Id, T>,
+        s: S,
+    ) -> Result<S::Ok, S::Error> {
+        s.collect_seq(m.iter())
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>, T: Deserialize<'de>>(
+        d: D,
+    ) -> Result<BTreeMap<Id, T>, D::Error> {
+        Ok(Vec::<(Id, T)>::deserialize(d)?.into_iter().collect())
+    }
 }
 
 impl Default for Sketch {

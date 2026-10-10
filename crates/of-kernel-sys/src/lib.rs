@@ -190,6 +190,8 @@ pub mod ffi {
         fn edge_faces(s: &Shape) -> Vec<u32>;
         /// For each face: edge count, then that many edge indices.
         fn face_edges(s: &Shape) -> Vec<u32>;
+        /// For each vertex: face count, then that many face indices.
+        fn vertex_faces(s: &Shape) -> Vec<u32>;
         fn tessellate(s: &Shape, linear: f64, angular: f64) -> Result<Mesh>;
         fn edge_samples(s: &Shape, edge: u32, linear: f64, angular: f64) -> Result<Vec<f64>>;
         fn mass_props(s: &Shape) -> Result<MassProps>;
