@@ -497,7 +497,7 @@ fn measure_edges_and_faces() {
     let state = m.state();
     let top = face_with_normal(&m, DVec3::Z);
     let bottom = face_with_normal(&m, DVec3::NEG_Z);
-    let r = measure::measure(state, &[top.clone()]).unwrap();
+    let r = measure::measure(state, std::slice::from_ref(&top)).unwrap();
     assert_close(r.values[0].value, 800.0, 1e-6);
     let r = measure::measure(state, &[top, bottom]).unwrap();
     assert_close(r.values[0].value, 10.0, 1e-9);
