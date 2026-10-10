@@ -23,6 +23,17 @@
 #include <BRepLib_ToolTriangulatedShape.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <BRepOffsetAPI_MakeOffsetShape.hxx>
+#include <BRepOffsetAPI_MakePipeShell.hxx>
+#include <BRepOffsetAPI_DraftAngle.hxx>
+#include <TColgp_Array1OfPnt2d.hxx>
+#include <BRepOffsetAPI_ThruSections.hxx>
+#include <BRepProj_Projection.hxx>
+#include <BRepFeat_SplitShape.hxx>
+#include <BRepTools_WireExplorer.hxx>
+#include <Geom_CylindricalSurface.hxx>
+#include <Geom2d_Line.hxx>
+#include <gp_Dir2d.hxx>
+#include <gp_Pnt2d.hxx>
 #include <BRepOffsetAPI_MakeThickSolid.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
 #include <BRepPrimAPI_MakeHalfSpace.hxx>
@@ -333,6 +344,139 @@ std::unique_ptr<Shape> make_wire(const Frame &frame, rust::Slice<const Curve> cu
   return wrap(make_wire_from(frame_ax3(frame), curves, 0, curves.size()));
 }
 
+std::unique_ptr<Shape> make_wire3(rust::Slice<const Curve> curves) {
+  if (curves.empty()) throw std::invalid_argument("path needs at least one curve");
+  BRepBuilderAPI_MakeWire wire;
+  for (const auto &curve : curves) {
+    for (double value : curve.data) if (!std::isfinite(value)) throw std::invalid_argument("curve coordinates must be finite");
+    if (curve.kind == 0 && curve.data.size() == 6) {
+      const auto &p = curve.data;
+      gp_Pnt a(p[0],p[1],p[2]), b(p[3],p[4],p[5]);
+      if (a.Distance(b) < 1e-9) throw std::invalid_argument("line has no length");
+      wire.Add(BRepBuilderAPI_MakeEdge(a,b).Edge());
+    } else if (curve.kind == 1 && curve.data.size() == 12) {
+      TColgp_Array1OfPnt points(1,4);
+      for (int i=0;i<4;++i) points(i+1)=gp_Pnt(curve.data[3*i],curve.data[3*i+1],curve.data[3*i+2]);
+      wire.Add(BRepBuilderAPI_MakeEdge(new Geom_BezierCurve(points)).Edge());
+    } else throw std::invalid_argument("unsupported 3D curve");
+    if (!wire.IsDone()) throw std::invalid_argument("path curves must form a connected chain");
+  }
+  require_valid(wire.Wire(), "3D path");
+  return wrap(wire.Wire());
+}
+
+std::unique_ptr<Shape> join_wires(const Shape &curves) {
+  if (curves.shape.ShapeType()==TopAbs_WIRE) { require_valid(curves.shape,"path"); return wrap(curves.shape); }
+  BRepBuilderAPI_MakeWire wire;
+  int count=0;
+  for (TopExp_Explorer ex(curves.shape, TopAbs_EDGE); ex.More(); ex.Next()) {
+    wire.Add(TopoDS::Edge(ex.Current()));
+    if (!wire.IsDone()) throw std::invalid_argument("selected curves are disconnected");
+    ++count;
+  }
+  if (!count) throw std::invalid_argument("select at least one curve");
+  require_valid(wire.Wire(), "composite curve");
+  TopTools_IndexedDataMapOfShapeListOfShape adjacency;
+  TopExp::MapShapesAndUniqueAncestors(wire.Wire(), TopAbs_VERTEX, TopAbs_EDGE, adjacency);
+  for (int i=1;i<=adjacency.Extent();++i) {
+    if (adjacency.FindFromIndex(i).Extent()>2) throw std::invalid_argument("selected curves form a branch");
+  }
+  return wrap(wire.Wire());
+}
+
+std::unique_ptr<Shape> reverse_shape(const Shape &shape) { return wrap(shape.shape.Reversed()); }
+
+std::unique_ptr<Shape> make_helix(const Frame &frame, double radius, double pitch, double turns, double start, bool left) {
+  if (!(radius>0 && pitch>0 && turns>0) || !std::isfinite(radius+pitch+turns+start) || turns>10000)
+    throw std::invalid_argument("helix needs positive finite radius/pitch/turns (at most 10000 turns)");
+  const double angle=turns*2*std::acos(-1.0)*(left?-1:1), height=turns*pitch;
+  Handle(Geom_CylindricalSurface) surface=new Geom_CylindricalSurface(frame_ax3(frame), radius);
+  Handle(Geom2d_Line) curve=new Geom2d_Line(gp_Pnt2d(start,0),gp_Dir2d(angle,height));
+  TopoDS_Edge edge=BRepBuilderAPI_MakeEdge(curve,surface,0,std::hypot(angle,height)).Edge();
+  if (!BRepLib::BuildCurves3d(edge,1e-7)) throw std::runtime_error("helix approximation failed");
+  TopoDS_Wire wire=BRepBuilderAPI_MakeWire(edge).Wire();
+  require_valid(wire,"helix");
+  return wrap(wire);
+}
+
+std::unique_ptr<Shape> project_wire(const Shape &wire, const Shape &target, const Vec3 &direction) {
+  BRepProj_Projection projection(wire.shape,target.shape,dir(direction));
+  if (!projection.IsDone() || !projection.More()) throw std::runtime_error("curve projection does not reach the target");
+  TopoDS_Wire result=projection.Current();
+  projection.Next();
+  if (projection.More()) throw std::runtime_error("projection produces multiple paths; select a single target face");
+  require_valid(result,"projected curve");
+  return wrap(result);
+}
+
+std::unique_ptr<Shape> split_face(const Shape &body, uint32_t face, const Shape &wire, rust::Vec<HistoryEntry> &hist) {
+  auto target=sub_shape(body,0,face);
+  auto path=join_wires(wire);
+  BRepFeat_SplitShape op(body.shape);
+  op.Add(TopoDS::Wire(path->shape),TopoDS::Face(target->shape));
+  op.Build();
+  if (!op.IsDone()) throw std::runtime_error("split line failed; use a closed loop or a path crossing the face boundary");
+  require_valid(op.Shape(),"split line");
+  record_history(op,body.shape,0,Maps(op.Shape()),hist);
+  return wrap(op.Shape());
+}
+
+// Identify planar caps by their boundary topology, never by output face order.
+static void record_caps(const TopoDS_Shape &section, uint8_t relation, const Maps &out, rust::Vec<HistoryEntry> &hist) {
+  if (section.IsNull()) return;
+  TopTools_IndexedMapOfShape edges;
+  TopExp::MapShapes(section,TopAbs_EDGE,edges);
+  for (int f=1;f<=out.m[0].Extent();++f) {
+    TopTools_IndexedMapOfShape boundary;
+    TopExp::MapShapes(out.m[0](f),TopAbs_EDGE,boundary);
+    if (boundary.Extent()!=edges.Extent()) continue;
+    bool same=true;
+    for (int e=1;e<=edges.Extent();++e) if (!boundary.Contains(edges(e))) { same=false; break; }
+    if (same) push(hist,0,1,1,relation,0,f);
+  }
+}
+
+std::unique_ptr<Shape> sweep(const Shape &profile, const Shape &path, const Frame &frame, uint8_t orientation, rust::Vec<HistoryEntry> &hist) {
+  auto profile_wire=join_wires(profile), path_wire=join_wires(path);
+  const auto &section=TopoDS::Wire(profile_wire->shape);
+  if (!section.Closed()) throw std::invalid_argument("sweep requires a closed section");
+  BRepOffsetAPI_MakePipeShell op(TopoDS::Wire(path_wire->shape));
+  if (orientation<2) op.SetMode(orientation==1);
+  else if (orientation==2) op.SetMode(gp_Ax2(pnt(frame.origin),dir(frame.normal),dir(frame.x_dir)));
+  else throw std::invalid_argument("invalid sweep orientation");
+  op.Add(section,false,false);
+  op.Build();
+  if (!op.IsDone() || !op.MakeSolid()) throw std::runtime_error("sweep failed; check path continuity and profile attachment");
+  require_valid(op.Shape(),"sweep");
+  Maps maps(op.Shape());
+  record_history(op,profile.shape,0,maps,hist);
+  record_history(op,path.shape,1,maps,hist);
+  record_caps(op.FirstShape(),FIRST_CAP,maps,hist);
+  record_caps(op.LastShape(),LAST_CAP,maps,hist);
+  return wrap(op.Shape());
+}
+
+std::unique_ptr<Shape> loft(const Shape &profiles, bool ruled, rust::Vec<HistoryEntry> &hist) {
+  BRepOffsetAPI_ThruSections op(true,ruled,1e-7);
+  int count=0;
+  for (TopExp_Explorer ex(profiles.shape,TopAbs_WIRE);ex.More();ex.Next()) {
+    const auto &wire=TopoDS::Wire(ex.Current());
+    if (!wire.Closed()) throw std::invalid_argument("loft profiles must be closed");
+    op.AddWire(wire); ++count;
+  }
+  if (count<2) throw std::invalid_argument("loft requires at least two profiles");
+  op.CheckCompatibility(true);
+  op.SetMutableInput(false);
+  op.Build();
+  if (!op.IsDone()) throw std::runtime_error("loft failed; check profile ordering and compatibility");
+  require_valid(op.Shape(),"loft");
+  Maps maps(op.Shape());
+  record_history(op,profiles.shape,0,maps,hist);
+  record_caps(op.FirstShape(),FIRST_CAP,maps,hist);
+  record_caps(op.LastShape(),LAST_CAP,maps,hist);
+  return wrap(op.Shape());
+}
+
 std::unique_ptr<Shape> half_space(const Shape &face, const Vec3 &inside) {
   TopExp_Explorer ex(face.shape, TopAbs_FACE);
   if (!ex.More()) throw std::invalid_argument("half space needs a face");
@@ -637,6 +781,70 @@ std::unique_ptr<Shape> mirror(const Shape &s, const Vec3 &origin, const Vec3 &no
   TopoDS_Shape out = op.Shape();
   record_history(op, s.shape, 0, Maps(out), hist);
   return wrap(out);
+}
+
+std::unique_ptr<Shape> split_plane(const Shape &s, const Frame &plane, rust::Vec<HistoryEntry> &hist) {
+  TopTools_ListOfShape arguments, tools;
+  arguments.Append(s.shape);
+  tools.Append(BRepBuilderAPI_MakeFace(gp_Pln(pnt(plane.origin), dir(plane.normal))).Face());
+  BRepAlgoAPI_Splitter op;
+  op.SetArguments(arguments);
+  op.SetTools(tools);
+  op.SetNonDestructive(true);
+  op.Build();
+  if (!op.IsDone() || op.HasErrors()) throw std::runtime_error("plane split failed");
+  require_valid(op.Shape(), "split");
+  record_history(op, s.shape, 0, Maps(op.Shape()), hist);
+  return wrap(op.Shape());
+}
+
+std::unique_ptr<Shape> variable_fillet(const Shape &s, uint32_t edge, rust::Slice<const double> stations, rust::Vec<HistoryEntry> &hist) {
+  if (stations.size()<4 || stations.size()%2 || stations.size()>512) throw std::invalid_argument("fillet requires 2–256 radius stations");
+  double previous=-1;
+  TColgp_Array1OfPnt2d radii(1,stations.size()/2);
+  for (size_t i=0;i<stations.size();i+=2) {
+    double u=stations[i], r=stations[i+1];
+    if (!std::isfinite(u+r) || u<0 || u>1 || u<=previous || r<=0) throw std::invalid_argument("fillet stations must increase from 0 to 1 with positive finite radii");
+    previous=u; radii(i/2+1)=gp_Pnt2d(u,r);
+  }
+  if (stations[0]!=0 || stations[stations.size()-2]!=1) throw std::invalid_argument("include radius stations at 0 and 1");
+  auto selected=sub_shape(s,1,edge);
+  BRepFilletAPI_MakeFillet op(s.shape);
+  op.Add(radii,TopoDS::Edge(selected->shape));
+  op.Build();
+  if (!op.IsDone()) throw std::runtime_error("variable fillet failed; reduce radii or change the selected edge");
+  require_valid(op.Shape(),"variable fillet");
+  record_history(op,s.shape,0,Maps(op.Shape()),hist);
+  return wrap(op.Shape());
+}
+
+std::unique_ptr<Shape> draft(const Shape &s, rust::Slice<const uint32_t> faces, const Frame &plane, const Vec3 &direction, double angle, rust::Vec<HistoryEntry> &hist) {
+  if (!faces.size() || !std::isfinite(angle) || std::abs(angle)>=std::acos(-1.0)/2 || std::abs(angle)<1e-12)
+    throw std::invalid_argument("draft needs faces and a nonzero angle smaller than 90 degrees");
+  BRepOffsetAPI_DraftAngle op(s.shape);
+  for (uint32_t index:faces) {
+    auto face=sub_shape(s,0,index);
+    op.Add(TopoDS::Face(face->shape),dir(direction),angle,gp_Pln(pnt(plane.origin),dir(plane.normal)));
+    if (!op.AddDone()) throw std::runtime_error("this face cannot be drafted with the selected neutral plane");
+  }
+  op.Build();
+  if (!op.IsDone()) throw std::runtime_error("draft failed; change faces, neutral plane or angle");
+  require_valid(op.Shape(),"draft");
+  record_history(op,s.shape,0,Maps(op.Shape()),hist);
+  return wrap(op.Shape());
+}
+
+rust::Vec<uint32_t> indices_in(const Shape &part, const Shape &whole, uint8_t kind) {
+  TopTools_IndexedMapOfShape source, target;
+  TopExp::MapShapes(part.shape, kind_of(kind), source);
+  TopExp::MapShapes(whole.shape, kind_of(kind), target);
+  rust::Vec<uint32_t> out;
+  for (int i = 1; i <= source.Extent(); ++i) {
+    int index = target.FindIndex(source(i));
+    if (!index) throw std::invalid_argument("shape is not contained in the target");
+    out.push_back(static_cast<uint32_t>(index - 1));
+  }
+  return out;
 }
 
 rust::Vec<uint32_t> edge_faces(const Shape &s) {

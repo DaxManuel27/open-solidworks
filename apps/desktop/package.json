@@ -14,6 +14,7 @@
     "smoke": "electron ../../scripts/desktop-smoke.mjs"
   },
   "dependencies": {
+    "jose": "^6.2.12",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "three": "^0.186.1",

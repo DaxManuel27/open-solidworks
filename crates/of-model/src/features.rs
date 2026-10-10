@@ -289,6 +289,28 @@ pub struct Fillet {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RadiusStation {
+    pub position: f64,
+    pub radius: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VariableFillet {
+    pub edge: Ref,
+    pub stations: Vec<RadiusStation>,
+    #[serde(default)]
+    pub reverse: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Draft {
+    pub faces: Vec<Ref>,
+    pub neutral_plane: Ref,
+    pub direction: Option<Ref>,
+    pub angle: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ChamferMode {
     Equal { distance: f64 },

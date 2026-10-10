@@ -15,9 +15,15 @@ use serde_json::{Value, json};
 
 use crate::views;
 
+mod drafts;
+
 const UNDO_LIMIT: usize = 100;
 
 pub struct Session {
+    generation: String,
+    drafts: std::collections::BTreeMap<String, drafts::Draft>,
+    committed: std::collections::BTreeMap<String, bool>,
+    revision: u64,
     model: Model,
     path: Option<PathBuf>,
     dirty: bool,
@@ -36,6 +42,14 @@ fn args<T: DeserializeOwned>(params: Value) -> Result<T, RpcError> {
 
 fn fail(e: impl std::fmt::Display) -> RpcError {
     RpcError::failed(e.to_string())
+}
+
+#[derive(Deserialize)]
+struct FeatureInput {
+    #[serde(flatten)]
+    kind: FeatureKind,
+    #[serde(default)]
+    scope: Option<Vec<of_model::BodyId>>,
 }
 
 /// A point given by id, or a new point at a position.
@@ -183,6 +197,10 @@ impl Default for Session {
 impl Session {
     pub fn new() -> Session {
         Session {
+            generation: drafts::generation(),
+            drafts: Default::default(),
+            committed: Default::default(),
+            revision: 0,
             model: Model::new(Document::new()),
             path: None,
             dirty: false,
@@ -261,6 +279,16 @@ impl Session {
     }
 
     fn sketch_view(&mut self, id: FeatureId) -> R {
+        self.model.rebuild();
+        if (!self.model.doc.equations.is_empty()
+            || self.model.doc.configurations != of_model::configurations::Configurations::default())
+            && let Some((plane, sketch)) =
+                self.model.state_after(id).and_then(|s| s.sketches.get(&id))
+        {
+            let sketch = sketch.clone();
+            let report = sketch.analyse();
+            return Ok(views::sketch(id, plane, &sketch, &report));
+        }
         let plane_ref = match self.model.doc.feature(id).map(|f| &f.kind) {
             Some(FeatureKind::Sketch(s)) => s.plane.clone(),
             _ => return Err(RpcError::params(format!("feature {id} is not a sketch"))),
@@ -274,7 +302,215 @@ impl Session {
 
     /// Handle one method call.
     pub fn handle(&mut self, method: &str, params: Value) -> R {
+        let before = self.model.doc.clone();
+        let editing = self.editing;
+        let revision = self.revision;
+        let mut result = self.handle_inner(method, params);
+        // Keep revisions monotonic even when new/open replaces the session.
+        let changed = self.model.doc != before
+            || self.editing != editing
+            || (result.is_ok() && matches!(method, "doc.new" | "doc.open"));
+        self.revision = revision + u64::from(changed);
+        if let Ok(Value::Object(ref mut object)) = result {
+            object.insert("revision".into(), json!(self.revision));
+            object.insert("generation".into(), json!(self.generation));
+            if let Some(Value::Object(sketch)) = object.get_mut("sketch") {
+                sketch.insert("revision".into(), json!(self.revision));
+            }
+        }
+        result
+    }
+
+    fn handle_inner(&mut self, method: &str, params: Value) -> R {
+        if method.starts_with("draft.") {
+            return self.draft_request(method, params);
+        }
         match method {
+            "assistant.tools" => Ok(crate::mcp::assistant_catalog()),
+            "doc.feature" => {
+                let id = params["id"]
+                    .as_u64()
+                    .and_then(|v| u32::try_from(v).ok())
+                    .ok_or_else(|| RpcError::params("feature id required"))?;
+                Ok(
+                    json!({"feature":self.model.doc.feature(id).ok_or_else(|| RpcError::params("no such feature"))?}),
+                )
+            }
+            "parameter.set" => {
+                #[derive(Deserialize)]
+                struct P {
+                    key: String,
+                    value: f64,
+                }
+                let p: P = args(params)?;
+                let target = self
+                    .model
+                    .doc
+                    .features
+                    .iter()
+                    .flat_map(of_model::equations::parameters)
+                    .find(|t| t.key == p.key)
+                    .ok_or_else(|| RpcError::params("unknown parameter"))?;
+                let mut doc = self.model.doc.clone();
+                of_model::equations::set_parameter(
+                    doc.feature_mut(target.feature).unwrap(),
+                    &target,
+                    of_model::equations::Quantity {
+                        value: p.value,
+                        ..target.value
+                    },
+                )
+                .map_err(fail)?;
+                doc.equations.remove(&p.key);
+                self.checkpoint();
+                self.model.doc = doc;
+                self.model.rebuild_all();
+                self.full()
+            }
+            "configuration.create"
+            | "configuration.update"
+            | "configuration.delete"
+            | "configuration.activate" => {
+                use of_model::configurations::Configuration;
+                #[derive(Deserialize)]
+                struct P {
+                    id: Option<u32>,
+                    name: Option<String>,
+                    copy_from: Option<u32>,
+                    configuration: Option<Configuration>,
+                }
+                let p: P = args(params)?;
+                let mut trial = self.model.doc.clone();
+                let configs = &mut trial.configurations;
+                match method {
+                    "configuration.create" => {
+                        let id = configs.next_id;
+                        configs.next_id = id
+                            .checked_add(1)
+                            .ok_or_else(|| fail("configuration IDs exhausted"))?;
+                        let name = p.name.ok_or_else(|| RpcError::params("name is required"))?;
+                        let mut config = if let Some(source) = p.copy_from {
+                            configs
+                                .items
+                                .iter()
+                                .find(|c| c.id == source)
+                                .cloned()
+                                .ok_or_else(|| RpcError::params("no such source configuration"))?
+                        } else {
+                            Configuration::new(id, name.clone())
+                        };
+                        config.id = id;
+                        config.name = name.trim().into();
+                        configs.items.push(config);
+                        configs.active = id;
+                    }
+                    "configuration.update" => {
+                        let mut configuration = p
+                            .configuration
+                            .ok_or_else(|| RpcError::params("configuration is required"))?;
+                        configuration.name = configuration.name.trim().into();
+                        let target = configs
+                            .items
+                            .iter_mut()
+                            .find(|c| c.id == configuration.id)
+                            .ok_or_else(|| RpcError::params("no such configuration"))?;
+                        *target = configuration;
+                    }
+                    "configuration.delete" => {
+                        let id = p.id.ok_or_else(|| RpcError::params("id is required"))?;
+                        if !configs.items.iter().any(|c| c.id == id) {
+                            return Err(RpcError::params("no such configuration"));
+                        }
+                        if configs.items.len() == 1 {
+                            return Err(RpcError::params("keep at least one configuration"));
+                        }
+                        configs.items.retain(|c| c.id != id);
+                        if configs.active == id {
+                            configs.active = configs.items[0].id;
+                        }
+                    }
+                    _ => {
+                        configs.active = p.id.ok_or_else(|| RpcError::params("id is required"))?;
+                    }
+                }
+                trial.validate().map_err(RpcError::params)?;
+                self.checkpoint();
+                self.model.doc = trial;
+                self.model.rebuild_all();
+                self.editing = None;
+                self.full()
+            }
+            "equations.set" | "equations.preview" => {
+                #[derive(Deserialize)]
+                struct P {
+                    variables: std::collections::BTreeMap<String, String>,
+                    equations: std::collections::BTreeMap<String, String>,
+                }
+                let p: P = args(params)?;
+                let mut trial = self.model.doc.clone();
+                trial.variables = p.variables;
+                trial.equations = p.equations;
+                trial.validate().map_err(RpcError::params)?;
+                let keys: std::collections::HashSet<_> = trial
+                    .features
+                    .iter()
+                    .flat_map(of_model::equations::parameters)
+                    .map(|p| p.key)
+                    .collect();
+                if let Some(key) = trial.equations.keys().find(|key| !keys.contains(*key)) {
+                    return Err(RpcError::params(format!(
+                        "parameter {key} no longer exists"
+                    )));
+                }
+                if method == "equations.preview" {
+                    return Ok(json!({ "values": views::equation_values(&trial) }));
+                }
+                self.checkpoint();
+                self.model.doc = trial;
+                self.model.rebuild_all();
+                self.editing = None;
+                self.full()
+            }
+            "core.info" => Ok(json!(of_protocol::CoreInfo {
+                protocol_version: of_protocol::PROTOCOL_VERSION,
+                scene_version: of_protocol::SCENE_VERSION,
+                part_file_version: file::VERSION,
+                capabilities: vec![
+                    "revisioned_preview".into(),
+                    "assistant_drafts".into(),
+                    "part_v1_read".into(),
+                    "multibody".into(),
+                    "equations".into(),
+                    "configurations".into(),
+                    "curves".into(),
+                    "sweep_loft".into(),
+                    "draft".into(),
+                    "variable_fillet".into(),
+                    "split_line".into(),
+                ],
+            })),
+            "body.display" => {
+                #[derive(Deserialize)]
+                struct P {
+                    id: of_model::BodyId,
+                    name: Option<String>,
+                    hidden: Option<bool>,
+                }
+                let p: P = args(params)?;
+                self.display().solid(&p.id).map_err(fail)?;
+                if p.name.as_ref().is_some_and(|n| n.trim().is_empty()) {
+                    return Err(RpcError::params("the body name cannot be empty"));
+                }
+                self.checkpoint();
+                let display = self.model.doc.body_display.entry(p.id).or_default();
+                if let Some(name) = p.name {
+                    display.name = Some(name.trim().into());
+                }
+                if let Some(hidden) = p.hidden {
+                    display.hidden = hidden;
+                }
+                self.full()
+            }
             "doc.info" => self.full(),
             "doc.new" => {
                 *self = Session::new();
@@ -364,12 +600,13 @@ impl Session {
             "feature.add" => {
                 #[derive(Deserialize)]
                 struct P {
-                    feature: FeatureKind,
+                    feature: FeatureInput,
                     name: Option<String>,
                 }
                 let p: P = args(params)?;
                 self.checkpoint();
-                let id = self.model.doc.add(p.feature);
+                let id = self.model.doc.add(p.feature.kind);
+                self.model.doc.feature_mut(id).unwrap().scope = p.feature.scope;
                 if let Some(n) = p.name {
                     self.model.doc.feature_mut(id).unwrap().name = n;
                 }
@@ -383,7 +620,7 @@ impl Session {
                 #[derive(Deserialize)]
                 struct P {
                     id: FeatureId,
-                    feature: FeatureKind,
+                    feature: FeatureInput,
                 }
                 let p: P = args(params)?;
                 self.checkpoint();
@@ -392,7 +629,8 @@ impl Session {
                     .doc
                     .feature_mut(p.id)
                     .ok_or_else(|| RpcError::params("no such feature"))?;
-                f.kind = p.feature;
+                f.kind = p.feature.kind;
+                f.scope = p.feature.scope;
                 self.model.invalidate(p.id);
                 self.editing = None;
                 self.full()
@@ -474,14 +712,21 @@ impl Session {
             "feature.preview" => {
                 #[derive(Deserialize)]
                 struct P {
-                    feature: Option<FeatureKind>,
+                    feature: Option<FeatureInput>,
                     editing: Option<FeatureId>,
+                    revision: Option<u64>,
                 }
                 let p: P = args(params)?;
+                if p.revision.is_some_and(|r| r != self.revision) {
+                    return Err(fail("the document changed; refresh before previewing"));
+                }
                 let Some(kind) = p.feature else {
                     return Ok(json!({ "scene": null, "error": null }));
                 };
-                match self.model.preview(&kind, p.editing) {
+                match self
+                    .model
+                    .preview_scoped(&kind.kind, p.editing, kind.scope.as_deref())
+                {
                     Ok(state) => {
                         let scene = views::scene(&self.model.doc, &state).map_err(fail)?;
                         Ok(json!({ "scene": scene, "error": null }))
@@ -560,7 +805,7 @@ impl Session {
                 let p: P = args(params)?;
                 let state = self.visible();
                 let r = state
-                    .ref_for(p.kind, p.index)
+                    .qualified_ref_for(p.kind, p.index)
                     .ok_or_else(|| RpcError::params("nothing there"))?;
                 Ok(json!({ "ref": r }))
             }
@@ -612,14 +857,33 @@ impl Session {
                 struct P {
                     path: PathBuf,
                     format: Option<of_io::ExportFormat>,
+                    configuration: Option<u32>,
                 }
                 let p: P = args(params)?;
                 let format = p
                     .format
                     .or_else(|| of_io::ExportFormat::from_path(&p.path))
                     .ok_or_else(|| RpcError::params("export as .step, .iges or .stl"))?;
-                let body = self
-                    .model
+                let export_model;
+                let model = if let Some(configuration) = p.configuration {
+                    let mut doc = self.model.doc.clone();
+                    doc.configurations.active = configuration;
+                    doc.validate().map_err(RpcError::params)?;
+                    export_model = Model::new(doc);
+                    &export_model
+                } else {
+                    &self.model
+                };
+                if model
+                    .statuses()
+                    .iter()
+                    .any(|s| !s.rolled_back && !s.suppressed && s.error.is_some())
+                {
+                    return Err(fail(
+                        "resolve feature errors before exporting this configuration",
+                    ));
+                }
+                let body = model
                     .state()
                     .body
                     .as_ref()

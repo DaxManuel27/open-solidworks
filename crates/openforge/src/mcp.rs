@@ -23,6 +23,91 @@ fn obj(props: Value, required: &[&str]) -> Value {
 
 const TOOLS: &[Tool] = &[
     Tool {
+        name: "get_feature",
+        method: "doc.feature",
+        description: "Read the complete authored feature definition, including sketch geometry and constraints.",
+        schema: || obj(json!({"id":{"type":"integer","minimum":1}}), &["id"]),
+    },
+    Tool {
+        name: "set_parameter",
+        method: "parameter.set",
+        description: "Set a registered base parameter from part_info.parameters. Core units: mm/radians. Removes its base equation; configuration overrides can still take precedence. To change only a variant use update_configuration.",
+        schema: || {
+            obj(
+                json!({"key":{"type":"string"},"value":{"type":"number"}}),
+                &["key", "value"],
+            )
+        },
+    },
+    Tool {
+        name: "close_sketch",
+        method: "sketch.close",
+        description: "Finish the draft sketch before adding solid features. Does not commit the AI task.",
+        schema: || obj(json!({}), &[]),
+    },
+    Tool {
+        name: "set_equations",
+        method: "equations.set",
+        description: "Replace base global variables and equation bindings. Variables map names to formulas. Equations map stable keys from part_info.parameters (e.g. f2.end1.depth) to formulas such as width/2 + 1mm. Constants require explicit units for lengths/angles. Check equation_values and feature errors after the change.",
+        schema: || {
+            obj(
+                json!({ "variables": {"type":"object","additionalProperties":{"type":"string"}}, "equations": {"type":"object","additionalProperties":{"type":"string"}} }),
+                &["variables", "equations"],
+            )
+        },
+    },
+    Tool {
+        name: "create_configuration",
+        method: "configuration.create",
+        description: "Create and activate a configuration. Optionally duplicate copy_from configuration ID; otherwise inherit base values.",
+        schema: || {
+            obj(
+                json!({"name":{"type":"string"},"copy_from":{"type":"integer"}}),
+                &["name"],
+            )
+        },
+    },
+    Tool {
+        name: "update_configuration",
+        method: "configuration.update",
+        description: "Replace a configuration from part_info.configurations.items, retaining its ID. Supports name, parameters (numeric core units), equations, variables, suppressed feature IDs and material overrides. Feature creation/deletion/reorder edits the shared tree.",
+        schema: || {
+            obj(
+                json!({"configuration":{"type":"object"}}),
+                &["configuration"],
+            )
+        },
+    },
+    Tool {
+        name: "activate_configuration",
+        method: "configuration.activate",
+        description: "Activate a configuration ID, discard editing state and rebuild the part.",
+        schema: || obj(json!({"id":{"type":"integer"}}), &["id"]),
+    },
+    Tool {
+        name: "delete_configuration",
+        method: "configuration.delete",
+        description: "Delete a configuration by ID. At least one configuration must remain. Undo is available.",
+        schema: || obj(json!({"id":{"type":"integer"}}), &["id"]),
+    },
+    Tool {
+        name: "body_display",
+        method: "body.display",
+        description: "Rename or hide/show a body by stable ID from part_info.bodies. Display visibility does not change export or feature scope.",
+        schema: || {
+            obj(
+                json!({"id":{"type":"string"},"name":{"type":"string"},"hidden":{"type":"boolean"}}),
+                &["id"],
+            )
+        },
+    },
+    Tool {
+        name: "core_info",
+        method: "core.info",
+        description: "Protocol, scene and part-file versions and implemented core capabilities.",
+        schema: || obj(json!({}), &[]),
+    },
+    Tool {
         name: "part_info",
         method: "doc.info",
         description: "The feature tree, units, material and any feature errors of the open part.",
@@ -78,7 +163,9 @@ const TOOLS: &[Tool] = &[
     Tool {
         name: "add_feature",
         method: "feature.add",
-        description: r#"Add a feature. Examples (mm, radians): extrude {"type":"extrude","sketch":1,"end1":{"type":"blind","depth":10}}; cut through all {"type":"extrude","sketch":3,"cut":true,"end1":{"type":"through_all"},"reverse":true}; revolve {"type":"revolve","sketch":1,"axis":{"type":"sketch_entity","sketch":1,"entity":7},"angle":{"type":"blind","angle":6.283}}; fillet {"type":"fillet","edges":[edge refs],"radius":2}; chamfer {"type":"chamfer","edges":[...],"mode":{"type":"equal","distance":1}}; shell {"type":"shell","faces":[face refs],"thickness":2}; hole {"type":"hole","sketch":5,"kind":"counterbore","standard":"iso","size":"M6","end":{"type":"through_all"}} (holes go at the sketch's standalone points); plane {"type":"plane","mode":"offset","reference":{"type":"front_plane"},"distance":20}; linear pattern {"type":"linear_pattern","features":[4],"direction1":{"reference":{"type":"right_plane"},"spacing":10,"count":3}}; circular pattern {"type":"circular_pattern","features":[4],"axis":{...},"count":6,"angle":6.283}; mirror {"type":"mirror","plane":{"type":"right_plane"}}. Extrude end conditions: blind, through_all, up_to_next, up_to_vertex, up_to_surface, offset_from_surface, mid_plane. Revolve angle types: blind, mid_plane, two_direction, up_to_vertex {target}, up_to_surface {target}, offset_from_surface {target, offset, reverse_offset}; offset is a distance in mm."#,
+        description: r#"Add a feature. Examples (mm, radians): extrude {"type":"extrude","sketch":1,"end1":{"type":"blind","depth":10}}; cut through all {"type":"extrude","sketch":3,"cut":true,"end1":{"type":"through_all"},"reverse":true}; revolve {"type":"revolve","sketch":1,"axis":{"type":"sketch_entity","sketch":1,"entity":7},"angle":{"type":"blind","angle":6.283}}; fillet {"type":"fillet","edges":[edge refs],"radius":2}; chamfer {"type":"chamfer","edges":[...],"mode":{"type":"equal","distance":1}}; shell {"type":"shell","faces":[face refs],"thickness":2}; hole {"type":"hole","sketch":5,"kind":"counterbore","standard":"iso","size":"M6","end":{"type":"through_all"}} (holes go at the sketch's standalone points); plane {"type":"plane","mode":"offset","reference":{"type":"front_plane"},"distance":20}; linear pattern {"type":"linear_pattern","features":[4],"direction1":{"reference":{"type":"right_plane"},"spacing":10,"count":3}}; circular pattern {"type":"circular_pattern","features":[4],"axis":{...},"count":6,"angle":6.283}; mirror {"type":"mirror","plane":{"type":"right_plane"}}. Extrude end conditions: blind, through_all, up_to_next, up_to_vertex, up_to_surface, offset_from_surface, mid_plane. Revolve angle types: blind, mid_plane, two_direction, up_to_vertex {target}, up_to_surface {target}, offset_from_surface {target, offset, reverse_offset}; offset is a distance in mm.
+Phase 2 examples: combine {"type":"combine","bodies":["<id1>","<id2>"],"operation":"cut"}; move/copy {"type":"move_body","bodies":["<id>"],"translation":[10,0,0],"rotation":[0,0,0],"origin":[0,0,0],"copy":true}; split {"type":"split_body","bodies":["<id>"],"plane":{"type":"front_plane"},"keep":"both"}; helix {"type":"helix","plane":{"type":"front_plane"},"radius":5,"pitch":2,"turns":3}; composite_curve {"type":"composite_curve","segments":[{"reference":{"type":"feature","id":7},"reverse":false}]}; projected_curve or split_line {"type":"projected_curve","source":{"type":"feature","id":3},"target":<face ref>,"direction":[0,0,1]}; sweep {"type":"sweep","profile":1,"path":{"type":"feature","id":3},"orientation":"minimum_twist","cut":false,"merge":true}; loft {"type":"loft","profiles":[1,3],"reversed":[],"ruled":false,"cut":false,"merge":true}; draft {"type":"draft","faces":[<face ref>],"neutral_plane":{"type":"front_plane"},"angle":0.05}; variable_fillet {"type":"variable_fillet","edge":<edge ref>,"stations":[{"position":0,"radius":1},{"position":1,"radius":2}]}.
+Body IDs come from part_info.bodies. Optional scope:[body IDs] limits supported solid features to selected bodies. Sweep/loft require single closed sketch profiles without holes. A sweep path is one connected sketch, construction curve or edge. Split supports a plane and at most one piece per side of each body. See core_info for capabilities. Check the returned feature errors after each operation."#,
         schema: || {
             obj(
                 json!({ "feature": { "type": "object" }, "name": { "type": "string" } }),
@@ -139,8 +226,13 @@ const TOOLS: &[Tool] = &[
     Tool {
         name: "export",
         method: "export",
-        description: "Export the body to a .step, .iges or .stl file.",
-        schema: || obj(json!({ "path": { "type": "string" } }), &["path"]),
+        description: "Export the active configuration to a .step, .iges or .stl file, or supply a configuration ID. Hidden bodies remain included.",
+        schema: || {
+            obj(
+                json!({ "path": { "type": "string" }, "configuration": { "type": "integer" } }),
+                &["path"],
+            )
+        },
     },
     Tool {
         name: "import",
@@ -225,4 +317,25 @@ pub fn run(mut session: Session) -> anyhow::Result<()> {
         out.flush()?;
     }
     Ok(())
+}
+
+/// Same operations as MCP, restricted to private document editing and inspection.
+pub fn assistant_methods() -> Vec<&'static str> {
+    TOOLS
+        .iter()
+        .filter(|t| {
+            !matches!(
+                t.method,
+                "doc.new" | "doc.open" | "doc.save" | "export" | "import" | "doc.undo"
+            )
+        })
+        .map(|t| t.method)
+        .collect()
+}
+pub fn assistant_catalog() -> Value {
+    let allowed = assistant_methods();
+    json!({"tools": TOOLS.iter().filter(|t| allowed.contains(&t.method)).map(|t| json!({
+        "name":t.name,"method":t.method,"description":t.description,"parameters":(t.schema)(),
+        "read_only":matches!(t.method,"core.info"|"doc.info"|"doc.feature"|"doc.topology"|"sketch.get"|"measure"|"mass_properties")
+    })).collect::<Vec<_>>()})
 }

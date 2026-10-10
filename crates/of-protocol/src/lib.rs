@@ -2,11 +2,23 @@
 //! the CLI and the MCP server), carried as JSON-RPC 2.0, one message per line.
 //!
 //! The method list and payload shapes are documented in `docs/protocol.md`
-//! and mirrored in `apps/desktop/src/shared/protocol.ts`.
+//! and mirrored in `apps/desktop/src/renderer/src/protocol.ts`.
 
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+pub const PROTOCOL_VERSION: u32 = 2;
+pub const SCENE_VERSION: u32 = 2;
+
+/// Capabilities describe implemented behavior, never planned features.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CoreInfo {
+    pub protocol_version: u32,
+    pub scene_version: u32,
+    pub part_file_version: u32,
+    pub capabilities: Vec<String>,
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Request {

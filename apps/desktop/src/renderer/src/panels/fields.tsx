@@ -10,6 +10,7 @@ export function PanelShell(props: {
   okDisabled?: boolean
   error?: string | null
   children: ReactNode
+  footer?: ReactNode
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -39,7 +40,10 @@ export function PanelShell(props: {
         </button>
       </div>
       {props.error && <div className="panel-error">{props.error}</div>}
-      <div className="panel-body">{props.children}</div>
+      <div className="panel-body">
+        {props.children}
+        {props.footer}
+      </div>
     </div>
   )
 }
@@ -227,6 +231,10 @@ export function Choice<T extends string | number>(props: {
 export function refLabel(r: Ref, features: FeatureView[]): string {
   const fname = (id: number) => features.find((f) => f.id === id)?.name ?? `#${id}`
   switch (r.type) {
+    case 'body':
+      return `Body ${r.id}`
+    case 'body_topology':
+      return `${r.kind} · ${r.body}`
     case 'origin':
       return 'Origin'
     case 'front_plane':
@@ -359,13 +367,14 @@ export function RefBox(props: {
 export function usePreview(params: FeatureParams | null, editing?: number) {
   const preview = useStore((s) => s.previewScene)
   const error = useStore((s) => s.previewError)
+  const revision = useStore((s) => s.snapshot?.revision)
   const json = JSON.stringify(params)
   useEffect(() => {
     const t = setTimeout(() => {
       void useStore.getState().preview(json === 'null' ? null : JSON.parse(json), editing)
     }, 200)
     return () => clearTimeout(t)
-  }, [json, editing])
+  }, [json, editing, revision])
   return { preview, error }
 }
 

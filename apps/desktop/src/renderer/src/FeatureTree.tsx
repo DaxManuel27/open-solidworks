@@ -34,6 +34,19 @@ export function panelFor(f: FeatureView): PanelType | null {
       return f.params['cut'] ? 'cut' : 'extrude'
     case 'revolve':
       return f.params['cut'] ? 'cut_revolve' : 'revolve'
+    case 'sweep':
+      return f.params['cut'] ? 'sweep_cut' : 'sweep'
+    case 'loft':
+      return f.params['cut'] ? 'loft_cut' : 'loft'
+    case 'draft':
+    case 'variable_fillet':
+    case 'helix':
+    case 'composite_curve':
+    case 'split_line':
+    case 'projected_curve':
+    case 'combine':
+    case 'move_body':
+    case 'split_body':
     case 'fillet':
     case 'chamfer':
     case 'shell':
@@ -80,6 +93,8 @@ interface Menu {
 
 export function FeatureTree() {
   const snapshot = useStore((s) => s.snapshot)
+  const bodies = useStore((s) => s.scene?.bodies) ?? []
+  const editing = useStore((s) => !!s.panel || !!s.sketch || s.busy)
   const treeSelection = useStore((s) => s.treeSelection)
   const selection = useStore((s) => s.selection)
   const run = useStore((s) => s.run)
@@ -99,7 +114,8 @@ export function FeatureTree() {
     const onKey = (e: KeyboardEvent) => {
       const s = useStore.getState()
       if (
-        (e.target as HTMLElement).tagName === 'INPUT' ||
+        ['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement).tagName) ||
+        (e.target as HTMLElement).isContentEditable ||
         s.sketch ||
         s.panel ||
         s.treeSelection === null
@@ -231,10 +247,59 @@ export function FeatureTree() {
       <div
         className="tree-item meta"
         onClick={() => useStore.getState().openPanel({ type: 'material' })}
-        title="Edit material"
+        title="Active configuration material; click to edit shared base material"
       >
         <span className="icon">◈</span>
-        <span className="name">{snapshot.material?.name ?? 'Material <not specified>'}</span>
+        <span className="name">
+          {snapshot.effective_material?.name ?? 'Material <not specified>'}
+        </span>
+      </div>
+      <div className="section-body">
+        <label className="field">
+          <span>Configuration</span>
+          <select
+            aria-label="Active configuration"
+            disabled={editing}
+            value={snapshot.configurations.active}
+            onChange={(e) => void run('configuration.activate', { id: Number(e.target.value) })}
+          >
+            {snapshot.configurations.items.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          aria-label="New configuration"
+          disabled={editing}
+          onClick={() => {
+            const name = prompt('New configuration name')
+            if (name?.trim()) void run('configuration.create', { name })
+          }}
+        >
+          New
+        </button>
+        <button
+          aria-label="Duplicate configuration"
+          disabled={editing}
+          onClick={() => {
+            const name = prompt('Copy configuration as')
+            if (name?.trim())
+              void run('configuration.create', { name, copy_from: snapshot.configurations.active })
+          }}
+        >
+          Duplicate
+        </button>
+        <button
+          disabled={editing || snapshot.configurations.items.length < 2}
+          onClick={() => {
+            if (confirm('Delete this configuration?'))
+              void run('configuration.delete', { id: snapshot.configurations.active })
+          }}
+        >
+          Delete
+        </button>
       </div>
       {STD.map((p) => {
         const on = selection.some((s) => JSON.stringify(s.ref) === JSON.stringify(p.ref))
@@ -255,6 +320,31 @@ export function FeatureTree() {
           </div>
         )
       })}
+      <div className="tree-item meta">Bodies ({bodies.length})</div>
+      {bodies.map((body) => (
+        <div className="tree-item" key={body.id}>
+          <input
+            type="checkbox"
+            aria-label={`Show ${body.name}`}
+            checked={!body.hidden}
+            onChange={() => void run('body.display', { id: body.id, hidden: !body.hidden })}
+          />
+          <button
+            className="link"
+            onClick={() => {
+              const index = body.faces[0]
+              if (index !== undefined) void useStore.getState().pick({ kind: 'face', index }, false)
+            }}
+            onDoubleClick={() => {
+              const name = prompt('Body name', body.name)
+              if (name?.trim()) void run('body.display', { id: body.id, name })
+            }}
+            title="Select; double-click to rename"
+          >
+            {body.name}
+          </button>
+        </div>
+      ))}
       {rows}
       <div className="tree-tail" {...dropZone(features.length)} />
       {menu && (

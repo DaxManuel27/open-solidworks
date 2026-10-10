@@ -2,10 +2,24 @@
 // and the serde shapes in crates/of-model. Lengths are mm, angles radians.
 
 export type Vec3 = [number, number, number]
+export interface CoreInfo {
+  protocol_version: number
+  scene_version: number
+  part_file_version: number
+  capabilities: string[]
+}
+
+export interface PreviewResult {
+  revision: number
+  scene: Scene | null
+  error: string | null
+}
 export type Vec2 = [number, number]
 export type Kind = 'face' | 'edge' | 'vertex'
 
 export type Ref =
+  | { type: 'body'; id: string }
+  | { type: 'body_topology'; body: string; kind: Kind; name: string }
   | { type: 'origin' }
   | { type: 'front_plane' }
   | { type: 'top_plane' }
@@ -40,7 +54,18 @@ export type DatumGeometry =
   | { type: 'point'; point: Vec3 }
   | { type: 'coord_sys'; origin: Vec3; x: Vec3; y: Vec3; z: Vec3 }
 
+export interface BodyView {
+  id: string
+  name: string
+  hidden: boolean
+  faces: number[]
+  edges: number[]
+  vertices: number[]
+}
+
 export interface Scene {
+  curves: { id: number; name: string; polylines: number[][] }[]
+  bodies: BodyView[]
   body: MeshPayload | null
   bbox: { min: Vec3; max: Vec3 } | null
   datums: { id: number; name: string; geometry: DatumGeometry }[]
@@ -85,16 +110,51 @@ export interface Units {
 }
 
 export interface Snapshot {
+  generation: string
+  configurations: { active: number; next_id: number; items: Configuration[] }
+  variables: Record<string, string>
+  equations: Record<string, string>
+  equation_values: Record<string, EquationValue>
+  parameters: Parameter[]
+  revision: number
   features: FeatureView[]
   rollback: number | null
   units: Units
   material: { name: string; density: number } | null
+  effective_material: { name: string; density: number } | null
   path: string | null
   dirty: boolean
   can_undo: boolean
   can_redo: boolean
   editing: number | null
   scene?: Scene
+}
+
+export interface Quantity {
+  value: number
+  length: number
+  angle: number
+}
+export interface Parameter {
+  key: string
+  feature: number
+  path: string
+  value: Quantity
+  integer: boolean
+}
+export interface EquationValue {
+  value: Quantity | null
+  error: string | null
+}
+export interface Configuration {
+  id: number
+  name: string
+  parameters: Record<string, number>
+  equations: Record<string, string | null>
+  variables: Record<string, string>
+  suppressed: Record<string, boolean>
+  material:
+    { mode: 'inherit' | 'clear' } | { mode: 'set'; value: { name: string; density: number } }
 }
 
 export type Definition = 'under' | 'fully' | 'over'
@@ -133,6 +193,7 @@ export interface SketchConstraint {
 }
 
 export interface SketchView {
+  revision: number
   id: number
   plane: PlaneData
   points: SketchPoint[]

@@ -25,6 +25,11 @@ pub(crate) fn build(
     state: &mut State,
 ) -> RResult<()> {
     let result = match kind {
+        FeatureKind::SplitLine(p) => split_line(fid, p, prev, state),
+        FeatureKind::Draft(p) => draft(fid, p, prev, state),
+        FeatureKind::VariableFillet(p) => variable_fillet(fid, p, prev, state),
+        FeatureKind::Sweep(p) => sweep(fid, p, prev, state),
+        FeatureKind::Loft(p) => loft(fid, p, prev, state),
         FeatureKind::Extrude(e) => extrude(fid, e, prev, state),
         FeatureKind::Revolve(r) => revolve(fid, r, prev, state),
         FeatureKind::Fillet(f) => fillet(fid, f, prev, state),
@@ -45,6 +50,207 @@ pub(crate) fn build(
 
 fn geo(e: impl std::fmt::Display) -> String {
     e.to_string()
+}
+
+fn split_line(
+    fid: FeatureId,
+    p: &crate::ProjectedCurve,
+    prev: &State,
+    state: &mut State,
+) -> RResult<()> {
+    let body = body_of(prev)?;
+    let (kind, face) = prev.index_of(&p.target)?;
+    if kind != Kind::Face {
+        return Err("select a face to split".into());
+    }
+    let wire = crate::curves::projected(p, prev)?;
+    let result = body.shape.split_face(face, &wire).map_err(geo)?;
+    if result.shape.count(Kind::Face) <= body.shape.count(Kind::Face) {
+        return Err("the projected curve does not divide the face".into());
+    }
+    let names = dressup_names(fid, "split", body, &result);
+    state.body = Some(Body {
+        shape: result.shape,
+        names,
+    });
+    Ok(())
+}
+
+fn variable_fillet(
+    fid: FeatureId,
+    p: &crate::VariableFillet,
+    prev: &State,
+    state: &mut State,
+) -> RResult<()> {
+    let body = body_of(prev)?;
+    let (kind, edge) = prev.index_of(&p.edge)?;
+    if kind != Kind::Edge {
+        return Err("select an edge to fillet".into());
+    }
+    let stations: Vec<_> = if p.reverse {
+        p.stations
+            .iter()
+            .rev()
+            .map(|s| (1.0 - s.position, s.radius))
+            .collect()
+    } else {
+        p.stations.iter().map(|s| (s.position, s.radius)).collect()
+    };
+    let result = body.shape.variable_fillet(edge, &stations).map_err(geo)?;
+    let names = dressup_names(fid, "vf", body, &result);
+    remember_dressup(fid, body, &result.shape, &names, state)?;
+    state.body = Some(Body {
+        shape: result.shape,
+        names,
+    });
+    Ok(())
+}
+
+fn draft(fid: FeatureId, p: &crate::Draft, prev: &State, state: &mut State) -> RResult<()> {
+    let body = body_of(prev)?;
+    let plane = resolve(prev, &p.neutral_plane)?.plane()?;
+    let direction = match &p.direction {
+        Some(r) => resolve(prev, r)?.direction()?,
+        None => plane.normal,
+    };
+    let faces = p
+        .faces
+        .iter()
+        .map(|r| {
+            let (kind, index) = prev.index_of(r)?;
+            if kind != Kind::Face {
+                return Err("select faces to draft".into());
+            }
+            Ok(index)
+        })
+        .collect::<RResult<Vec<_>>>()?;
+    let result = body
+        .shape
+        .draft(&faces, &plane, direction, p.angle)
+        .map_err(geo)?;
+    let names = dressup_names(fid, "draft", body, &result);
+    remember_dressup(fid, body, &result.shape, &names, state)?;
+    state.body = Some(Body {
+        shape: result.shape,
+        names,
+    });
+    Ok(())
+}
+
+fn section_names(prev: &State, id: FeatureId, shape: &Shape) -> RResult<Vec<String>> {
+    let (plane, sketch) = sketch_of(prev, id)?;
+    let curves = sketch
+        .curve_ids()
+        .filter_map(|id| sketch.curve(id).ok().map(|c| (id, c)))
+        .collect::<Vec<_>>();
+    (0..shape.count(Kind::Edge))
+        .map(|edge| {
+            let mid = plane.to_local(shape.edge_info(edge).map_err(geo)?.mid);
+            let (entity, _) = curves
+                .iter()
+                .min_by(|a, b| {
+                    (a.1.closest_point(mid) - mid)
+                        .length()
+                        .total_cmp(&(b.1.closest_point(mid) - mid).length())
+                })
+                .ok_or("profile has no curves")?;
+            Ok(format!("s{id}.e{entity}"))
+        })
+        .collect()
+}
+
+fn sweep(fid: FeatureId, p: &crate::Sweep, prev: &State, state: &mut State) -> RResult<()> {
+    let (plane, section) = crate::curves::section(prev, p.profile)?;
+    let path = crate::curves::path(prev, &p.path)?;
+    let path = if p.reverse_path {
+        path.reversed()
+    } else {
+        path
+    };
+    let orientation = match p.orientation {
+        crate::SweepOrientation::MinimumTwist => 0,
+        crate::SweepOrientation::Frenet => 1,
+        crate::SweepOrientation::Fixed => 2,
+    };
+    let result = section.sweep(&path, &plane, orientation).map_err(geo)?;
+    let edges = section_names(prev, p.profile, &section)?;
+    let names = Naming::from_history(
+        &result.shape,
+        &result.history,
+        Inputs {
+            named: [None, None],
+        },
+        &mut |h| {
+            if h.rel == Relation::StartCap {
+                return Some(format!("{fid}.start"));
+            }
+            if h.rel == Relation::EndCap {
+                return Some(format!("{fid}.end"));
+            }
+            (h.input == 0 && h.from_kind == Kind::Edge)
+                .then(|| edges.get(h.from as usize).map(|e| format!("{fid}.{e}")))
+                .flatten()
+        },
+        &fid.to_string(),
+    );
+    apply_tool(
+        fid,
+        state,
+        result.shape,
+        names,
+        if p.cut { BoolOp::Cut } else { BoolOp::Fuse },
+        p.merge,
+    )
+}
+
+fn loft(fid: FeatureId, p: &crate::Loft, prev: &State, state: &mut State) -> RResult<()> {
+    if p.profiles.len() < 2 {
+        return Err("select at least two ordered profiles".into());
+    }
+    let mut unique = std::collections::HashSet::new();
+    if p.profiles.iter().any(|id| !unique.insert(id)) {
+        return Err("each loft profile must be different".into());
+    }
+    let mut profiles = Vec::new();
+    let mut edges = Vec::new();
+    for id in &p.profiles {
+        let (_, section) = crate::curves::section(prev, *id)?;
+        let section = if p.reversed.contains(id) {
+            section.reversed()
+        } else {
+            section
+        };
+        edges.extend(section_names(prev, *id, &section)?);
+        profiles.push(section);
+    }
+    let result = Shape::loft(&profiles, p.ruled).map_err(geo)?;
+    let names = Naming::from_history(
+        &result.shape,
+        &result.history,
+        Inputs {
+            named: [None, None],
+        },
+        &mut |h| {
+            if h.rel == Relation::StartCap {
+                return Some(format!("{fid}.start"));
+            }
+            if h.rel == Relation::EndCap {
+                return Some(format!("{fid}.end"));
+            }
+            (h.from_kind == Kind::Edge)
+                .then(|| edges.get(h.from as usize).map(|e| format!("{fid}.{e}")))
+                .flatten()
+        },
+        &fid.to_string(),
+    );
+    apply_tool(
+        fid,
+        state,
+        result.shape,
+        names,
+        if p.cut { BoolOp::Cut } else { BoolOp::Fuse },
+        p.merge,
+    )
 }
 
 pub(crate) fn to_geom(c: &SCurve) -> GCurve {
@@ -1287,8 +1493,12 @@ pub fn convert_edges(
         let Ok(Resolved::Edge { index, info }) = resolve(state, r) else {
             return Err("select model edges to convert".into());
         };
-        let Ref::Edge { name } = r else {
-            unreachable!()
+        let name = match r {
+            Ref::Edge { name } => name.clone(),
+            Ref::BodyTopology {
+                kind: Kind::Edge, ..
+            } => serde_json::to_string(r).map_err(geo)?,
+            _ => return Err("select an edge to convert".into()),
         };
         let local = |p: DVec3| plane.to_local(p);
         let flat = info.axis.cross(plane.normal).length() < 1e-6;

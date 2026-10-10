@@ -3,6 +3,7 @@ import { call } from '../core'
 import type { EndCondition, FeatureParams, FeatureView, Ref, SketchView, Thin } from '../protocol'
 import { type Panel, type PickKind, useStore } from '../store'
 import { formatLength } from '../units'
+import { BodyScope } from './bodies'
 import {
   AngleField,
   Check,
@@ -23,6 +24,10 @@ const AXIS: PickKind[] = ['edge', 'face', 'datum']
 const PATTERNABLE = new Set([
   'extrude',
   'revolve',
+  'sweep',
+  'loft',
+  'draft',
+  'variable_fillet',
   'fillet',
   'chamfer',
   'shell',
@@ -42,17 +47,26 @@ function useParams<T>(panel: Panel, defaults: () => T): [T, (p: T) => void] {
 }
 
 /** Shared OK/Cancel/preview wiring for feature panels. */
-function useFeature(panel: Panel, params: FeatureParams | null) {
-  const { error } = usePreview(params, panel.editing)
+export function useFeature(panel: Panel, params: FeatureParams | null) {
+  const supportsScope = params && PATTERNABLE.has(params.type) && params.type !== 'import'
+  const [scope, setScope] = useState<string[] | null>(
+    () =>
+      (useStore.getState().snapshot?.features.find((f) => f.id === panel.editing)?.params[
+        'scope'
+      ] as string[] | null) ?? null,
+  )
+  const scoped = params ? { ...params, scope } : null
+  const { error } = usePreview(scoped, panel.editing)
   const commit = useStore((s) => s.commit)
   const close = useStore((s) => s.closePanel)
   return {
     error,
     onOk: () => {
-      if (params) void commit(params, panel.editing)
+      if (scoped) void commit(scoped, panel.editing)
     },
     onCancel: () => void close(),
     okDisabled: !params,
+    footer: supportsScope ? <BodyScope value={scope} onChange={setScope} /> : undefined,
   }
 }
 
@@ -595,8 +609,12 @@ function selectedRefs(kinds: string[]): Ref[] {
 
 function splitEdgesFaces(refs: Ref[]): { edges: Ref[]; faces: Ref[] } {
   return {
-    edges: refs.filter((r) => r.type === 'edge'),
-    faces: refs.filter((r) => r.type === 'face'),
+    edges: refs.filter(
+      (r) => r.type === 'edge' || (r.type === 'body_topology' && r.kind === 'edge'),
+    ),
+    faces: refs.filter(
+      (r) => r.type === 'face' || (r.type === 'body_topology' && r.kind === 'face'),
+    ),
   }
 }
 

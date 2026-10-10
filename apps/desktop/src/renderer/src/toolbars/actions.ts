@@ -9,7 +9,7 @@ export function beginSketch(): void | Promise<void> {
   const sel = s.selection[0]?.ref
   if (
     sel &&
-    PLANE_LIKE.has(sel.type) &&
+    (PLANE_LIKE.has(sel.type) || (sel.type === 'body_topology' && sel.kind === 'face')) &&
     (sel.type !== 'feature' || s.selection[0]!.pick.kind === 'datum')
   ) {
     return s.startSketch(sel)

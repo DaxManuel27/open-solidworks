@@ -8,11 +8,25 @@ import {
   type MenuItemConstructorOptions,
 } from 'electron'
 import { CoreError, CoreProcess, findCore } from './core'
+import { chatGPT, chatGPTState, openChatGPTUsage, cancelChatGPTSignIn } from './assistant/chatgpt'
+import { AssistantCoordinator } from './assistant/coordinator'
+import { loadSettings, publicSettings, saveSettings } from './assistant/settings'
+import type { AssistantRequest, AssistantSettings } from '../shared/assistant'
 
 let win: BrowserWindow | null = null
 let core: CoreProcess | null = null
 let dirty = false
 let closing = false
+const assistant = new AssistantCoordinator(
+  (method, params) => {
+    if (!core) return Promise.reject(new Error('The core is not running.'))
+    return core.call(method, params)
+  },
+  (event) => {
+    if (event.type === 'committed') dirty = true
+    win?.webContents.send('assistant:event', event)
+  },
+)
 
 const PART_FILTER = { name: 'OpenForge Part', extensions: ['ofp'] }
 
@@ -21,6 +35,8 @@ function startCore(): void {
   core = new CoreProcess(path)
   core.onExit = (code) => {
     if (closing) return
+    assistant.stop()
+    void assistant.discard()
     win?.webContents.send('core:crashed', code)
     // Restart so the user can keep working (unsaved changes are lost).
     setTimeout(startCore, 500)
@@ -145,13 +161,44 @@ function createWindow(): void {
 ipcMain.handle('core:call', async (_e, method: string, params: unknown) => {
   if (!core) throw new Error('The core is not running.')
   try {
-    return { ok: true, value: await core.call(method, params) }
+    const value = await core.call(method, params)
+    assistant.changed(value as Parameters<typeof assistant.changed>[0])
+    return { ok: true, value }
   } catch (e) {
     // Errors cross the IPC boundary as values so the message survives intact.
     const err = e as CoreError
     return { ok: false, error: err.message, code: err.code ?? -1 }
   }
 })
+
+ipcMain.handle('assistant:settings', () => publicSettings())
+ipcMain.handle('assistant:save-settings', (_e, settings: AssistantSettings, key?: string) => {
+  assistant.assertIdle()
+  return saveSettings(settings, key)
+})
+ipcMain.handle('assistant:test', () => assistant.test())
+ipcMain.handle('assistant:run', (_e, request: AssistantRequest) => assistant.run(request))
+ipcMain.handle('assistant:accept', (_e, id: string) => assistant.accept(id))
+ipcMain.handle('assistant:discard', () => assistant.discard())
+ipcMain.handle('chatgpt:state', () => chatGPTState())
+ipcMain.handle('chatgpt:models', () => chatGPT().models())
+ipcMain.handle('chatgpt:sign-in', async (_e, id?: string) => {
+  assistant.assertIdle()
+  await chatGPT().signIn(id)
+  return chatGPTState()
+})
+ipcMain.handle('chatgpt:select', (_e, id: string) => {
+  assistant.assertIdle()
+  chatGPT().select(id)
+  return chatGPTState()
+})
+ipcMain.handle('chatgpt:sign-out', (_e, id: string) => {
+  assistant.assertIdle()
+  return chatGPT().signOut(id)
+})
+ipcMain.handle('chatgpt:usage', () => openChatGPTUsage())
+ipcMain.on('chatgpt:cancel', () => chatGPT().cancel())
+ipcMain.on('assistant:stop', () => assistant.stop())
 
 ipcMain.handle('dialog:open', async (_e, kind: 'part' | 'import') => {
   const filters =
@@ -186,8 +233,16 @@ ipcMain.on('window:close', () => {
   win?.close()
 })
 
+const primaryInstance = app.requestSingleInstanceLock()
+if (!primaryInstance) app.quit()
+app.on('second-instance', () => {
+  win?.show()
+  win?.focus()
+})
 void app.whenReady().then(() => {
+  if (!primaryInstance) return
   try {
+    loadSettings()
     startCore()
   } catch (e) {
     dialog.showErrorBox('OpenForge', (e as Error).message)
@@ -203,6 +258,8 @@ void app.whenReady().then(() => {
 
 app.on('before-quit', () => {
   closing = true
+  cancelChatGPTSignIn()
+  assistant.stop()
   core?.stop()
 })
 

@@ -6,9 +6,11 @@
 //! shape; `of-model` maps them to stable names across rebuilds using the
 //! [`History`] every operation returns.
 
+mod curves;
 mod plane;
 mod profile;
 
+pub use curves::Curve3;
 pub use glam::{DAffine3, DMat3, DVec2, DVec3};
 pub use plane::Plane;
 pub use profile::{Curve2, Profile, ProfileFace};
@@ -277,6 +279,11 @@ impl Shape {
         Ok(Shape(ffi::sub_shape(&self.0, kind as u8, index)?))
     }
 
+    /// Map this shape's sub-shapes to a containing compound by kernel identity.
+    pub fn indices_in(&self, whole: &Shape, kind: Kind) -> Result<Vec<u32>> {
+        Ok(ffi::indices_in(&self.0, &whole.0, kind as u8)?)
+    }
+
     /// The solids in this shape, each as its own shape.
     pub fn solids(&self) -> Vec<Shape> {
         (0..self.count(Kind::Solid))
@@ -328,6 +335,15 @@ impl Shape {
         let s = ffi::prism(&self.0, &v3(dir), &mut h)?;
         Ok(OpResult {
             shape: Shape(s),
+            history: convert_history(h),
+        })
+    }
+
+    pub fn split_plane(&self, plane: &Plane) -> Result<OpResult> {
+        let mut h = Vec::new();
+        let shape = ffi::split_plane(&self.0, &plane.to_ffi(), &mut h)?;
+        Ok(OpResult {
+            shape: Shape(shape),
             history: convert_history(h),
         })
     }

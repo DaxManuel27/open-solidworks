@@ -1,6 +1,15 @@
 import { create } from 'zustand'
 import { CallFailed, call } from './core'
-import type { FeatureParams, Kind, Ref, Scene, SketchView, Snapshot } from './protocol'
+import type {
+  CoreInfo,
+  FeatureParams,
+  Kind,
+  PreviewResult,
+  Ref,
+  Scene,
+  SketchView,
+  Snapshot,
+} from './protocol'
 
 /** Something picked in the viewport. */
 export type Pick =
@@ -15,6 +24,21 @@ export interface PickTarget {
 }
 
 export type PanelType =
+  | 'draft'
+  | 'variable_fillet'
+  | 'sweep'
+  | 'sweep_cut'
+  | 'loft'
+  | 'loft_cut'
+  | 'helix'
+  | 'composite_curve'
+  | 'split_line'
+  | 'projected_curve'
+  | 'configurations'
+  | 'equations'
+  | 'combine'
+  | 'move_body'
+  | 'split_body'
   | 'extrude'
   | 'cut'
   | 'revolve'
@@ -142,6 +166,7 @@ interface Actions {
 }
 
 let toastId = 1
+let previewSequence = 0
 let dragInFlight = false
 let pendingDrag: { point: number; to: [number, number] } | null = null
 
@@ -178,14 +203,35 @@ export const useStore = create<State & Actions>((set, get) => ({
   tab: 'features',
 
   async init() {
-    await get().run('doc.info')
+    try {
+      const info = await call<CoreInfo>('core.info')
+      if (info.protocol_version !== 2 || info.scene_version !== 2)
+        throw new Error(
+          'The core and desktop versions do not match. Rebuild both before opening a part.',
+        )
+      await get().run('doc.info')
+    } catch (e) {
+      get().toast((e as Error).message)
+    }
   },
 
   async run(method, params) {
-    set({ busy: true })
+    ++previewSequence
+    set({ busy: true, previewScene: null, previewError: null })
     try {
       const snap = await call<Snapshot>(method, params)
+      if (snap.revision < (get().snapshot?.revision ?? -1)) return null
       const update: Partial<State> = { snapshot: snap }
+      if (method.startsWith('configuration.')) {
+        Object.assign(update, {
+          sketch: null,
+          panel: null,
+          selection: [],
+          highlights: [],
+          pickTarget: null,
+          treeSelection: null,
+        })
+      }
       if (snap.scene) update.scene = snap.scene
       set(update)
       const title = `${fileName(snap.path)}${snap.dirty ? ' •' : ''} — OpenForge`
@@ -316,7 +362,7 @@ export const useStore = create<State & Actions>((set, get) => ({
   async setHighlights(refs) {
     const out: { kind: Kind; index: number }[] = []
     for (const r of refs) {
-      if (r.type !== 'face' && r.type !== 'edge' && r.type !== 'vertex') continue
+      if (!['face', 'edge', 'vertex', 'body_topology'].includes(r.type)) continue
       try {
         const loc = await call<{ kind: Kind; index: number } | null>('select.locate', { ref: r })
         if (loc) out.push(loc)
@@ -336,11 +382,13 @@ export const useStore = create<State & Actions>((set, get) => ({
   },
 
   openPanel(p) {
+    ++previewSequence
     set({ panel: p, previewScene: null, previewError: null, highlights: [], pickTarget: null })
     if (p.editing !== undefined) void get().run('edit.begin', { id: p.editing })
   },
 
   async closePanel() {
+    ++previewSequence
     const editing = get().panel?.editing
     set({ panel: null, previewScene: null, previewError: null, highlights: [], pickTarget: null })
     await call('feature.preview', { feature: null })
@@ -348,14 +396,17 @@ export const useStore = create<State & Actions>((set, get) => ({
   },
 
   async preview(params, editing) {
+    const sequence = ++previewSequence
+    const revision = get().snapshot?.revision
+    const panel = get().panel
+    const current = () =>
+      sequence === previewSequence && get().panel === panel && get().snapshot?.revision === revision
     try {
-      const r = await call<{ scene: Scene | null; error: string | null }>('feature.preview', {
-        feature: params,
-        editing,
-      })
-      set({ previewScene: r.scene, previewError: r.error })
+      const r = await call<PreviewResult>('feature.preview', { feature: params, editing, revision })
+      if (current() && r.revision === revision)
+        set({ previewScene: r.scene, previewError: r.error })
     } catch (e) {
-      set({ previewScene: null, previewError: (e as Error).message })
+      if (current()) set({ previewScene: null, previewError: (e as Error).message })
     }
   },
 
@@ -424,7 +475,7 @@ export const useStore = create<State & Actions>((set, get) => ({
       const v = await call<SketchView>('sketch.edit', { id, op })
       set({ sketch: v })
       if (op['op'] !== 'drag')
-        set({ snapshot: { ...get().snapshot!, dirty: true, can_undo: true } })
+        set({ snapshot: { ...get().snapshot!, revision: v.revision, dirty: true, can_undo: true } })
       return v
     } catch (e) {
       get().toast((e as Error).message)

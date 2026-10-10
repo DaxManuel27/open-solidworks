@@ -1,0 +1,139 @@
+.assistant-toggle {
+  position: absolute;
+  right: 8px;
+  bottom: 3px;
+  z-index: 20;
+  padding: 1px 8px;
+}
+.assistant-pane {
+  width: 360px;
+  min-width: 290px;
+  max-width: 48vw;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.assistant-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border-bottom: 1px solid var(--line);
+}
+.assistant-head strong {
+  flex: 1;
+}
+.assistant-messages {
+  flex: 1;
+  min-height: 60px;
+  overflow: auto;
+  padding: 12px;
+  user-select: text;
+}
+.assistant-message {
+  margin: 0 0 14px;
+  padding: 10px;
+  border-radius: 6px;
+  background: var(--panel-2);
+  overflow-wrap: anywhere;
+}
+.assistant-message.user {
+  background: var(--accent-soft);
+}
+.assistant-message.status {
+  border-left: 3px solid var(--accent);
+}
+.assistant-message p {
+  margin: 5px 0 0;
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+.assistant-pane form,
+.assistant-settings {
+  padding: 10px;
+  border-top: 1px solid var(--line);
+}
+.assistant-settings {
+  overflow: auto;
+  max-height: 60%;
+}
+.assistant-settings label {
+  display: block;
+  margin: 7px 0;
+}
+.assistant-settings label > input:not([type='checkbox']),
+.assistant-settings select {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+}
+.assistant-settings p,
+.assistant-context,
+.assistant-progress {
+  font-size: 12px;
+  color: var(--muted);
+}
+.assistant-pane textarea {
+  display: block;
+  resize: vertical;
+  width: 100%;
+  min-height: 75px;
+  max-height: 180px;
+  margin: 8px 0;
+  padding: 8px;
+  font: inherit;
+  color: var(--fg);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  user-select: text;
+}
+.assistant-actions,
+.assistant-context {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.assistant-context,
+.assistant-progress {
+  padding: 5px 10px;
+  margin: 0;
+}
+.assistant-context span {
+  margin-left: auto;
+}
+.assistant-pane small {
+  display: block;
+  color: var(--muted);
+  margin-top: 6px;
+}
+@media (max-width: 1100px) {
+  .assistant-pane {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 15;
+    box-shadow: -4px 0 20px #0003;
+    max-width: 60vw;
+  }
+}
+
+.main {
+  position: relative;
+}
+@media (min-width: 1101px) {
+  .main:has(.assistant-pane) {
+    grid-template-columns: 280px minmax(0, 1fr) 360px;
+  }
+}
+.assistant-toggle {
+  position: fixed;
+}
+.statusbar {
+  padding-right: 110px;
+}

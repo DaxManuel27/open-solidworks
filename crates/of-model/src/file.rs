@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::Document;
 
 pub const FORMAT: &str = "openforge-part";
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 
 #[derive(Serialize, Deserialize)]
 struct PartFile {
@@ -24,7 +24,14 @@ pub fn to_string(doc: &Document) -> String {
 }
 
 pub fn from_str(text: &str) -> Result<Document, String> {
-    let f: PartFile =
+    // Decode the envelope first: a future feature must not hide the version error.
+    #[derive(Deserialize)]
+    struct Envelope {
+        format: String,
+        version: u32,
+        document: serde_json::Value,
+    }
+    let f: Envelope =
         serde_json::from_str(text).map_err(|e| format!("not a valid part file: {e}"))?;
     if f.format != FORMAT {
         return Err("not an OpenForge part file".into());
@@ -35,14 +42,26 @@ pub fn from_str(text: &str) -> Result<Document, String> {
             f.version
         ));
     }
-    for feature in &f.document.features {
+    if f.version == 0 {
+        return Err("unsupported part file version 0".into());
+    }
+    // V1 has no Phase 2 fields. Their serde defaults are the migration contract;
+    // retain every existing feature ID, authored parameter and topology name.
+    let doc: Document = match f.version {
+        1 | 2 => serde_json::from_value(f.document)
+            .map_err(|e| format!("not a valid version {} document: {e}", f.version))?,
+        _ => unreachable!("newer versions were rejected above"),
+    };
+    doc.validate()
+        .map_err(|e| format!("invalid document: {e}"))?;
+    for feature in &doc.features {
         if let crate::FeatureKind::Sketch(s) = &feature.kind {
             s.sketch
                 .validate()
                 .map_err(|e| format!("invalid sketch {}: {e}", feature.id))?;
         }
     }
-    Ok(f.document)
+    Ok(doc)
 }
 
 pub fn save(doc: &Document, path: &std::path::Path) -> Result<(), String> {

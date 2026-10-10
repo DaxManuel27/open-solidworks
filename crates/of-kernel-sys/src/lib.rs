@@ -130,6 +130,7 @@ pub mod ffi {
         /// Kinds: 0 face, 1 edge, 2 vertex, 3 solid.
         fn count(s: &Shape, kind: u8) -> Result<u32>;
         fn sub_shape(s: &Shape, kind: u8, index: u32) -> Result<UniquePtr<Shape>>;
+        fn indices_in(part: &Shape, whole: &Shape, kind: u8) -> Result<Vec<u32>>;
         fn compound_new() -> UniquePtr<Shape>;
         fn compound_add(compound: Pin<&mut Shape>, s: &Shape);
 
@@ -141,6 +142,37 @@ pub mod ffi {
             face_loops: &[u32],
         ) -> Result<UniquePtr<Shape>>;
         fn make_wire(frame: &Frame, curves: &[Curve]) -> Result<UniquePtr<Shape>>;
+        fn make_wire3(curves: &[Curve]) -> Result<UniquePtr<Shape>>;
+        fn join_wires(curves: &Shape) -> Result<UniquePtr<Shape>>;
+        fn reverse_shape(shape: &Shape) -> UniquePtr<Shape>;
+        fn make_helix(
+            frame: &Frame,
+            radius: f64,
+            pitch: f64,
+            turns: f64,
+            start: f64,
+            left: bool,
+        ) -> Result<UniquePtr<Shape>>;
+        fn project_wire(wire: &Shape, target: &Shape, direction: &Vec3)
+        -> Result<UniquePtr<Shape>>;
+        fn split_face(
+            body: &Shape,
+            face: u32,
+            wire: &Shape,
+            hist: &mut Vec<HistoryEntry>,
+        ) -> Result<UniquePtr<Shape>>;
+        fn sweep(
+            profile: &Shape,
+            path: &Shape,
+            frame: &Frame,
+            orientation: u8,
+            hist: &mut Vec<HistoryEntry>,
+        ) -> Result<UniquePtr<Shape>>;
+        fn loft(
+            profiles: &Shape,
+            ruled: bool,
+            hist: &mut Vec<HistoryEntry>,
+        ) -> Result<UniquePtr<Shape>>;
         fn half_space(face: &Shape, inside: &Vec3) -> Result<UniquePtr<Shape>>;
         fn offset_face(face: &Shape, distance: f64, toward: &Vec3) -> Result<UniquePtr<Shape>>;
         fn revol_until(
@@ -152,6 +184,11 @@ pub mod ffi {
         ) -> Result<UniquePtr<Shape>>;
 
         fn prism(s: &Shape, dir: &Vec3, hist: &mut Vec<HistoryEntry>) -> Result<UniquePtr<Shape>>;
+        fn split_plane(
+            s: &Shape,
+            plane: &Frame,
+            hist: &mut Vec<HistoryEntry>,
+        ) -> Result<UniquePtr<Shape>>;
         fn revol(
             s: &Shape,
             origin: &Vec3,
@@ -170,6 +207,20 @@ pub mod ffi {
             s: &Shape,
             edges: &[u32],
             radius: f64,
+            hist: &mut Vec<HistoryEntry>,
+        ) -> Result<UniquePtr<Shape>>;
+        fn variable_fillet(
+            s: &Shape,
+            edge: u32,
+            stations: &[f64],
+            hist: &mut Vec<HistoryEntry>,
+        ) -> Result<UniquePtr<Shape>>;
+        fn draft(
+            s: &Shape,
+            faces: &[u32],
+            plane: &Frame,
+            direction: &Vec3,
+            angle: f64,
             hist: &mut Vec<HistoryEntry>,
         ) -> Result<UniquePtr<Shape>>;
         fn chamfer(

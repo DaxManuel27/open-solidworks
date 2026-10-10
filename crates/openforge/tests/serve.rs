@@ -66,6 +66,137 @@ fn no_errors(snapshot: &Value) {
 }
 
 #[test]
+fn capabilities_and_preview_revisions_follow_document_lifetime() {
+    let mut core = Core::start();
+    let info = core.ok("core.info", json!({}));
+    assert_eq!(info["protocol_version"], 2);
+    assert_eq!(info["part_file_version"], 2);
+    let start = core.ok("doc.info", json!({}));
+    let feature = json!({ "type": "point", "mode": "coordinates", "x": 1, "y": 2, "z": 3 });
+    let preview = core.ok(
+        "feature.preview",
+        json!({"feature": feature, "revision": start["revision"]}),
+    );
+    assert_eq!(preview["revision"], start["revision"]);
+    assert!(
+        core.ok("doc.info", json!({}))["features"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    let added = core.ok("feature.add", json!({"feature": feature}));
+    assert!(added["revision"].as_u64() > start["revision"].as_u64());
+    assert!(
+        core.call(
+            "feature.preview",
+            json!({"feature": feature, "revision": start["revision"]})
+        )
+        .unwrap_err()
+        .contains("document changed")
+    );
+    let undone = core.ok("doc.undo", json!({}));
+    assert!(undone["revision"].as_u64() > added["revision"].as_u64());
+    let fresh = core.ok("doc.new", json!({}));
+    assert!(fresh["revision"].as_u64() > undone["revision"].as_u64());
+}
+
+#[test]
+fn configuration_exports_are_isolated_and_failed_requests_are_transactional() {
+    let mut core = Core::start();
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../of-model/tests/fixtures/v1-block.ofp");
+    core.ok("doc.open", json!({ "path": fixture }));
+    let equations = json!({"variables": {"height":"8mm"}, "equations":{"f2.end1.depth":"height"}});
+    let before = core.ok("doc.info", json!({}));
+    let preview = core.ok("equations.preview", equations.clone());
+    assert_eq!(preview["values"]["f2.end1.depth"]["value"]["value"], 8.0);
+    assert_eq!(preview["revision"], before["revision"]);
+    assert_eq!(core.ok("doc.info", json!({}))["equations"], json!({}));
+    core.ok("equations.set", equations);
+    let created = core.ok("configuration.create", json!({"name":"Short"}));
+    let mut config = created["configurations"]["items"][1].clone();
+    config["parameters"] = json!({"f2.end1.depth":3});
+    config["material"] = json!({"mode":"set","value":{"name":"Variant material","density":2000}});
+    let snapshot = core.ok("configuration.update", json!({"configuration": config}));
+    assert_eq!(snapshot["material"], Value::Null);
+    assert_eq!(snapshot["effective_material"]["name"], "Variant material");
+    assert!(
+        (core.ok("mass_properties", json!({}))["volume"]
+            .as_f64()
+            .unwrap()
+            - 600.0)
+            .abs()
+            < 1e-6
+    );
+    assert!(
+        core.call("configuration.create", json!({"name":"Short"}))
+            .is_err()
+    );
+    assert_eq!(
+        core.ok("doc.info", json!({}))["revision"],
+        snapshot["revision"]
+    );
+
+    let dir = std::env::temp_dir().join(format!("openforge-phase2-config-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let part = dir.join("variants.ofp");
+    core.ok("doc.save", json!({"path": part}));
+    for (configuration, expected) in [(1, 1600.0), (2, 600.0)] {
+        let step = dir.join(format!("variant{configuration}.step"));
+        let result = Command::new(env!("CARGO_BIN_EXE_openforge"))
+            .arg("export")
+            .arg(&part)
+            .arg(&step)
+            .arg("--configuration")
+            .arg(configuration.to_string())
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let shape = of_model::geom::Shape::read_step(step.to_str().unwrap()).unwrap();
+        assert!((shape.mass_props().unwrap().volume - expected).abs() < 1e-6);
+    }
+    assert_eq!(
+        core.ok("doc.info", json!({}))["configurations"]["active"],
+        2
+    );
+    config["equations"] = json!({"f2.end1.depth":"missing"});
+    let broken = core.ok("configuration.update", json!({"configuration":config}));
+    assert!(
+        broken["features"][1]["error"]
+            .as_str()
+            .unwrap()
+            .contains("missing")
+    );
+    let failed_export = dir.join("failed.step");
+    assert!(
+        core.call("export", json!({"path":failed_export}))
+            .unwrap_err()
+            .contains("resolve feature errors")
+    );
+    assert!(!failed_export.exists());
+    core.ok("doc.undo", json!({}));
+    no_errors(&core.ok("doc.info", json!({})));
+    core.ok("doc.open", json!({"path":part}));
+    assert_eq!(
+        core.ok("doc.info", json!({}))["configurations"]["active"],
+        2
+    );
+    assert!(
+        (core.ok("mass_properties", json!({}))["volume"]
+            .as_f64()
+            .unwrap()
+            - 600.0)
+            .abs()
+            < 1e-6
+    );
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn model_a_part_end_to_end() {
     let mut core = Core::start();
     let s = core.ok("sketch.new", json!({ "plane": { "type": "front_plane" } }));
@@ -138,7 +269,9 @@ fn model_a_part_end_to_end() {
 
     // Selecting a face by index gives back a stable reference.
     let r = core.ok("select.ref", json!({ "kind": "face", "index": 0 }));
-    assert_eq!(r["ref"]["type"], "face");
+    assert_eq!(r["ref"]["type"], "body_topology");
+    assert_eq!(r["ref"]["kind"], "face");
+    assert!(r["ref"]["body"].as_str().unwrap().starts_with('b'));
     let loc = core.ok("select.locate", json!({ "ref": r["ref"] }));
     assert_eq!(loc["index"], 0);
 
@@ -147,4 +280,107 @@ fn model_a_part_end_to_end() {
         core.call("feature.add", json!({ "feature": { "type": "bogus" } }))
             .is_err()
     );
+}
+
+#[test]
+fn assistant_drafts_are_atomic_guarded_and_idempotent() {
+    let mut core = Core::start();
+    let base = core.ok("doc.info", json!({}));
+    let begin = |core: &mut Core, snapshot: &Value| {
+        core.ok(
+            "draft.begin",
+            json!({"generation":snapshot["generation"],"revision":snapshot["revision"]}),
+        )["id"]
+            .clone()
+    };
+    let draft = begin(&mut core, &base);
+    let apply = |core: &mut Core, id: &Value, method: &str, params: Value| {
+        core.ok(
+            "draft.apply",
+            json!({"id":id,"method":method,"params":params}),
+        )
+    };
+    let s = apply(
+        &mut core,
+        &draft,
+        "sketch.new",
+        json!({"plane":{"type":"front_plane"}}),
+    );
+    let sketch = &s["result"]["id"];
+    apply(
+        &mut core,
+        &draft,
+        "sketch.edit",
+        json!({"id":sketch,"op":{"op":"rectangle","a":[0,0],"b":[60,40]}}),
+    );
+    apply(&mut core, &draft, "sketch.close", json!({}));
+    apply(
+        &mut core,
+        &draft,
+        "feature.add",
+        json!({"feature":{"type":"extrude","sketch":sketch,"end1":{"type":"blind","depth":5}}}),
+    );
+    let preview = core.ok("draft.preview", json!({"id":draft}));
+    assert_eq!(preview["snapshot"]["features"].as_array().unwrap().len(), 2);
+    assert_eq!(core.ok("doc.info", json!({})), base);
+    assert!(
+        core.call(
+            "draft.apply",
+            json!({"id":draft,"method":"doc.save","params":{"path":"not-allowed.ofp"}})
+        )
+        .is_err()
+    );
+    let committed = core.ok("draft.commit", json!({"id":draft}));
+    no_errors(&committed);
+    assert_eq!(committed["features"].as_array().unwrap().len(), 2);
+    let repeat = core.ok("draft.commit", json!({"id":draft}));
+    assert_eq!(repeat["revision"], committed["revision"]);
+    assert_eq!(repeat["already_committed"], true);
+    let undone = core.ok("doc.undo", json!({}));
+    assert!(undone["features"].as_array().unwrap().is_empty());
+    assert_eq!(undone["can_undo"], false);
+    core.ok("draft.commit", json!({"id":draft}));
+    assert!(
+        core.ok("doc.info", json!({}))["features"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    let redone = core.ok("doc.redo", json!({}));
+    let stale = begin(&mut core, &redone);
+    core.ok("parameter.set", json!({"key":"f2.end1.depth","value":8}));
+    assert!(
+        core.call("draft.commit", json!({"id":stale}))
+            .unwrap_err()
+            .contains("document changed")
+    );
+    let current = core.ok("doc.info", json!({}));
+    let bad = begin(&mut core, &current);
+    apply(
+        &mut core,
+        &bad,
+        "feature.add",
+        json!({"feature":{"type":"extrude","sketch":999,"end1":{"type":"blind","depth":5}}}),
+    );
+    assert!(
+        core.call("draft.commit", json!({"id":bad}))
+            .unwrap_err()
+            .contains("resolve feature")
+    );
+    assert_eq!(core.ok("doc.info", json!({})), current);
+    core.ok("draft.discard", json!({"id":bad}));
+    assert!(core.call("draft.commit", json!({"id":bad})).is_err());
+    let failed = begin(&mut core, &current);
+    assert!(
+        core.call(
+            "draft.apply",
+            json!({"id":failed,"method":"feature.rename","params":{"id":999,"name":"Missing"}})
+        )
+        .is_err()
+    );
+    assert_eq!(core.ok("doc.info", json!({})), current);
+    let old_generation = current["generation"].clone();
+    let reset = core.ok("doc.new", json!({}));
+    assert_ne!(reset["generation"], old_generation);
+    assert!(core.call("draft.commit", json!({"id":failed})).is_err());
 }

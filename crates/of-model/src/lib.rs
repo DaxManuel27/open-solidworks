@@ -10,7 +10,14 @@
 //! [`Ref`]s with stable names (see [`naming`]) that are resolved against the
 //! model as it is at that feature during every rebuild.
 
+pub mod bodies;
 mod build;
+pub mod configurations;
+pub mod curves;
+pub use curves::{
+    CompositeCurve, CurveSelection, Helix, Loft, ProjectedCurve, Sweep, SweepOrientation,
+};
+pub mod equations;
 mod features;
 pub mod file;
 pub mod materials;
@@ -20,6 +27,7 @@ mod ops;
 mod resolve;
 pub mod units;
 
+pub use bodies::{BodyDisplay, BodyId, Combine, KeepSide, MoveBody, SolidBody, SplitBody};
 pub use build::{Body, Datum, FeatureStatus, Model, State};
 pub use features::*;
 pub use naming::Naming;
@@ -39,6 +47,14 @@ pub type FeatureId = u32;
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Ref {
+    Body {
+        id: BodyId,
+    },
+    BodyTopology {
+        body: BodyId,
+        kind: of_geom::Kind,
+        name: String,
+    },
     Origin,
     FrontPlane,
     TopPlane,
@@ -70,13 +86,39 @@ pub struct Feature {
     pub name: String,
     #[serde(default)]
     pub suppressed: bool,
+    /// None preserves legacy whole-part behavior; Some selects explicit bodies.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<Vec<BodyId>>,
     #[serde(flatten)]
     pub kind: FeatureKind,
+}
+
+impl Feature {
+    pub fn depends_on(&self) -> Vec<FeatureId> {
+        let mut ids = self.kind.depends_on();
+        if let Some(scope) = &self.scope {
+            ids.extend(scope.iter().filter_map(BodyId::creator));
+        }
+        ids.sort_unstable();
+        ids.dedup();
+        ids
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum FeatureKind {
+    SplitLine(ProjectedCurve),
+    Draft(Draft),
+    VariableFillet(VariableFillet),
+    Helix(Helix),
+    CompositeCurve(CompositeCurve),
+    ProjectedCurve(ProjectedCurve),
+    Sweep(Sweep),
+    Loft(Loft),
+    Combine(Combine),
+    MoveBody(MoveBody),
+    SplitBody(SplitBody),
     Sketch(SketchFeature),
     Plane(PlaneDef),
     Axis(AxisDef),
@@ -98,6 +140,20 @@ impl FeatureKind {
     /// Base for default feature names ("Boss-Extrude1", "Fillet2", ...).
     pub fn base_name(&self) -> &'static str {
         match self {
+            FeatureKind::SplitLine(_) => "Split Line",
+            FeatureKind::Draft(_) => "Draft",
+            FeatureKind::VariableFillet(_) => "Variable Fillet",
+            FeatureKind::Helix(_) => "Helix",
+            FeatureKind::CompositeCurve(_) => "Composite Curve",
+            FeatureKind::ProjectedCurve(_) => "Projected Curve",
+            FeatureKind::Sweep(p) if p.cut => "Swept Cut",
+            FeatureKind::Sweep(_) => "Sweep",
+            FeatureKind::Loft(p) if p.cut => "Lofted Cut",
+            FeatureKind::Loft(_) => "Loft",
+            FeatureKind::Combine(_) => "Combine",
+            FeatureKind::MoveBody(p) if p.copy => "Copy Bodies",
+            FeatureKind::MoveBody(_) => "Move Bodies",
+            FeatureKind::SplitBody(_) => "Split Bodies",
             FeatureKind::Sketch(_) => "Sketch",
             FeatureKind::Plane(_) => "Plane",
             FeatureKind::Axis(_) => "Axis",
@@ -123,6 +179,28 @@ impl FeatureKind {
         let mut out = Vec::new();
         let mut refs: Vec<&Ref> = Vec::new();
         match self {
+            FeatureKind::Draft(p) => {
+                refs.extend(&p.faces);
+                refs.push(&p.neutral_plane);
+                refs.extend(&p.direction);
+            }
+            FeatureKind::VariableFillet(p) => refs.push(&p.edge),
+            FeatureKind::Helix(p) => refs.push(&p.plane),
+            FeatureKind::CompositeCurve(p) => refs.extend(p.segments.iter().map(|s| &s.reference)),
+            FeatureKind::ProjectedCurve(p) | FeatureKind::SplitLine(p) => {
+                refs.extend([&p.source, &p.target])
+            }
+            FeatureKind::Sweep(p) => {
+                out.push(p.profile);
+                refs.push(&p.path);
+            }
+            FeatureKind::Loft(p) => out.extend(&p.profiles),
+            FeatureKind::Combine(p) => out.extend(p.bodies.iter().filter_map(BodyId::creator)),
+            FeatureKind::MoveBody(p) => out.extend(p.bodies.iter().filter_map(BodyId::creator)),
+            FeatureKind::SplitBody(p) => {
+                out.extend(p.bodies.iter().filter_map(BodyId::creator));
+                refs.push(&p.plane);
+            }
             FeatureKind::Sketch(s) => refs.push(&s.plane),
             FeatureKind::Extrude(e) => {
                 out.push(e.sketch);
@@ -137,6 +215,9 @@ impl FeatureKind {
                 refs.extend(r.end2.as_ref().and_then(RevolveAngle::target));
             }
             FeatureKind::Hole(h) => out.push(h.sketch),
+            FeatureKind::Fillet(f) => refs.extend(f.edges.iter().chain(&f.faces)),
+            FeatureKind::Chamfer(c) => refs.extend(c.edges.iter().chain(&c.faces)),
+            FeatureKind::Shell(s) => refs.extend(&s.faces),
             FeatureKind::LinearPattern(p) => {
                 out.extend(&p.features);
                 refs.push(&p.direction1.reference);
@@ -163,6 +244,7 @@ impl FeatureKind {
         }
         for r in refs {
             match r {
+                Ref::Body { id } | Ref::BodyTopology { body: id, .. } => out.extend(id.creator()),
                 Ref::Feature { id } | Ref::SketchEntity { sketch: id, .. } => out.push(*id),
                 _ => {}
             }
@@ -174,6 +256,14 @@ impl FeatureKind {
 /// The part document.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Document {
+    #[serde(default)]
+    pub configurations: configurations::Configurations,
+    #[serde(default)]
+    pub variables: std::collections::BTreeMap<String, String>,
+    #[serde(default)]
+    pub equations: std::collections::BTreeMap<String, String>,
+    #[serde(default)]
+    pub body_display: std::collections::BTreeMap<BodyId, BodyDisplay>,
     pub units: Units,
     /// Material name from [`materials::LIBRARY`], or a custom density.
     #[serde(default)]
@@ -188,6 +278,10 @@ pub struct Document {
 impl Default for Document {
     fn default() -> Self {
         Document {
+            configurations: Default::default(),
+            variables: Default::default(),
+            equations: Default::default(),
+            body_display: Default::default(),
             units: Units::default(),
             material: None,
             features: Vec::new(),
@@ -206,6 +300,34 @@ pub enum ModelError {
 }
 
 impl Document {
+    /// Validate persistent identity before any geometry is rebuilt.
+    pub fn validate(&self) -> Result<(), String> {
+        self.configurations.validate()?;
+        if self
+            .variables
+            .keys()
+            .any(|name| !equations::valid_variable(name))
+        {
+            return Err("invalid or reserved global variable name".into());
+        }
+        let mut ids = std::collections::HashSet::new();
+        for f in &self.features {
+            if f.id == 0 || f.id == FeatureId::MAX || !ids.insert(f.id) {
+                return Err(format!("invalid or duplicate feature id {}", f.id));
+            }
+        }
+        if self.next_id == 0
+            || self.next_id == FeatureId::MAX
+            || self.features.iter().any(|f| f.id >= self.next_id)
+        {
+            return Err("next feature id must be greater than existing ids".into());
+        }
+        if self.rollback.is_some_and(|r| r > self.features.len()) {
+            return Err("rollback position is outside the feature tree".into());
+        }
+        Ok(())
+    }
+
     pub fn new() -> Document {
         Document::default()
     }
@@ -247,6 +369,7 @@ impl Document {
                 id,
                 name,
                 suppressed: false,
+                scope: None,
                 kind,
             },
         );
@@ -264,7 +387,7 @@ impl Document {
                 .features
                 .iter()
                 .filter(|f| !doomed.contains(&f.id))
-                .filter(|f| f.kind.depends_on().iter().any(|d| doomed.contains(d)))
+                .filter(|f| f.depends_on().iter().any(|d| doomed.contains(d)))
                 .map(|f| f.id)
                 .collect();
             if more.is_empty() {
@@ -280,6 +403,17 @@ impl Document {
             *r -= before;
         }
         self.features.retain(|f| !doomed.contains(&f.id));
+        for config in &mut self.configurations.items {
+            config.suppressed.retain(|id, _| !doomed.contains(id));
+            config
+                .parameters
+                .retain(|key, _| !doomed.iter().any(|id| key.starts_with(&format!("f{id}."))));
+            config
+                .equations
+                .retain(|key, _| !doomed.iter().any(|id| key.starts_with(&format!("f{id}."))));
+        }
+        self.equations
+            .retain(|key, _| !doomed.iter().any(|id| key.starts_with(&format!("f{id}."))));
         doomed
     }
 
@@ -291,7 +425,7 @@ impl Document {
         let f = trial.remove(from);
         trial.insert(to.min(trial.len()), f);
         for (i, f) in trial.iter().enumerate() {
-            for d in f.kind.depends_on() {
+            for d in f.depends_on() {
                 if !trial[..i].iter().any(|g| g.id == d) {
                     return Err(ModelError::Invalid(format!(
                         "{} must come after the features it uses",

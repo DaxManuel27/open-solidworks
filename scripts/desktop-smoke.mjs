@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import assert from 'node:assert/strict'
+import { assistantSmoke } from './assistant-smoke.mjs'
+import { phase2Smoke } from './phase-2-smoke.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 process.env.OPENFORGE_CORE = join(
@@ -49,7 +51,7 @@ dialog.showErrorBox = (title, message) => {
 const timeout = setTimeout(() => {
   console.error('Desktop smoke timed out')
   app.exit(1)
-}, 90000)
+}, 180000)
 
 async function run(win) {
   const js = (code) =>
@@ -100,6 +102,13 @@ async function run(win) {
         win.setContentSize(width, height)
         await js(`document.querySelector('.of-ribbon-track').scrollLeft = 0`)
         await new Promise((r) => setTimeout(r, 180))
+        await wait(
+          () =>
+            js(
+              `(() => { const el=document.querySelector('.of-ribbon-track'); return (el.scrollWidth > el.clientWidth + 1) === !!document.querySelector('[aria-label="Scroll commands right"]'); })()`,
+            ),
+          'ribbon resize observer settled',
+        )
         const layout = await js(`(() => {
           const rect = s => document.querySelector(s).getBoundingClientRect();
           const standard = rect('.of-standard'), ribbon = rect('.of-ribbon'), tabs = rect('.of-tabs');
@@ -108,7 +117,7 @@ async function run(win) {
             centered: Math.abs(hud.x + hud.width / 2 - viewport.x - viewport.width / 2) < 1,
             below: tabs.top === ribbon.bottom, fits: hud.left >= viewport.left && hud.right <= viewport.right,
             bodyFits: document.body.scrollWidth === window.innerWidth,
-            overflow: document.querySelector('.of-ribbon-track').scrollWidth > document.querySelector('.of-ribbon-track').clientWidth,
+            overflow: document.querySelector('.of-ribbon-track').scrollWidth > document.querySelector('.of-ribbon-track').clientWidth + 1,
             arrows: !!document.querySelector('[aria-label="Scroll commands right"]') };
         })()`)
         assert.deepEqual(layout.heights, [32, 76, 24, 28])
@@ -182,6 +191,10 @@ async function run(win) {
   await js(
     `window.__smokeErrors = []; window.addEventListener('error', e => window.__smokeErrors.push(e.message)); window.addEventListener('unhandledrejection', e => window.__smokeErrors.push(String(e.reason)))`,
   )
+  if (process.env.OPENFORGE_SMOKE_ASSISTANT_ONLY) {
+    await assistantSmoke({ js, call, click, wait })
+    return
+  }
   assert.equal(await js(`typeof window.require`), 'undefined', 'renderer must stay sandboxed')
   assert.equal(await js(`document.querySelector('[data-command="print"]').disabled`), true)
   assert.match(
@@ -228,17 +241,10 @@ async function run(win) {
     'rebuild',
     'properties',
     'options',
-    'sweep',
-    'loft',
     'boundary',
-    'sweepCut',
-    'loftCut',
     'boundaryCut',
-    'draft',
     'rib',
     'wrap',
-    'intersect',
-    'curves',
     'direct',
     'zoomArea',
     'previousView',
@@ -578,15 +584,19 @@ async function run(win) {
   menu('zoom-fit')
   await new Promise((r) => setTimeout(r, 250))
   assert.deepEqual(await js('window.__smokeErrors'), [], 'renderer errors after revolve')
+  console.log('Core desktop checks passed; testing Phase 2 and assistant…')
+  await phase2Smoke({ js, call, click, wait, enabled, root, part })
+  await assistantSmoke({ js, call, click, wait })
   const screenshot = await win.capturePage()
   const artifact = process.env.OPENFORGE_SMOKE_SCREENSHOT
   if (artifact) writeFileSync(artifact, screenshot.toPNG())
   console.log(
-    'Desktop smoke passed: toolbar layout/themes, keyboard/menu isolation, sketch tools, dropdown panels, views, draw/extrude/revolve, undo/redo, save/reopen/import/export',
+    'Desktop smoke passed: toolbar layout/themes, keyboard/menu isolation, sketch tools, dropdown panels, views, draw/extrude/revolve, body visibility/copy, equations, configurations, undo/redo, save/reopen/import/export',
   )
 }
 
 app.once('browser-window-created', (_event, win) => {
+  win.webContents.setBackgroundThrottling(false)
   win.webContents.once('did-finish-load', () => {
     run(win)
       .then(() => {

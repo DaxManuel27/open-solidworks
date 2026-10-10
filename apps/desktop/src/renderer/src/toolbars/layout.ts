@@ -26,7 +26,7 @@ export const featureGroups: CommandGroup[] = [
   {
     label: 'Modification',
     columns: [
-      [{ command: 'fillet', variant: 'large', menu: ['fillet', 'chamfer'] }],
+      [{ command: 'fillet', variant: 'large', menu: ['fillet', 'variableFillet', 'chamfer'] }],
       [
         {
           label: 'Pattern',
@@ -37,6 +37,7 @@ export const featureGroups: CommandGroup[] = [
       ],
       [{ command: 'shell' }, { command: 'draft' }, { command: 'rib' }],
       [{ command: 'wrap' }, { command: 'intersect' }],
+      [{ command: 'moveBody' }, { command: 'splitBody' }],
     ],
   },
   {
@@ -50,7 +51,13 @@ export const featureGroups: CommandGroup[] = [
           menu: ['plane', 'axis', 'point', 'coordinates'],
         },
       ],
-      [{ command: 'curves', variant: 'large' }],
+      [
+        {
+          command: 'curves',
+          variant: 'large',
+          menu: ['curves', 'compositeCurve', 'projectedCurve', 'splitLine'],
+        },
+      ],
       [{ command: 'direct', variant: 'large' }],
     ],
   },
@@ -94,6 +101,8 @@ export const evaluateGroups: CommandGroup[] = [
     columns: [
       [{ command: 'material', variant: 'large' }],
       [{ command: 'units', variant: 'large' }],
+      [{ command: 'equations', variant: 'large' }],
+      [{ command: 'configurations', variant: 'large' }],
     ],
   },
   { label: 'Exchange', columns: [[{ command: 'export', variant: 'large' }]] },

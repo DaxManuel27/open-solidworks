@@ -32,7 +32,13 @@ enum Command {
     /// Rebuild a part and print its features, errors and mass properties.
     Info { part: PathBuf },
     /// Rebuild a part and export it to STEP, IGES or STL (chosen by extension).
-    Export { part: PathBuf, output: PathBuf },
+    Export {
+        part: PathBuf,
+        output: PathBuf,
+        /// Export this configuration ID instead of the saved active variant.
+        #[arg(long)]
+        configuration: Option<u32>,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -46,9 +52,16 @@ fn main() -> anyhow::Result<()> {
             mcp::run(session)
         }
         Command::Info { part } => info(part),
-        Command::Export { part, output } => {
+        Command::Export {
+            part,
+            output,
+            configuration,
+        } => {
             let mut s = Session::open(part).map_err(anyhow::Error::msg)?;
-            let r = s.handle("export", serde_json::json!({ "path": output }));
+            let r = s.handle(
+                "export",
+                serde_json::json!({ "path": output, "configuration": configuration }),
+            );
             match r {
                 Ok(_) => {
                     println!("wrote {}", output.display());
@@ -99,7 +112,7 @@ fn info(part: PathBuf) -> anyhow::Result<()> {
     let mut s = Session::open(part).map_err(anyhow::Error::msg)?;
     let model = s.model();
     for (f, st) in model.doc.features.iter().zip(model.statuses()) {
-        let state = if f.suppressed {
+        let state = if st.suppressed {
             "suppressed".to_string()
         } else if st.rolled_back {
             "rolled back".to_string()

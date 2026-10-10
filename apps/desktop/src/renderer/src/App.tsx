@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { Assistant } from './assistant/Assistant'
 import { CommandManager, SKETCH_KEYS, beginSketch } from './CommandManager'
 import { HeadsUpToolbar } from './toolbars/HeadsUpToolbar'
 import { FeatureTree } from './FeatureTree'
@@ -130,6 +131,7 @@ export function App() {
           <Viewport />
           <HeadsUpToolbar />
         </div>
+        <Assistant />
       </div>
       <footer className="statusbar">
         <span>{statusText}</span>

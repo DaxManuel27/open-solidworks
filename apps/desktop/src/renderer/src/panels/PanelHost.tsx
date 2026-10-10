@@ -1,3 +1,7 @@
+import { AdvancedDressupPanel, CurvePanel, SweepLoftPanel } from './advanced'
+import { ConfigurationsPanel } from './configurations'
+import { EquationsPanel } from './equations'
+import { BodiesPanel } from './bodies'
 import type { Panel } from '../store'
 import {
   ChamferPanel,
@@ -17,6 +21,27 @@ import { ExportPanel, MassPanel, MaterialPanel, MeasurePanel, UnitsPanel } from 
 export function PanelHost({ panel }: { panel: Panel }) {
   const key = `${panel.type}:${panel.editing ?? 'new'}:${panel.sketch ?? ''}`
   switch (panel.type) {
+    case 'draft':
+    case 'variable_fillet':
+      return <AdvancedDressupPanel key={key} panel={panel} />
+    case 'sweep':
+    case 'sweep_cut':
+    case 'loft':
+    case 'loft_cut':
+      return <SweepLoftPanel key={key} panel={panel} />
+    case 'helix':
+    case 'composite_curve':
+    case 'split_line':
+    case 'projected_curve':
+      return <CurvePanel key={key} panel={panel} />
+    case 'configurations':
+      return <ConfigurationsPanel key={key} />
+    case 'equations':
+      return <EquationsPanel key={key} />
+    case 'combine':
+    case 'move_body':
+    case 'split_body':
+      return <BodiesPanel key={key} panel={panel} />
     case 'extrude':
     case 'cut':
       return <ExtrudePanel key={key} panel={panel} />
