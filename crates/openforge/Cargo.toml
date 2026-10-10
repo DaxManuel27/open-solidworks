@@ -11,6 +11,10 @@ repository.workspace = true
 of-model.workspace = true
 of-io.workspace = true
 of-protocol.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true

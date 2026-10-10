@@ -38,7 +38,8 @@ pub enum Resolved {
 
 pub(crate) type RResult<T> = Result<T, String>;
 
-pub(crate) fn resolve(state: &State, r: &Ref) -> RResult<Resolved> {
+/// Resolve a reference against a model state.
+pub fn resolve(state: &State, r: &Ref) -> RResult<Resolved> {
     let missing = |what: &str, name: &str| format!("{what} {name} no longer exists");
     Ok(match r {
         Ref::Origin => Resolved::Point(DVec3::ZERO),

@@ -171,6 +171,23 @@ impl Model {
         self.states.get(self.doc.index_of(id)?)
     }
 
+    /// Build a feature without adding it, for a live preview: on top of the
+    /// current model, or in place of `editing`.
+    pub fn preview(
+        &mut self,
+        kind: &FeatureKind,
+        editing: Option<FeatureId>,
+    ) -> Result<State, String> {
+        let prev = match editing {
+            Some(id) => self.state_before(id).clone(),
+            None => self.state().clone(),
+        };
+        let mut state = prev.clone();
+        let id = editing.unwrap_or(FeatureId::MAX);
+        build_kind(id, kind, &prev, &mut state)?;
+        Ok(state)
+    }
+
     /// Status of every feature, including rolled-back ones.
     pub fn statuses(&self) -> Vec<FeatureStatus> {
         let active = self.active_len();
@@ -232,19 +249,7 @@ fn build_feature(doc: &mut Document, index: usize, prev: State) -> (State, Featu
             }
             Err(e) => Err(e),
         },
-        FeatureKind::Plane(p) => build_plane(&prev, p).map(|d| {
-            state.datums.insert(f.id, d);
-        }),
-        FeatureKind::Axis(a) => build_axis(&prev, a).map(|d| {
-            state.datums.insert(f.id, d);
-        }),
-        FeatureKind::Point(p) => build_point(&prev, p).map(|d| {
-            state.datums.insert(f.id, d);
-        }),
-        FeatureKind::CoordSys(c) => build_coord_sys(&prev, c).map(|d| {
-            state.datums.insert(f.id, d);
-        }),
-        _ => ops::build(f.id, &f.kind, &prev, &mut state),
+        kind => build_kind(f.id, kind, &prev, &mut state),
     };
     if let Err(e) = result {
         status.error = Some(e);
@@ -254,6 +259,24 @@ fn build_feature(doc: &mut Document, index: usize, prev: State) -> (State, Featu
         }
     }
     (state, status)
+}
+
+/// Build any feature except a sketch onto `state`.
+fn build_kind(id: FeatureId, kind: &FeatureKind, prev: &State, state: &mut State) -> RResult<()> {
+    let datum = match kind {
+        FeatureKind::Plane(p) => build_plane(prev, p)?,
+        FeatureKind::Axis(a) => build_axis(prev, a)?,
+        FeatureKind::Point(p) => build_point(prev, p)?,
+        FeatureKind::CoordSys(c) => build_coord_sys(prev, c)?,
+        FeatureKind::Sketch(s) => {
+            let (plane, sketch, _) = build_sketch(prev, s)?;
+            state.sketches.insert(id, (plane, sketch));
+            return Ok(());
+        }
+        _ => return ops::build(id, kind, prev, state),
+    };
+    state.datums.insert(id, datum);
+    Ok(())
 }
 
 fn build_sketch(prev: &State, s: &SketchFeature) -> RResult<(Plane, Sketch, SolveReport)> {

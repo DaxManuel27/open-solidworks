@@ -24,7 +24,7 @@ pub use build::{Body, Datum, FeatureStatus, Model, State};
 pub use features::*;
 pub use naming::Naming;
 pub use ops::{HoleDims, convert_edges, hole_dims};
-pub use resolve::Resolved;
+pub use resolve::{Resolved, resolve};
 pub use units::Units;
 
 pub use of_geom as geom;
