@@ -1,0 +1,14 @@
+[package]
+name = "of-io"
+description = "STEP, IGES and STL import and export"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+of-geom.workspace = true
+
+[lints]
+workspace = true
