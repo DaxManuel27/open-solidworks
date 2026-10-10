@@ -27,6 +27,8 @@ pub mod ffi {
     /// Kinds: 0 line `[x0 y0 x1 y1]`, 1 counter-clockwise arc
     /// `[cx cy sx sy ex ey]`, 2 circle `[cx cy r]`, 3 open spline through
     /// points `[x0 y0 ...]`, 4 closed spline through points.
+    // cxx 1.0.198 clones every field in non-Copy structs, including Copy fields.
+    #[allow(clippy::clone_on_copy)]
     #[derive(Debug, Clone, PartialEq)]
     struct Curve {
         kind: u8,
@@ -60,6 +62,8 @@ pub mod ffi {
         edge_start: Vec<u32>,
     }
 
+    // cxx 1.0.198 clones every field in non-Copy structs, including Copy fields.
+    #[allow(clippy::clone_on_copy)]
     #[derive(Debug, Clone, Default)]
     struct MassProps {
         volume: f64,
