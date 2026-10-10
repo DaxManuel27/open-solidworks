@@ -1,0 +1,82 @@
+{
+  "task": "06-selected-face-hole",
+  "source": "first attempts by the M0 author (Claude Opus 5.5 in Claude Code) before reading results closely",
+  "steps": [
+    {
+      "calls": [
+        {
+          "name": "new_sketch",
+          "args": {
+            "plane": {
+              "type": "body_topology",
+              "body": "b2:17a163b7910805aa",
+              "kind": "face",
+              "name": "2.end"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "edit_sketch",
+          "args": {
+            "id": 3,
+            "op": {
+              "op": "add_circle",
+              "center": {
+                "at": [20, 15]
+              },
+              "radius": 5
+            }
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "close_sketch",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "add_feature",
+          "args": {
+            "feature": {
+              "type": "extrude",
+              "sketch": 3,
+              "cut": true,
+              "end1": {
+                "type": "through_all"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "mass_properties",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "finish_task",
+          "args": {
+            "summary": "Cut a 10 mm through hole in the center of the selected face.",
+            "preview_only": false
+          }
+        }
+      ]
+    }
+  ]
+}

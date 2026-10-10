@@ -45,6 +45,8 @@ jobs:
       - run: cargo test
       - run: cargo build
       - run: pnpm install --frozen-lockfile
+      - name: Benchmark replay (recorded transcripts, no model calls)
+        run: pnpm bench
       - run: pnpm lint
       - run: pnpm format:check
       - run: pnpm typecheck

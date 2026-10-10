@@ -9,7 +9,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test:assistant": "node scripts/assistant-test.mjs"
+    "test:assistant": "node scripts/assistant-test.mjs",
+    "bench": "node scripts/bench.mjs replay reference"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

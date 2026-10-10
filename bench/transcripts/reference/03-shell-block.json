@@ -1,0 +1,52 @@
+{
+  "task": "03-shell-block",
+  "source": "reference: hand-written against the current catalog",
+  "steps": [
+    {
+      "calls": [
+        {
+          "name": "topology",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "add_feature",
+          "args": {
+            "feature": {
+              "type": "shell",
+              "faces": [
+                {
+                  "type": "face",
+                  "name": "2.end"
+                }
+              ],
+              "thickness": 2
+            }
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "mass_properties",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "finish_task",
+          "args": {
+            "summary": "Shelled the block to 2 mm walls, open at +Z.",
+            "preview_only": false
+          }
+        }
+      ]
+    }
+  ]
+}

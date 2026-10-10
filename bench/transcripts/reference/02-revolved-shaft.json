@@ -1,0 +1,181 @@
+{
+  "task": "02-revolved-shaft",
+  "source": "reference: hand-written against the current catalog",
+  "steps": [
+    {
+      "calls": [
+        {
+          "name": "new_sketch",
+          "args": {
+            "plane": {
+              "type": "front_plane"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "edit_sketch",
+          "args": {
+            "id": 1,
+            "op": {
+              "op": "add_line",
+              "a": {
+                "at": [0, 0]
+              },
+              "b": {
+                "at": [50, 0]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "edit_sketch",
+          "args": {
+            "id": 1,
+            "op": {
+              "op": "add_line",
+              "a": {
+                "id": 2
+              },
+              "b": {
+                "at": [50, 6]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "edit_sketch",
+          "args": {
+            "id": 1,
+            "op": {
+              "op": "add_line",
+              "a": {
+                "id": 4
+              },
+              "b": {
+                "at": [30, 6]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "edit_sketch",
+          "args": {
+            "id": 1,
+            "op": {
+              "op": "add_line",
+              "a": {
+                "id": 6
+              },
+              "b": {
+                "at": [30, 10]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "edit_sketch",
+          "args": {
+            "id": 1,
+            "op": {
+              "op": "add_line",
+              "a": {
+                "id": 8
+              },
+              "b": {
+                "at": [0, 10]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "edit_sketch",
+          "args": {
+            "id": 1,
+            "op": {
+              "op": "add_line",
+              "a": {
+                "id": 10
+              },
+              "b": {
+                "id": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "close_sketch",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "add_feature",
+          "args": {
+            "feature": {
+              "type": "revolve",
+              "sketch": 1,
+              "axis": {
+                "type": "sketch_entity",
+                "sketch": 1,
+                "entity": 3
+              },
+              "angle": {
+                "type": "blind",
+                "angle": 6.283185307179586
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "mass_properties",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "finish_task",
+          "args": {
+            "summary": "Revolved a stepped shaft: 20 mm diameter for 30 mm, then 12 mm for 20 mm.",
+            "preview_only": false
+          }
+        }
+      ]
+    }
+  ]
+}

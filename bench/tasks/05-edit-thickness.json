@@ -1,0 +1,24 @@
+{
+  "id": "05-edit-thickness",
+  "title": "Edit an existing feature",
+  "prompt": "Change the plate thickness to 12 mm.",
+  "start": "../fixtures/plate.ofp",
+  "expect": {
+    "outcome": "change",
+    "no_new_errors": true,
+    "feature_count": 2,
+    "keeps_features": [1, 2],
+    "part": {
+      "valid_solid": true,
+      "body_count": 1,
+      "volume": {
+        "value": 28800,
+        "tol": 0.5
+      },
+      "bbox_size": {
+        "value": [60, 40, 12],
+        "tol": 0.01
+      }
+    }
+  }
+}

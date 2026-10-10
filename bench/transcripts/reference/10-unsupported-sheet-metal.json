@@ -1,0 +1,17 @@
+{
+  "task": "10-unsupported-sheet-metal",
+  "source": "reference: hand-written against the current catalog",
+  "steps": [
+    {
+      "calls": [
+        {
+          "name": "core_info",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "text": "Sheet metal and edge flanges are not available in OpenForge yet, so I can't make this change."
+    }
+  ]
+}

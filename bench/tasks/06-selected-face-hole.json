@@ -1,0 +1,31 @@
+{
+  "id": "06-selected-face-hole",
+  "title": "Hole in a selected face",
+  "prompt": "Put a 10 mm diameter through hole in the center of this face.",
+  "start": "../fixtures/block.ofp",
+  "selection": [
+    {
+      "type": "body_topology",
+      "body": "b2:17a163b7910805aa",
+      "kind": "face",
+      "name": "2.end"
+    }
+  ],
+  "expect": {
+    "outcome": "change",
+    "no_new_errors": true,
+    "keeps_features": [1, 2],
+    "part": {
+      "valid_solid": true,
+      "body_count": 1,
+      "volume": {
+        "value": 22429.204,
+        "tol": 0.5
+      },
+      "bbox_size": {
+        "value": [40, 30, 20],
+        "tol": 0.01
+      }
+    }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "id": "07-configurations",
+  "title": "Thickness configurations",
+  "prompt": "Create two configurations of this plate: \"Thin\" at 3 mm thick and \"Thick\" at 10 mm thick.",
+  "start": "../fixtures/plate.ofp",
+  "expect": {
+    "outcome": "change",
+    "no_new_errors": true,
+    "keeps_features": [1, 2],
+    "configurations": [
+      {
+        "name": "Thin",
+        "part": {
+          "valid_solid": true,
+          "volume": {
+            "value": 7200,
+            "tol": 0.5
+          },
+          "bbox_size": {
+            "value": [60, 40, 3],
+            "tol": 0.01
+          }
+        }
+      },
+      {
+        "name": "Thick",
+        "part": {
+          "valid_solid": true,
+          "volume": {
+            "value": 24000,
+            "tol": 0.5
+          },
+          "bbox_size": {
+            "value": [60, 40, 10],
+            "tol": 0.01
+          }
+        }
+      }
+    ]
+  }
+}

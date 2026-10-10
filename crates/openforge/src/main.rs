@@ -1,6 +1,7 @@
 //! `openforge`: the core process. The desktop app runs it as `openforge serve`;
 //! scripts and AI assistants use its CLI and MCP subcommands.
 
+mod bench;
 mod mcp;
 mod session;
 mod views;
@@ -39,6 +40,13 @@ enum Command {
         #[arg(long)]
         configuration: Option<u32>,
     },
+    /// Check a finished part against a benchmark task's geometry assertions.
+    Check {
+        /// Task file, such as bench/tasks/01-plate-holes.json.
+        task: PathBuf,
+        /// The part produced by the task.
+        part: PathBuf,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -52,6 +60,13 @@ fn main() -> anyhow::Result<()> {
             mcp::run(session)
         }
         Command::Info { part } => info(part),
+        Command::Check { task, part } => {
+            if bench::run(&task, &part)? {
+                Ok(())
+            } else {
+                bail!("task checks failed")
+            }
+        }
         Command::Export {
             part,
             output,

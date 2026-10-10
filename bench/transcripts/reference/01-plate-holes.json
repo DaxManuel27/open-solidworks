@@ -1,0 +1,462 @@
+{
+  "task": "01-plate-holes",
+  "source": "reference: hand-written against the current catalog",
+  "steps": [
+    {
+      "calls": [
+        {
+          "name": "new_sketch",
+          "args": {
+            "plane": {
+              "type": "front_plane"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "edit_sketch",
+          "args": {
+            "id": 1,
+            "op": {
+              "op": "rectangle",
+              "a": [0, 0],
+              "b": [60, 40]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "edit_sketch",
+          "args": {
+            "id": 1,
+            "op": {
+              "op": "constraint",
+              "constraint": {
+                "type": "coincident",
+                "a": 1,
+                "b": 0
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "edit_sketch",
+          "args": {
+            "id": 1,
+            "op": {
+              "op": "dimension",
+              "constraint": {
+                "type": "length",
+                "line": 5,
+                "value": 0
+              },
+              "value": 60
+            }
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "edit_sketch",
+          "args": {
+            "id": 1,
+            "op": {
+              "op": "dimension",
+              "constraint": {
+                "type": "length",
+                "line": 6,
+                "value": 0
+              },
+              "value": 40
+            }
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "close_sketch",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "add_feature",
+          "args": {
+            "feature": {
+              "type": "extrude",
+              "sketch": 1,
+              "end1": {
+                "type": "blind",
+                "depth": 5
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "new_sketch",
+          "args": {
+            "plane": {
+              "type": "front_plane"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "edit_sketch",
+          "args": {
+            "id": 3,
+            "op": {
+              "op": "add_circle",
+              "center": {
+                "at": [8, 8]
+              },
+              "radius": 3
+            }
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "edit_sketch",
+          "args": {
+            "id": 3,
+            "op": {
+              "op": "add_circle",
+              "center": {
+                "at": [52, 8]
+              },
+              "radius": 3
+            }
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "edit_sketch",
+          "args": {
+            "id": 3,
+            "op": {
+              "op": "add_circle",
+              "center": {
+                "at": [52, 32]
+              },
+              "radius": 3
+            }
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "edit_sketch",
+          "args": {
+            "id": 3,
+            "op": {
+              "op": "add_circle",
+              "center": {
+                "at": [8, 32]
+              },
+              "radius": 3
+            }
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "edit_sketch",
+          "args": {
+            "id": 3,
+            "op": {
+              "op": "dimension",
+              "constraint": {
+                "type": "diameter",
+                "curve": 2,
+                "value": 6
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "edit_sketch",
+          "args": {
+            "id": 3,
+            "op": {
+              "op": "constraint",
+              "constraint": {
+                "type": "equal",
+                "a": 2,
+                "b": 4
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "edit_sketch",
+          "args": {
+            "id": 3,
+            "op": {
+              "op": "constraint",
+              "constraint": {
+                "type": "equal",
+                "a": 2,
+                "b": 6
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "edit_sketch",
+          "args": {
+            "id": 3,
+            "op": {
+              "op": "constraint",
+              "constraint": {
+                "type": "equal",
+                "a": 2,
+                "b": 8
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "edit_sketch",
+          "args": {
+            "id": 3,
+            "op": {
+              "op": "dimension",
+              "constraint": {
+                "type": "horizontal_distance",
+                "a": 0,
+                "b": 2,
+                "value": 8
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "edit_sketch",
+          "args": {
+            "id": 3,
+            "op": {
+              "op": "dimension",
+              "constraint": {
+                "type": "vertical_distance",
+                "a": 0,
+                "b": 2,
+                "value": 8
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "edit_sketch",
+          "args": {
+            "id": 3,
+            "op": {
+              "op": "dimension",
+              "constraint": {
+                "type": "horizontal_distance",
+                "a": 0,
+                "b": 4,
+                "value": 52
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "edit_sketch",
+          "args": {
+            "id": 3,
+            "op": {
+              "op": "dimension",
+              "constraint": {
+                "type": "vertical_distance",
+                "a": 0,
+                "b": 4,
+                "value": 8
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "edit_sketch",
+          "args": {
+            "id": 3,
+            "op": {
+              "op": "dimension",
+              "constraint": {
+                "type": "horizontal_distance",
+                "a": 0,
+                "b": 6,
+                "value": 52
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "edit_sketch",
+          "args": {
+            "id": 3,
+            "op": {
+              "op": "dimension",
+              "constraint": {
+                "type": "vertical_distance",
+                "a": 0,
+                "b": 6,
+                "value": 32
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "edit_sketch",
+          "args": {
+            "id": 3,
+            "op": {
+              "op": "dimension",
+              "constraint": {
+                "type": "horizontal_distance",
+                "a": 0,
+                "b": 8,
+                "value": 8
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "edit_sketch",
+          "args": {
+            "id": 3,
+            "op": {
+              "op": "dimension",
+              "constraint": {
+                "type": "vertical_distance",
+                "a": 0,
+                "b": 8,
+                "value": 32
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "close_sketch",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "add_feature",
+          "args": {
+            "feature": {
+              "type": "extrude",
+              "sketch": 3,
+              "cut": true,
+              "end1": {
+                "type": "through_all"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "mass_properties",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "finish_task",
+          "args": {
+            "summary": "Created a 60 \u00d7 40 \u00d7 5 mm plate with four 6 mm through holes.",
+            "preview_only": false
+          }
+        }
+      ]
+    }
+  ]
+}

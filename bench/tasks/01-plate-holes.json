@@ -1,0 +1,22 @@
+{
+  "id": "01-plate-holes",
+  "title": "Plate with four holes",
+  "prompt": "Make a 60 × 40 × 5 mm plate with four 6 mm through holes, 8 mm from each edge.",
+  "expect": {
+    "outcome": "change",
+    "no_new_errors": true,
+    "part": {
+      "valid_solid": true,
+      "body_count": 1,
+      "volume": {
+        "value": 11434.513,
+        "tol": 0.5
+      },
+      "bbox_size": {
+        "value": [60, 40, 5],
+        "tol": 0.01,
+        "sorted": true
+      }
+    }
+  }
+}
