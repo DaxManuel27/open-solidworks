@@ -1,0 +1,18 @@
+[package]
+name = "of-geom"
+description = "Safe geometry wrappers: shapes, booleans, fillets, tessellation"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+of-kernel-sys.workspace = true
+cxx.workspace = true
+glam.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

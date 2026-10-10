@@ -1,0 +1,20 @@
+[package]
+name = "openforge"
+description = "OpenForge core: desktop app backend, CLI and MCP server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+of-model.workspace = true
+of-io.workspace = true
+of-protocol.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true
