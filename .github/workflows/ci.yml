@@ -44,6 +44,8 @@ jobs:
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
       - run: cargo build
+      - name: Generated tool types and protocol tables are current
+        run: cargo run -q -p openforge -- generate --check
       - run: pnpm install --frozen-lockfile
       - name: Benchmark replay (recorded transcripts, no model calls)
         run: pnpm bench

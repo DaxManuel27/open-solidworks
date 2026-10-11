@@ -2,3 +2,4 @@ pnpm-lock.yaml
 target/
 **/out/
 docs/
+apps/desktop/src/shared/tools.gen.ts

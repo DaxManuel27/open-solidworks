@@ -102,23 +102,55 @@ Solid feature payloads can include `scope: [body IDs]`. Omitted/null scope keeps
 whole-part behavior. An explicit scope must be nonempty and every body must exist.
 Combine, split and move/copy instead have their own ordered `bodies` selection.
 
-## New feature payloads
+## Feature payloads
 
 All use `feature.add/update/preview`, so desktop, CLI RPC and MCP share semantics.
-Optional flags default to false, except `merge`, which defaults to true.
+Optional fields are marked `?`; flags default to false, except `merge` and
+`equal_spacing`, which default to true. The table is generated from the same Rust
+types as the tool schemas; field units and bounds are in those schemas.
 
-| `type` | Fields |
-| --- | --- |
-| `combine` | `bodies`, `operation`: `fuse`, `cut`, `common`; first body is subtraction target |
-| `move_body` | `bodies`, `translation`, `rotation`, `origin`, `copy`; XYZ radians rotate X then Y then Z |
-| `split_body` | `bodies`, `plane`, `keep`: `both`, `positive`, `negative` |
-| `helix` | `plane`, `radius`, `pitch`, `turns`, `start_angle`, `left_handed` |
-| `composite_curve` | Ordered `segments: [{reference,reverse}]` |
-| `projected_curve` / `split_line` | `source`, `target`, `direction: [x,y,z]`; split line requires a face target |
-| `sweep` | `profile` sketch ID, `path` reference, `reverse_path`, `orientation`: `minimum_twist`, `frenet`, `fixed`; `cut`, `merge` |
-| `loft` | Ordered `profiles` sketch IDs, `reversed` profile IDs, `ruled`, `cut`, `merge` |
-| `draft` | `faces`, `neutral_plane`, optional `direction` reference, signed `angle` |
-| `variable_fillet` | `edge`, ordered `stations: [{position,radius}]`, `reverse`; positions include 0 and 1 |
+<!-- generated:features -->
+<!-- Generated from the core tool catalog (crates/openforge/src/tools). Do not edit:
+run `cargo run -p openforge -- generate` instead. -->
+
+| `type` | Fields | Notes |
+| --- | --- | --- |
+| `split_line` | `source`, `target`, `direction`, `scope?` | Split a face along a curve projected onto it. |
+| `draft` | `faces`, `neutral_plane`, `angle`, `direction?`, `scope?` | Taper faces by `angle` about a neutral plane. |
+| `variable_fillet` | `edge`, `stations`, `reverse?`, `scope?` | Fillet one edge with radii varying between stations. |
+| `helix` | `plane`, `radius`, `pitch`, `turns`, `left_handed?`, `scope?`, `start_angle?` | A helical construction curve, usable as a sweep path. |
+| `composite_curve` | `segments`, `scope?` | Join connected curves into one path. |
+| `projected_curve` | `source`, `target`, `direction`, `scope?` | Project a sketch or curve onto a face along `direction`. |
+| `sweep` | `profile`, `path`, `cut?`, `merge?`, `orientation?`, `reverse_path?`, `scope?` | Sweep a closed profile along a path; `cut` removes material. |
+| `loft` | `profiles`, `cut?`, `merge?`, `reversed?`, `ruled?`, `scope?` | Loft through two or more closed profiles in order. |
+| `combine` | `bodies`, `operation`, `scope?` | Boolean of bodies: fuse, cut (from the first) or common. |
+| `move_body` | `bodies`, `copy?`, `origin?`, `rotation?`, `scope?`, `translation?` | Move, rotate or copy bodies. |
+| `split_body` | `bodies`, `plane`, `keep?`, `scope?` | Split bodies with a plane. |
+| `plane` | `mode`, `reference`, `distance`, `flip?`, `scope?` | Parallel to a plane or planar face, `distance` along its normal. |
+| `plane` | `mode`, `reference`, `axis`, `angle`, `scope?` | Through a line, at `angle` to a plane. |
+| `plane` | `mode`, `points`, `scope?` | Through three points. |
+| `plane` | `mode`, `a`, `b`, `scope?` | Halfway between two planes or faces. |
+| `plane` | `mode`, `reference`, `point`, `scope?` | Parallel to `reference`, through `point`. |
+| `plane` | `mode`, `edge`, `at_end?`, `scope?` | Normal to an edge at its start (or end). |
+| `axis` | `mode`, `a`, `b`, `scope?` | Through two points. |
+| `axis` | `mode`, `a`, `b`, `scope?` | Where two planes meet. |
+| `axis` | `mode`, `face`, `scope?` | The axis of a cylindrical or conical face, or a circular edge. |
+| `axis` | `mode`, `edge`, `scope?` | Along a straight edge or sketch line. |
+| `axis` | `mode`, `point`, `face`, `scope?` | Through a point, normal to a plane. |
+| `point` | `mode`, `x`, `y`, `z`, `scope?` | Model coordinates, mm. |
+| `point` | `mode`, `target`, `scope?` | On a vertex or sketch point; at the center of a face or circular edge. |
+| `coord_sys` | `origin`, `scope?`, `x_axis?`, `z_axis?` | A coordinate system at a point. |
+| `extrude` | `sketch`, `end1`, `cut?`, `end2?`, `flip_side_to_cut?`, `merge?`, `reverse?`, `scope?`, `start_offset?`, `thin?` | Extrude a sketch's closed profiles: a boss, or a cut with `cut: true`. |
+| `revolve` | `sketch`, `axis`, `angle`, `cut?`, `end2?`, `merge?`, `reverse?`, `scope?`, `thin?` | Revolve a sketch's closed profiles about an axis. |
+| `fillet` | `radius`, `edges?`, `faces?`, `scope?` | Round edges, or every edge of the given faces, with a constant radius. |
+| `chamfer` | `mode`, `edges?`, `faces?`, `flip?`, `scope?` | Bevel edges, or every edge of the given faces. |
+| `shell` | `thickness`, `faces?`, `outward?`, `scope?` | Hollow the part to `thickness`, removing the given faces. |
+| `hole` | `sketch`, `kind`, `standard`, `size`, `end`, `cbore_depth_override?`, `cbore_diameter_override?`, `csink_angle_override?`, `csink_diameter_override?`, `diameter_override?`, `fit?`, `reverse?`, `scope?` | Standard holes at each standalone point of a sketch. |
+| `linear_pattern` | `features`, `direction1`, `direction2?`, `scope?` | Repeat features along one or two directions. |
+| `circular_pattern` | `features`, `axis`, `count`, `angle`, `equal_spacing?`, `reverse?`, `scope?` | Repeat features around an axis. |
+| `mirror` | `plane`, `features?`, `scope?` | Mirror features, or the whole body, about a plane. |
+
+<!-- /generated:features -->
 
 See [Phase 2 status](phase-2-status.md) for each operation's current supported modes.
 
@@ -150,7 +182,6 @@ feature's override targets. Save/load preserves all variants and the active ID.
 Export uses the active variant unless an explicit configuration ID is supplied.
 The CLI exposes the same choice as `openforge export part.ofp output.step --configuration 2`.
 
-
 ## Built-in assistant transactions
 
 Object responses now include `generation`, an opaque document-lifetime identifier,
@@ -163,7 +194,7 @@ request captures both; a matching numeric revision alone is insufficient.
 | `doc.feature` | `{id}` → full authored feature definition |
 | `parameter.set` | `{key,value}` → sets a registered base parameter and removes its base equation; configuration overrides still take precedence |
 | `draft.begin` | `{generation,revision}` → `{id,base_revision,snapshot}`; refuses an open manual editor |
-| `draft.apply` | `{id,method,params}` → `{result,feature_errors,draft_revision}`; only catalog operations are allowed |
+| `draft.apply` | `{id,method,params}` → `{result,feature_errors,draft_revision}`; only catalog operations are allowed, and `params` must match that tool's schema |
 | `draft.inspect`, `draft.preview` | `{id}` → `{snapshot,changed,feature_errors,blocking_errors}`; closes draft editing state |
 | `draft.commit` | `{id}` → live snapshot, with one undo checkpoint if changed |
 | `draft.discard` | `{id}` → `{discarded:true}` |
@@ -176,3 +207,123 @@ are distinguished in `feature_errors` versus `blocking_errors`. At most four dra
 are retained, each for ten minutes. The last 32 commit IDs are idempotent within the
 document generation: re-delivery returns the current snapshot with
 `already_committed:true`, including after undo, without reapplying the task.
+
+## Tool catalog
+
+MCP `tools/list` and `assistant.tools` publish the same catalog. Each tool's input
+schema is generated from the Rust argument types the core deserializes (`schemars`),
+with units and bounds in field descriptions. Every object is closed
+(`additionalProperties: false`) and tagged unions use `oneOf`. Arguments are
+validated before a tool runs: a misspelled, missing or out-of-range field fails with
+JSON-RPC `-32602` and the JSON path, for example
+`invalid add_feature arguments: /feature: Additional properties are not allowed
+('radios' was unexpected)`. Each schema carries `examples`, which CI validates and
+replays on the core. Desktop JSON-RPC calls are not schema-checked.
+`apps/desktop/src/shared/tools.gen.ts` holds the matching TypeScript types.
+
+<!-- generated:tools -->
+<!-- Generated from the core tool catalog (crates/openforge/src/tools). Do not edit:
+run `cargo run -p openforge -- generate` instead. -->
+
+| Tool | Method | Access | Arguments |
+| --- | --- | --- | --- |
+| `core_info` | `core.info` | read | none |
+| `part_info` | `doc.info` | read | none |
+| `get_feature` | `doc.feature` | read | `id` |
+| `topology` | `doc.topology` | read | none |
+| `get_sketch` | `sketch.get` | read | `id` |
+| `measure` | `measure` | read | `refs` |
+| `mass_properties` | `mass_properties` | read | none |
+| `new_sketch` | `sketch.new` | edit (draft) | `plane` |
+| `edit_sketch` | `sketch.edit` | edit (draft) | `id`, `op` |
+| `close_sketch` | `sketch.close` | edit (draft) | none |
+| `add_feature` | `feature.add` | edit (draft) | `feature`, `name?` |
+| `update_feature` | `feature.update` | edit (draft) | `id`, `feature` |
+| `delete_features` | `feature.delete` | edit (draft) | `ids` |
+| `set_parameter` | `parameter.set` | edit (draft) | `key`, `value` |
+| `set_equations` | `equations.set` | edit (draft) | `variables`, `equations` |
+| `create_configuration` | `configuration.create` | edit (draft) | `name`, `copy_from?` |
+| `update_configuration` | `configuration.update` | edit (draft) | `configuration` |
+| `activate_configuration` | `configuration.activate` | edit (draft) | `id` |
+| `delete_configuration` | `configuration.delete` | edit (draft) | `id` |
+| `body_display` | `body.display` | edit (draft) | `id`, `hidden?`, `name?` |
+| `set_material` | `doc.set_material` | edit (draft) | `density?`, `name?` |
+| `new_part` | `doc.new` | file/session (not in drafts) | none |
+| `open_part` | `doc.open` | file/session (not in drafts) | `path` |
+| `save_part` | `doc.save` | file/session (not in drafts) | `path?` |
+| `export` | `export` | file/session (not in drafts) | `path`, `configuration?` |
+| `import` | `import` | file/session (not in drafts) | `path` |
+| `undo` | `doc.undo` | file/session (not in drafts) | none |
+
+#### Sketch operations (`edit_sketch` `op`)
+
+| `op` | Fields | Notes |
+| --- | --- | --- |
+| `add_point` | `at` | A standalone point; hole features drill at standalone points. |
+| `add_line` | `a`, `b` | `created`: the line, then its two points. |
+| `add_circle` | `center`, `radius` | `created`: the circle. Its center point is not listed. |
+| `add_arc3` | `start`, `end`, `via` | Arc from `start` to `end` passing through `via`. |
+| `add_center_arc` | `center`, `start`, `end`, `clockwise?` | Arc around `center` from `start`, counter-clockwise to the direction of `end`. |
+| `add_tangent_arc` | `start`, `tangent`, `end` | Arc from point `start`, leaving in direction `tangent`. |
+| `add_spline` | `points`, `closed?` |  |
+| `rectangle` | `a`, `b`, `center?` | Corner rectangle from `a` to `b`, or `center: true` for center `a` and corner `b`. Corner `created`: the 4 corners from `a`, then the bottom, right, top and left lines. |
+| `slot` | `a`, `b`, `width` | Straight slot between arc centers `a` and `b`. |
+| `polygon` | `center`, `vertex`, `sides` | Regular polygon around `center` with one vertex at `vertex`. |
+| `constraint` | `constraint` | A geometric relation. Entity 0 is the fixed sketch origin. |
+| `dimension` | `constraint`, `value?` | A dimension. The value in `constraint` is ignored: the dimension is measured from the geometry, then set to `value` if given. |
+| `set_value` | `id`, `value` | Change a dimension's value (mm or radians). |
+| `set_driving` | `id`, `driving` | Make a dimension driving (`true`) or driven (`false`). |
+| `delete` | `ids` | Delete entities or relations, with anything that depends on them. |
+| `move` | `ids`, `delta` | Translate entities by `delta`. |
+| `trim` | `entity`, `pick` | Remove the part of `entity` between the intersections around `pick`. |
+| `extend` | `entity`, `pick` | Extend a line from the end nearest `pick` to the next curve. |
+| `offset` | `ids`, `distance` | Offset a chain or circle to its left (negative: right). |
+| `mirror` | `ids`, `about` | Mirror entities about line `about`. |
+| `fillet` | `point`, `radius` | Round the corner at `point` where two lines meet. |
+| `construction` | `ids`, `construction` | Toggle construction geometry. |
+| `convert` | `refs` | Project model edges into the sketch. |
+
+#### Sketch relations and dimensions (`constraint`)
+
+| `type` | Fields | Notes |
+| --- | --- | --- |
+| `coincident` | `a`, `b` | Two points at the same place. |
+| `point_on_curve` | `point`, `curve` | A point lying on a line (extended), circle or arc. |
+| `midpoint` | `point`, `line` |  |
+| `horizontal` | `line` |  |
+| `vertical` | `line` |  |
+| `horizontal_points` | `a`, `b` |  |
+| `vertical_points` | `a`, `b` |  |
+| `parallel` | `a`, `b` |  |
+| `perpendicular` | `a`, `b` |  |
+| `collinear` | `a`, `b` |  |
+| `equal` | `a`, `b` | Equal length (lines) or equal radius (circles and arcs). |
+| `tangent` | `a`, `b` | Line–circle or circle–circle tangency. `inside` is for a circle tangent inside another; it's worked out when the relation is added. |
+| `concentric` | `a`, `b` |  |
+| `symmetric` | `a`, `b`, `about` | Points `a` and `b` mirrored about line `about`. |
+| `fix` | `entity` | Hold an entity where it is. `at` is filled in when added. |
+| `distance` | `a`, `b`, `value` | Point–point, point–line, or line–line (parallel) distance, mm. |
+| `horizontal_distance` | `a`, `b`, `value` | Signed horizontal distance `b.x - a.x`, mm. |
+| `vertical_distance` | `a`, `b`, `value` | Signed vertical distance `b.y - a.y`, mm. |
+| `length` | `line`, `value` | Line length, mm. |
+| `radius` | `curve`, `value` | Circle or arc radius, mm. |
+| `diameter` | `curve`, `value` | Circle or arc diameter, mm. |
+| `angle` | `a`, `b`, `value` | Signed angle from line `a`'s direction to line `b`'s, radians. |
+
+#### Geometry references (`Ref`)
+
+| `type` | Fields | Notes |
+| --- | --- | --- |
+| `body` | `id` | A whole solid body, by its stable ID from `doc.info` `bodies`. |
+| `body_topology` | `body`, `kind`, `name` | A face, edge or vertex of one body, as returned by selection. |
+| `origin` | none | The model origin point. |
+| `front_plane` | none | The XY plane. |
+| `top_plane` | none | The XZ plane. |
+| `right_plane` | none | The YZ plane. |
+| `face` | `name` | A face by stable name, such as `2.end`, from `doc.topology`. |
+| `edge` | `name` | An edge by stable name, such as `E(2.end\|2.s5)`, from `doc.topology`. |
+| `vertex` | `name` | A vertex by stable name, from `doc.topology`. |
+| `feature` | `id` | A reference plane, axis, point, coordinate system or sketch. |
+| `sketch_entity` | `sketch`, `entity` | A point or line in a sketch. |
+
+<!-- /generated:tools -->

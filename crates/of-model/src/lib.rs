@@ -109,32 +109,56 @@ impl Feature {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum FeatureKind {
+    /// Split a face along a curve projected onto it.
     SplitLine(ProjectedCurve),
+    /// Taper faces by `angle` about a neutral plane.
     Draft(Draft),
+    /// Fillet one edge with radii varying between stations.
     VariableFillet(VariableFillet),
+    /// A helical construction curve, usable as a sweep path.
     Helix(Helix),
+    /// Join connected curves into one path.
     CompositeCurve(CompositeCurve),
+    /// Project a sketch or curve onto a face along `direction`.
     ProjectedCurve(ProjectedCurve),
+    /// Sweep a closed profile along a path; `cut` removes material.
     Sweep(Sweep),
+    /// Loft through two or more closed profiles in order.
     Loft(Loft),
+    /// Boolean of bodies: fuse, cut (from the first) or common.
     Combine(Combine),
+    /// Move, rotate or copy bodies.
     MoveBody(MoveBody),
+    /// Split bodies with a plane.
     SplitBody(SplitBody),
     /// Sketches are created with `sketch.new` and edited with `sketch.edit`.
     #[schemars(skip)]
     Sketch(SketchFeature),
+    /// A reference plane, defined by `mode`.
     Plane(PlaneDef),
+    /// A reference axis, defined by `mode`.
     Axis(AxisDef),
+    /// A reference point, defined by `mode`.
     Point(PointDef),
+    /// A coordinate system at a point.
     CoordSys(CoordSysDef),
+    /// Extrude a sketch's closed profiles: a boss, or a cut with `cut: true`.
     Extrude(Extrude),
+    /// Revolve a sketch's closed profiles about an axis.
     Revolve(Revolve),
+    /// Round edges, or every edge of the given faces, with a constant radius.
     Fillet(Fillet),
+    /// Bevel edges, or every edge of the given faces.
     Chamfer(Chamfer),
+    /// Hollow the part to `thickness`, removing the given faces.
     Shell(ShellDef),
+    /// Standard holes at each standalone point of a sketch.
     Hole(Hole),
+    /// Repeat features along one or two directions.
     LinearPattern(LinearPattern),
+    /// Repeat features around an axis.
     CircularPattern(CircularPattern),
+    /// Mirror features, or the whole body, about a plane.
     Mirror(MirrorDef),
     /// Imported bodies come from the `import` method.
     #[schemars(skip)]

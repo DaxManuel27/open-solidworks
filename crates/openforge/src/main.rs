@@ -41,6 +41,15 @@ enum Command {
         #[arg(long)]
         configuration: Option<u32>,
     },
+    /// Regenerate the TypeScript tool types and protocol tables from the catalog.
+    Generate {
+        /// Repository root.
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+        /// Only check that the committed files are current.
+        #[arg(long)]
+        check: bool,
+    },
     /// Check a finished part against a benchmark task's geometry assertions.
     Check {
         /// Task file, such as bench/tasks/01-plate-holes.json.
@@ -61,6 +70,15 @@ fn main() -> anyhow::Result<()> {
             mcp::run(session)
         }
         Command::Info { part } => info(part),
+        Command::Generate { root, check } => {
+            let stale = tools::generate::run(&root, check)?;
+            match (check, stale.is_empty()) {
+                (true, false) => bail!("stale generated files: {}", stale.join(", ")),
+                (false, false) => println!("wrote {}", stale.join(", ")),
+                _ => println!("generated files are current"),
+            }
+            Ok(())
+        }
         Command::Check { task, part } => {
             if bench::run(&task, &part)? {
                 Ok(())

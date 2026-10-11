@@ -411,9 +411,9 @@ pub enum HoleEnd {
     ThroughAll,
 }
 
-/// Hole Wizard: holes at each point of a sketch, drilled into the sketch
-/// plane. Sizes come from the standard tables in [`crate::features::holes`];
-/// any `*_override` replaces the table value.
+/// Hole Wizard: holes at each standalone point of a sketch, drilled into the
+/// sketch plane (`reverse` drills the other way). Sizes come from the standard
+/// tables (`hole.sizes`); any `*_override` replaces the table value.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Hole {
     /// Sketch whose standalone points locate the holes.
