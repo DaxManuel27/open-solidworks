@@ -1,5 +1,6 @@
 //! Private multi-operation documents. Only commit mutates the live session.
 use super::*;
+use of_protocol::ErrorCode;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -40,10 +41,16 @@ impl Session {
             if p.generation.as_deref() != Some(&self.generation)
                 || p.revision != Some(self.revision)
             {
-                return Err(fail("the document changed; refresh context"));
+                return Err(RpcError::coded(
+                    ErrorCode::StaleRevision,
+                    "the document changed; refresh context",
+                ));
             }
             if self.editing.is_some() {
-                return Err(fail("finish the manual feature or sketch edit first"));
+                return Err(RpcError::coded(
+                    ErrorCode::EditInProgress,
+                    "finish the manual feature or sketch edit first",
+                ));
             }
             if self.drafts.len() >= 4 {
                 return Err(fail("discard an existing draft first"));
@@ -77,9 +84,10 @@ impl Session {
         let draft = self
             .drafts
             .get_mut(&id)
-            .ok_or_else(|| fail("draft missing or expired"))?;
+            .ok_or_else(|| RpcError::coded(ErrorCode::DraftMissing, "draft missing or expired"))?;
         if draft.base != self.revision || self.editing.is_some() {
-            return Err(fail(
+            return Err(RpcError::coded(
+                ErrorCode::StaleRevision,
                 "the document changed; discard this draft and start again",
             ));
         }
@@ -90,7 +98,12 @@ impl Session {
                     .ok_or_else(|| RpcError::params("method required"))?;
                 let tool = crate::tools::by_method(&method)
                     .filter(|e| e.tool.draft)
-                    .ok_or_else(|| RpcError::params("operation is not available inside a draft"))?;
+                    .ok_or_else(|| {
+                        RpcError::coded(
+                            ErrorCode::NotAllowed,
+                            "operation is not available inside a draft",
+                        )
+                    })?;
                 tool.validate(&p.params)?;
                 let before = draft.session.model.doc.clone();
                 let editing = draft.session.editing;
@@ -122,7 +135,10 @@ impl Session {
                     .into_iter()
                     .next()
                 {
-                    return Err(fail(format!("resolve feature {id}: {error}")));
+                    return Err(RpcError::coded(
+                        ErrorCode::RebuildFailed,
+                        format!("resolve feature {id}: {error}"),
+                    ));
                 }
                 // Validate scene generation before changing live history/state.
                 draft.session.full()?;

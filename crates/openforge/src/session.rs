@@ -8,7 +8,7 @@ use of_model::{
     Document, FeatureId, FeatureKind, Import, ImportFormat, Model, Ref, SketchFeature, State,
     Units, file, materials, measure,
 };
-use of_protocol::RpcError;
+use of_protocol::{ErrorCode, RpcError};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -45,6 +45,15 @@ fn fail(e: impl std::fmt::Display) -> RpcError {
     RpcError::failed(e.to_string())
 }
 
+/// Sketch errors that name a missing or mistyped entity get a stable code.
+fn sketch_fail(e: sk::SketchError) -> RpcError {
+    let code = match e {
+        sk::SketchError::NoEntity(_) | sk::SketchError::WrongKind(..) => ErrorCode::UnknownEntity,
+        sk::SketchError::Invalid(_) => ErrorCode::Failed,
+    };
+    RpcError::coded(code, e.to_string())
+}
+
 fn v2(a: [f64; 2]) -> DVec2 {
     DVec2::new(a[0], a[1])
 }
@@ -53,7 +62,7 @@ impl PointArg {
     fn get(&self, s: &mut Sketch) -> Result<Id, RpcError> {
         match self {
             PointArg::Id { id } => {
-                s.point(*id).map_err(fail)?;
+                s.point(*id).map_err(sketch_fail)?;
                 Ok(*id)
             }
             PointArg::At { at } => Ok(s.add_point(v2(*at))),
@@ -147,7 +156,10 @@ impl Session {
     fn sketch_of(&mut self, id: FeatureId) -> Result<&mut Sketch, RpcError> {
         match self.model.doc.feature_mut(id).map(|f| &mut f.kind) {
             Some(FeatureKind::Sketch(s)) => Ok(&mut s.sketch),
-            _ => Err(RpcError::params(format!("feature {id} is not a sketch"))),
+            _ => Err(RpcError::coded(
+                ErrorCode::NotASketch,
+                format!("feature {id} is not a sketch"),
+            )),
         }
     }
 
@@ -164,7 +176,12 @@ impl Session {
         }
         let plane_ref = match self.model.doc.feature(id).map(|f| &f.kind) {
             Some(FeatureKind::Sketch(s)) => s.plane.clone(),
-            _ => return Err(RpcError::params(format!("feature {id} is not a sketch"))),
+            _ => {
+                return Err(RpcError::coded(
+                    ErrorCode::NotASketch,
+                    format!("feature {id} is not a sketch"),
+                ));
+            }
         };
         let before = self.model.state_before(id).clone();
         let plane = of_model_resolve_plane(&before, &plane_ref)?;
@@ -203,7 +220,7 @@ impl Session {
             "doc.feature" => {
                 let FeatureRef { id } = args(params)?;
                 Ok(
-                    json!({"feature":self.model.doc.feature(id).ok_or_else(|| RpcError::params("no such feature"))?}),
+                    json!({"feature":self.model.doc.feature(id).ok_or_else(|| RpcError::coded(ErrorCode::UnknownFeature, "no such feature"))?}),
                 )
             }
             "parameter.set" => {
@@ -215,7 +232,9 @@ impl Session {
                     .iter()
                     .flat_map(of_model::equations::parameters)
                     .find(|t| t.key == p.key)
-                    .ok_or_else(|| RpcError::params("unknown parameter"))?;
+                    .ok_or_else(|| {
+                        RpcError::coded(ErrorCode::UnknownParameter, "unknown parameter")
+                    })?;
                 let mut doc = self.model.doc.clone();
                 of_model::equations::set_parameter(
                     doc.feature_mut(target.feature).unwrap(),
@@ -253,7 +272,12 @@ impl Session {
                                 .iter()
                                 .find(|c| c.id == source)
                                 .cloned()
-                                .ok_or_else(|| RpcError::params("no such source configuration"))?
+                                .ok_or_else(|| {
+                                    RpcError::coded(
+                                        ErrorCode::UnknownConfiguration,
+                                        "no such source configuration",
+                                    )
+                                })?
                         } else {
                             Configuration::new(id, name.clone())
                         };
@@ -269,13 +293,21 @@ impl Session {
                             .items
                             .iter_mut()
                             .find(|c| c.id == configuration.id)
-                            .ok_or_else(|| RpcError::params("no such configuration"))?;
+                            .ok_or_else(|| {
+                                RpcError::coded(
+                                    ErrorCode::UnknownConfiguration,
+                                    "no such configuration",
+                                )
+                            })?;
                         *target = configuration;
                     }
                     "configuration.delete" => {
                         let ConfigurationRef { id } = args(params)?;
                         if !configs.items.iter().any(|c| c.id == id) {
-                            return Err(RpcError::params("no such configuration"));
+                            return Err(RpcError::coded(
+                                ErrorCode::UnknownConfiguration,
+                                "no such configuration",
+                            ));
                         }
                         if configs.items.len() == 1 {
                             return Err(RpcError::params("keep at least one configuration"));
@@ -287,10 +319,18 @@ impl Session {
                     }
                     _ => {
                         let ConfigurationRef { id } = args(params)?;
+                        if !configs.items.iter().any(|c| c.id == id) {
+                            return Err(RpcError::coded(
+                                ErrorCode::UnknownConfiguration,
+                                "no such configuration",
+                            ));
+                        }
                         configs.active = id;
                     }
                 }
-                trial.validate().map_err(RpcError::params)?;
+                trial
+                    .validate()
+                    .map_err(|e| RpcError::coded(ErrorCode::InvalidFormula, e))?;
                 self.checkpoint();
                 self.model.doc = trial;
                 self.model.rebuild_all();
@@ -302,7 +342,9 @@ impl Session {
                 let mut trial = self.model.doc.clone();
                 trial.variables = p.variables;
                 trial.equations = p.equations;
-                trial.validate().map_err(RpcError::params)?;
+                trial
+                    .validate()
+                    .map_err(|e| RpcError::coded(ErrorCode::InvalidFormula, e))?;
                 let keys: std::collections::HashSet<_> = trial
                     .features
                     .iter()
@@ -310,9 +352,10 @@ impl Session {
                     .map(|p| p.key)
                     .collect();
                 if let Some(key) = trial.equations.keys().find(|key| !keys.contains(*key)) {
-                    return Err(RpcError::params(format!(
-                        "parameter {key} no longer exists"
-                    )));
+                    return Err(RpcError::coded(
+                        ErrorCode::UnknownParameter,
+                        format!("parameter {key} no longer exists"),
+                    ));
                 }
                 if method == "equations.preview" {
                     return Ok(json!({ "values": views::equation_values(&trial) }));
@@ -343,7 +386,9 @@ impl Session {
             })),
             "body.display" => {
                 let p: BodyDisplay = args(params)?;
-                self.display().solid(&p.id).map_err(fail)?;
+                self.display()
+                    .solid(&p.id)
+                    .map_err(|e| RpcError::coded(ErrorCode::UnknownBody, e))?;
                 if p.name.as_ref().is_some_and(|n| n.trim().is_empty()) {
                     return Err(RpcError::params("the body name cannot be empty"));
                 }
@@ -447,11 +492,10 @@ impl Session {
             "feature.update" => {
                 let p: UpdateFeature = args(params)?;
                 self.checkpoint();
-                let f = self
-                    .model
-                    .doc
-                    .feature_mut(p.id)
-                    .ok_or_else(|| RpcError::params("no such feature"))?;
+                let f =
+                    self.model.doc.feature_mut(p.id).ok_or_else(|| {
+                        RpcError::coded(ErrorCode::UnknownFeature, "no such feature")
+                    })?;
                 f.kind = p.feature.kind;
                 f.scope = p.feature.scope;
                 self.model.invalidate(p.id);
@@ -488,7 +532,7 @@ impl Session {
                 self.model
                     .doc
                     .feature_mut(p.id)
-                    .ok_or_else(|| RpcError::params("no such feature"))?
+                    .ok_or_else(|| RpcError::coded(ErrorCode::UnknownFeature, "no such feature"))?
                     .name = p.name.trim().into();
                 Ok(self.snapshot())
             }
@@ -503,7 +547,7 @@ impl Session {
                 self.model
                     .doc
                     .feature_mut(p.id)
-                    .ok_or_else(|| RpcError::params("no such feature"))?
+                    .ok_or_else(|| RpcError::coded(ErrorCode::UnknownFeature, "no such feature"))?
                     .suppressed = p.suppressed;
                 self.model.invalidate(p.id);
                 self.full()
@@ -515,11 +559,10 @@ impl Session {
                     to: usize,
                 }
                 let p: P = args(params)?;
-                let from = self
-                    .model
-                    .doc
-                    .index_of(p.id)
-                    .ok_or_else(|| RpcError::params("no such feature"))?;
+                let from =
+                    self.model.doc.index_of(p.id).ok_or_else(|| {
+                        RpcError::coded(ErrorCode::UnknownFeature, "no such feature")
+                    })?;
                 let before = self.model.doc.clone();
                 self.model.doc.reorder(p.id, p.to).map_err(fail)?;
                 self.undo.push(before);
@@ -537,7 +580,10 @@ impl Session {
                 }
                 let p: P = args(params)?;
                 if p.revision.is_some_and(|r| r != self.revision) {
-                    return Err(fail("the document changed; refresh before previewing"));
+                    return Err(RpcError::coded(
+                        ErrorCode::StaleRevision,
+                        "the document changed; refresh before previewing",
+                    ));
                 }
                 let Some(kind) = p.feature else {
                     return Ok(json!({ "scene": null, "error": null }));
@@ -562,7 +608,7 @@ impl Session {
                 self.model
                     .doc
                     .feature(p.id)
-                    .ok_or_else(|| RpcError::params("no such feature"))?;
+                    .ok_or_else(|| RpcError::coded(ErrorCode::UnknownFeature, "no such feature"))?;
                 self.editing = Some(p.id);
                 self.full()
             }
@@ -646,7 +692,10 @@ impl Session {
             "measure" => {
                 let p: Measure = args(params)?;
                 let state = self.visible();
-                Ok(json!(measure::measure(&state, &p.refs).map_err(fail)?))
+                Ok(json!(
+                    measure::measure(&state, &p.refs)
+                        .map_err(|e| RpcError::coded(ErrorCode::UnknownRef, e))?
+                ))
             }
             "mass_properties" => {
                 let state = self.model.state().clone();
@@ -758,7 +807,12 @@ impl Session {
             Some(state) => {
                 let plane_ref = match &self.model.doc.feature(id).map(|f| &f.kind) {
                     Some(FeatureKind::Sketch(s)) => s.plane.clone(),
-                    _ => return Err(RpcError::params(format!("feature {id} is not a sketch"))),
+                    _ => {
+                        return Err(RpcError::coded(
+                            ErrorCode::NotASketch,
+                            format!("feature {id} is not a sketch"),
+                        ));
+                    }
                 };
                 Some(of_model_resolve_plane(state, &plane_ref)?)
             }
@@ -778,7 +832,7 @@ impl Session {
                     if (s.point(a).unwrap() - s.point(b).unwrap()).length() < 1e-9 {
                         return Err(RpcError::params("the line has no length"));
                     }
-                    created.push(s.add_line(a, b).map_err(fail)?);
+                    created.push(s.add_line(a, b).map_err(sketch_fail)?);
                     created.extend([a, b]);
                 }
                 SketchOp::AddCircle { center, radius } => {
@@ -786,11 +840,11 @@ impl Session {
                         return Err(RpcError::params("the radius must be more than zero"));
                     }
                     let c = center.get(s)?;
-                    created.push(s.add_circle(c, radius).map_err(fail)?);
+                    created.push(s.add_circle(c, radius).map_err(sketch_fail)?);
                 }
                 SketchOp::AddArc3 { start, end, via } => {
                     let (a, b) = (start.get(s)?, end.get(s)?);
-                    created.push(tools::three_point_arc(s, a, b, v2(via)).map_err(fail)?);
+                    created.push(tools::three_point_arc(s, a, b, v2(via)).map_err(sketch_fail)?);
                 }
                 SketchOp::AddCenterArc {
                     center,
@@ -809,7 +863,7 @@ impl Session {
                     } else {
                         s.add_arc(c, st, e)
                     };
-                    created.push(arc.map_err(fail)?);
+                    created.push(arc.map_err(sketch_fail)?);
                     created.push(e);
                 }
                 SketchOp::AddTangentArc {
@@ -818,11 +872,12 @@ impl Session {
                     end,
                 } => {
                     let e = end.get(s)?;
-                    created.push(tools::tangent_arc(s, start, v2(tangent), e).map_err(fail)?);
+                    created
+                        .push(tools::tangent_arc(s, start, v2(tangent), e).map_err(sketch_fail)?);
                 }
                 SketchOp::AddSpline { points, closed } => {
                     let ids: Vec<Id> = points.iter().map(|p| p.get(s)).collect::<Result<_, _>>()?;
-                    created.push(s.add_spline(ids, closed).map_err(fail)?);
+                    created.push(s.add_spline(ids, closed).map_err(sketch_fail)?);
                 }
                 SketchOp::Rectangle { a, b, center } => {
                     let out = if center {
@@ -834,7 +889,7 @@ impl Session {
                 }
                 SketchOp::Slot { a, b, width } => {
                     created = tools::straight_slot(s, v2(a), v2(b), width)
-                        .map_err(fail)?
+                        .map_err(sketch_fail)?
                         .entities
                 }
                 SketchOp::Polygon {
@@ -843,33 +898,35 @@ impl Session {
                     sides,
                 } => {
                     created = tools::polygon(s, v2(center), v2(vertex), sides)
-                        .map_err(fail)?
+                        .map_err(sketch_fail)?
                         .entities
                 }
                 SketchOp::Constraint { constraint } => {
-                    created.push(s.add_constraint(constraint).map_err(fail)?)
+                    created.push(s.add_constraint(constraint).map_err(sketch_fail)?)
                 }
                 SketchOp::Dimension { constraint, value } => {
-                    let cid = s.add_measured(constraint).map_err(fail)?;
+                    let cid = s.add_measured(constraint).map_err(sketch_fail)?;
                     if let Some(v) = value {
-                        s.set_value(cid, v).map_err(fail)?;
+                        s.set_value(cid, v).map_err(sketch_fail)?;
                     }
                     created.push(cid);
                 }
-                SketchOp::SetValue { id: cid, value } => s.set_value(cid, value).map_err(fail)?,
+                SketchOp::SetValue { id: cid, value } => {
+                    s.set_value(cid, value).map_err(sketch_fail)?
+                }
                 SketchOp::SetDriving { id: cid, driving } => {
-                    s.set_driving(cid, driving).map_err(fail)?
+                    s.set_driving(cid, driving).map_err(sketch_fail)?
                 }
                 SketchOp::Delete { ids } => s.delete(&ids),
                 SketchOp::Drag { point, to } => {
-                    s.point(point).map_err(fail)?;
+                    s.point(point).map_err(sketch_fail)?;
                     s.drag(point, v2(to));
                     return Ok(());
                 }
                 SketchOp::Move { ids, delta } => {
                     let mut pts: Vec<Id> = Vec::new();
                     for i in &ids {
-                        let e = s.entity(*i).map_err(fail)?;
+                        let e = s.entity(*i).map_err(sketch_fail)?;
                         match e.geo {
                             Geometry::Point { .. } => pts.push(*i),
                             _ => pts.extend(e.point_refs()),
@@ -883,20 +940,26 @@ impl Session {
                     }
                 }
                 SketchOp::Trim { entity, pick } => {
-                    created = tools::trim(s, entity, v2(pick)).map_err(fail)?.entities
+                    created = tools::trim(s, entity, v2(pick))
+                        .map_err(sketch_fail)?
+                        .entities
                 }
                 SketchOp::Extend { entity, pick } => {
-                    created = tools::extend(s, entity, v2(pick)).map_err(fail)?.entities
+                    created = tools::extend(s, entity, v2(pick))
+                        .map_err(sketch_fail)?
+                        .entities
                 }
                 SketchOp::Offset { ids, distance } => {
-                    created = tools::offset(s, &ids, distance).map_err(fail)?.entities
+                    created = tools::offset(s, &ids, distance)
+                        .map_err(sketch_fail)?
+                        .entities
                 }
                 SketchOp::Mirror { ids, about } => {
-                    created = tools::mirror(s, &ids, about).map_err(fail)?.entities
+                    created = tools::mirror(s, &ids, about).map_err(sketch_fail)?.entities
                 }
                 SketchOp::Fillet { point, radius } => {
                     created = tools::sketch_fillet(s, point, radius)
-                        .map_err(fail)?
+                        .map_err(sketch_fail)?
                         .entities
                 }
                 SketchOp::Construction { ids, construction } => {
@@ -911,7 +974,7 @@ impl Session {
                 SketchOp::Convert { refs } => {
                     let state = convert_state.as_ref().unwrap();
                     created = of_model::convert_edges(state, plane.as_ref().unwrap(), s, &refs)
-                        .map_err(fail)?;
+                        .map_err(|e| RpcError::coded(ErrorCode::UnknownRef, e))?;
                 }
             }
             // A failed solve keeps the change so the user can see and fix the
@@ -975,5 +1038,5 @@ fn round(v: f64) -> f64 {
 fn of_model_resolve_plane(state: &State, r: &Ref) -> Result<of_model::geom::Plane, RpcError> {
     of_model::resolve(state, r)
         .and_then(|x| x.plane())
-        .map_err(fail)
+        .map_err(|e| RpcError::coded(ErrorCode::UnknownRef, e))
 }

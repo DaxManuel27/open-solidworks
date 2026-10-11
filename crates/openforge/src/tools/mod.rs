@@ -7,7 +7,7 @@ pub mod params;
 
 use std::sync::OnceLock;
 
-use of_protocol::RpcError;
+use of_protocol::{ErrorCode, RpcError};
 use schemars::generate::SchemaSettings;
 use schemars::{JsonSchema, SchemaGenerator};
 use serde_json::{Map, Value, json};
@@ -342,15 +342,22 @@ impl Entry {
         let mut errors = Vec::new();
         explain(&self.schema, &defs, args, "", &mut errors);
         errors.truncate(3);
-        if errors.is_empty() {
-            Ok(())
-        } else {
-            Err(RpcError::params(format!(
-                "invalid {} arguments: {}",
-                self.tool.name,
-                errors.join("; ")
-            )))
+        let Some(first) = errors.first() else {
+            return Ok(());
+        };
+        let text: Vec<String> = errors
+            .iter()
+            .map(|p| format!("{}: {}", p.path, p.message))
+            .collect();
+        let mut e = RpcError::coded(
+            ErrorCode::InvalidArgs,
+            format!("invalid {} arguments: {}", self.tool.name, text.join("; ")),
+        );
+        if let Some(data) = &mut e.data {
+            data.path = Some(first.path.clone());
+            data.allowed = first.allowed.clone();
         }
+        Err(e)
     }
 
     #[cfg(test)]
@@ -393,7 +400,14 @@ fn branch<'a>(
 /// Validation messages with the JSON path of each problem. Tagged unions are
 /// explained through the branch the instance's tag selects, so a typo inside
 /// a feature names the field instead of "no oneOf branch matched".
-fn explain(node: &Value, defs: &Value, instance: &Value, path: &str, out: &mut Vec<String>) {
+/// One argument problem: where it is, what is wrong, and what is allowed there.
+pub struct Problem {
+    pub path: String,
+    pub message: String,
+    pub allowed: Option<Vec<String>>,
+}
+
+fn explain(node: &Value, defs: &Value, instance: &Value, path: &str, out: &mut Vec<Problem>) {
     let resolve = |n: &Value| match n.get("$ref").and_then(Value::as_str) {
         Some(r) => defs[r.trim_start_matches("#/$defs/")].clone(),
         None => n.clone(),
@@ -406,13 +420,17 @@ fn explain(node: &Value, defs: &Value, instance: &Value, path: &str, out: &mut V
     {
         match chosen {
             Ok(b) => explain(b, defs, instance, path, out),
-            Err(consts) => out.push(format!(
-                "{path}/{tag}: {} is not one of: {}",
-                instance
-                    .get(&tag)
-                    .map_or("missing".into(), Value::to_string),
-                consts.join(", ")
-            )),
+            Err(consts) => out.push(Problem {
+                path: format!("{path}/{tag}"),
+                message: format!(
+                    "{} is not one of: {}",
+                    instance
+                        .get(&tag)
+                        .map_or("missing".into(), Value::to_string),
+                    consts.join(", ")
+                ),
+                allowed: Some(consts),
+            }),
         }
         return;
     }
@@ -428,14 +446,26 @@ fn explain(node: &Value, defs: &Value, instance: &Value, path: &str, out: &mut V
     }
     if let Ok(v) = jsonschema::draft202012::new(&local) {
         for e in v.iter_errors(instance) {
-            out.push(format!(
-                "{}: {e}",
-                if e.instance_path().to_string().is_empty() {
+            let allowed = match e.kind() {
+                jsonschema::error::ValidationErrorKind::Enum { options } => {
+                    options.as_array().map(|o| {
+                        o.iter()
+                            .map(|v| v.as_str().map_or(v.to_string(), str::to_owned))
+                            .collect()
+                    })
+                }
+                _ => None,
+            };
+            let inner = e.instance_path().to_string();
+            out.push(Problem {
+                path: if inner.is_empty() {
                     at.to_owned()
                 } else {
-                    format!("{path}{}", e.instance_path())
-                }
-            ));
+                    format!("{path}{inner}")
+                },
+                message: e.to_string(),
+                allowed,
+            });
         }
     }
     match instance {
@@ -673,6 +703,66 @@ mod tests {
     }
 
     #[test]
+    fn core_failures_carry_stable_codes() {
+        let cases = [
+            (
+                "doc.feature",
+                json!({ "id": 999 }),
+                ErrorCode::UnknownFeature,
+            ),
+            ("sketch.get", json!({ "id": 2 }), ErrorCode::NotASketch),
+            (
+                "sketch.edit",
+                json!({ "id": 3, "op": { "op": "delete", "ids": [3] } }),
+                ErrorCode::Failed,
+            ),
+            (
+                "sketch.edit",
+                json!({ "id": 3, "op": { "op": "constraint", "constraint": { "type": "horizontal", "line": 2 } } }),
+                ErrorCode::UnknownEntity,
+            ),
+            (
+                "parameter.set",
+                json!({ "key": "f9.depth", "value": 1 }),
+                ErrorCode::UnknownParameter,
+            ),
+            (
+                "configuration.activate",
+                json!({ "id": 9 }),
+                ErrorCode::UnknownConfiguration,
+            ),
+            (
+                "body.display",
+                json!({ "id": "b9:0", "hidden": true }),
+                ErrorCode::UnknownBody,
+            ),
+            (
+                "sketch.new",
+                json!({ "plane": { "type": "face", "name": "9.nope" } }),
+                ErrorCode::UnknownRef,
+            ),
+            (
+                "measure",
+                json!({ "refs": [{ "type": "edge", "name": "E(9|9)" }] }),
+                ErrorCode::UnknownRef,
+            ),
+            (
+                "equations.set",
+                json!({ "variables": { "pi": "2mm" }, "equations": {} }),
+                ErrorCode::InvalidFormula,
+            ),
+        ];
+        for (method, params, code) in cases {
+            let mut s = example_part();
+            match s.handle(method, params.clone()) {
+                // Deleting an existing point succeeds; it marks the Ok case.
+                Ok(_) => assert_eq!(code, ErrorCode::Failed, "{method} {params}"),
+                Err(e) => assert_eq!(e.error_code(), code, "{method} {params}: {}", e.message),
+            }
+        }
+    }
+
+    #[test]
     fn misspelled_and_out_of_range_fields_are_rejected_with_their_path() {
         let add = by_name("add_feature").unwrap();
         let fillet = json!({ "feature": {
@@ -691,6 +781,12 @@ mod tests {
         assert!(e.message.contains("/feature"), "{}", e.message);
         let unknown = json!({ "feature": { "type": "sheet_metal", "thickness": 1 } });
         let e = add.validate(&unknown).unwrap_err();
+        let data = e.data.clone().unwrap();
+        assert_eq!(
+            (data.code, data.path.as_deref()),
+            (ErrorCode::InvalidArgs, Some("/feature/type"))
+        );
+        assert!(data.allowed.unwrap().iter().any(|t| t == "extrude"));
         assert!(
             e.message.contains("/feature/type") && e.message.contains("extrude"),
             "{}",

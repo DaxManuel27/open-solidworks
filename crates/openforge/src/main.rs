@@ -134,7 +134,7 @@ fn serve() -> anyhow::Result<()> {
                     ),
                 }
             }
-            Err(resp) => resp,
+            Err(resp) => *resp,
         };
         writeln!(out, "{}", serde_json::to_string(&resp)?)?;
         out.flush()?;
