@@ -12,14 +12,6 @@ use crate::tools;
 
 const PROTOCOL_VERSION: &str = "2025-06-18";
 
-/// Strip the bulky scene and sketch payloads from results shown to the model.
-fn compact(mut v: Value) -> Value {
-    if let Some(o) = v.as_object_mut() {
-        o.remove("scene");
-    }
-    v
-}
-
 fn handle(session: &mut Session, method: &str, params: Value) -> Result<Value, RpcError> {
     match method {
         "initialize" => Ok(json!({
@@ -35,14 +27,19 @@ fn handle(session: &mut Session, method: &str, params: Value) -> Result<Value, R
             let entry = tools::by_name(name)
                 .ok_or_else(|| RpcError::params(format!("unknown tool {name}")))?;
             let args = params.get("arguments").cloned().unwrap_or(json!({}));
-            let result = entry
-                .validate(&args)
-                .and_then(|()| session.handle(entry.tool.method, args));
-            let (text, is_error) = match result {
-                Ok(v) => (serde_json::to_string_pretty(&compact(v)).unwrap(), false),
-                Err(e) => (e.message, true),
-            };
-            Ok(json!({ "content": [{ "type": "text", "text": text }], "isError": is_error }))
+            let envelope = tools::envelope::call(session, entry, args, None);
+            let value = envelope.to_value();
+            let text = format!(
+                "{}\n{}",
+                envelope.summary(),
+                serde_json::to_string(&value).unwrap()
+            );
+            // Text carries the summary and the same JSON for text-only clients.
+            Ok(json!({
+                "content": [{ "type": "text", "text": text }],
+                "structuredContent": value,
+                "isError": !envelope.ok,
+            }))
         }
         _ => Err(RpcError::new(
             RpcError::METHOD_NOT_FOUND,
@@ -76,4 +73,59 @@ pub fn run(mut session: Session) -> anyhow::Result<()> {
         out.flush()?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tool_results_mirror_ok_in_is_error() {
+        let mut s = Session::new();
+        let call = |s: &mut Session, name: &str, arguments: Value| {
+            handle(
+                s,
+                "tools/call",
+                json!({ "name": name, "arguments": arguments }),
+            )
+            .unwrap()
+        };
+        let r = call(
+            &mut s,
+            "new_sketch",
+            json!({ "plane": { "type": "front_plane" } }),
+        );
+        assert_eq!(
+            (r["isError"].clone(), r["structuredContent"]["ok"].clone()),
+            (json!(false), json!(true))
+        );
+        let r = call(
+            &mut s,
+            "add_feature",
+            json!({ "feature": {
+            "type": "extrude", "sketch": 1, "end1": { "type": "blind", "depth": 5 } } }),
+        );
+        assert_eq!(r["isError"], true, "an empty sketch cannot rebuild");
+        assert_eq!(r["structuredContent"]["error"]["code"], "E_REBUILD_FAILED");
+        assert!(
+            r["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .starts_with("Failed (E_REBUILD_FAILED)")
+        );
+        let r = call(
+            &mut s,
+            "add_feature",
+            json!({ "feature": { "type": "fillet", "radios": 1 } }),
+        );
+        assert_eq!(r["structuredContent"]["error"]["code"], "E_INVALID_ARGS");
+        let list = handle(&mut s, "tools/list", json!({})).unwrap();
+        assert!(
+            list["tools"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|t| t["outputSchema"]["type"] == "object")
+        );
+    }
 }

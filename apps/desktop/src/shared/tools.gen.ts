@@ -868,43 +868,70 @@ export type ThinKind = 'one_direction' | 'mid_plane' | 'two_direction'
 /** Arguments of each catalog tool, by tool name. */
 export interface ToolArgs {
   /** Protocol, scene and part-file versions and the capabilities this core implements. Check it before relying on a feature type. */
-  core_info: Record<string, never>
+  core_info: {
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+  }
   /** The feature tree with each feature's error, units, material, bodies, variables, equations, registered parameters (stable keys such as f2.end1.depth) and configurations. Read it before editing. */
-  part_info: Record<string, never>
+  part_info: {
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+  }
   /** The complete authored definition of one feature, including sketch geometry and relations. Read it before update_feature, which replaces the whole definition. */
   get_feature: {
     /** Feature ID from `part_info` `features`. */
     id: number
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
   }
   /** Faces and edges of the visible model with stable refs, surface or curve type, size, centroid, normal and endpoints (mm). Use the refs in fillet, chamfer, shell, draft, sketch-on-face and up-to-surface features. */
-  topology: Record<string, never>
+  topology: {
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+  }
   /** Points, curves, relations and definition status (under, fully or over defined) of one sketch. Use it to find entity IDs before adding relations. */
   get_sketch: {
     /** Feature ID from `part_info` `features`. */
     id: number
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
   }
   /** Lengths, areas, radii, distances and angles of face, edge or vertex refs in the visible model. Results are mm and radians. */
   measure: {
     /** One to four face, edge or vertex refs. */
     refs: Ref[]
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
   }
   /** Volume (mm³), surface area (mm²), mass (kg) from the part's material, center of mass and inertia of the active configuration. Use it to check the requested size. */
-  mass_properties: Record<string, never>
+  mass_properties: {
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+  }
   /** Create an empty sketch on a standard plane, a reference plane or a planar face, and start editing it. Returns the sketch ID as `id`. Add geometry with edit_sketch, then close_sketch. */
   new_sketch: {
     plane: SketchPlane
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
   }
   /** Apply one edit to a sketch: add geometry, relations or dimensions, change a value, or delete. Returns the solved sketch, its definition status and the new entity IDs in `created`. Coordinates are sketch-plane mm. */
   edit_sketch: {
     /** Sketch feature ID. */
     id: number
     op: SketchOp
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
   }
   /** Finish editing the open sketch. Close it before adding the feature that uses it. This does not commit the assistant's draft. */
-  close_sketch: Record<string, never>
+  close_sketch: {
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+  }
   /** Add a feature after the last one and rebuild. Returns its ID as `id`. Check `features[].error` in the result: a geometry failure is stored on the feature, not raised. A cut sketched on a face needs `reverse: true` to go into the material. */
   add_feature: {
     feature: Feature
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
     /** Tree label; omitted uses a default such as `Boss-Extrude2`. */
     name?: string | null
   }
@@ -913,10 +940,14 @@ export interface ToolArgs {
     id: number
     /** The complete replacement definition, same shape as `add_feature`. */
     feature: Feature
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
   }
   /** Delete features and every feature that depends on them. Returns the deleted IDs as `deleted`. Do not delete existing work to fix an error unless the user asked. */
   delete_features: {
     ids: number[]
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
   }
   /** Set one base parameter by its stable key from part_info `parameters`, in mm or radians. Removes that parameter's base equation; configuration overrides still apply. To change one configuration only, use update_configuration. */
   set_parameter: {
@@ -924,6 +955,8 @@ export interface ToolArgs {
     key: string
     /** Core units: mm for lengths, radians for angles. */
     value: number
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
   }
   /** Replace all base variables and equations. Formulas use + - * /, min, max, abs, sqrt, sin, cos, tan, pi and units mm, cm, m, in, ft, deg, rad; lengths need units. Check part_info `equation_values` and feature errors afterwards. */
   set_equations: {
@@ -931,32 +964,44 @@ export interface ToolArgs {
     variables: Record<string, string>
     /** Every equation: parameter key to formula, such as `"thickness * 2"`. */
     equations: Record<string, string>
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
   }
   /** Create a configuration and make it active. It inherits base values unless copy_from names a configuration to duplicate. Read its ID from part_info `configurations.items`. */
   create_configuration: {
     name: string
     /** Configuration to duplicate; omitted inherits base values. */
     copy_from?: number | null
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
   }
   /** Replace one configuration's overrides, keeping its ID: parameter values (mm, radians), equations, variables, suppressed features and material. Features themselves are shared by every configuration. */
   update_configuration: {
     /** The complete configuration. Omitted maps and `material` are reset. */
     configuration: Configuration
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
   }
   /** Make a configuration active, end any feature edit and rebuild the part with its overrides. */
   activate_configuration: {
     /** Configuration ID from `part_info` `configurations.items`. */
     id: number
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
   }
   /** Delete a configuration. At least one must remain. */
   delete_configuration: {
     /** Configuration ID from `part_info` `configurations.items`. */
     id: number
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
   }
   /** Rename, hide or show a body by its stable ID from part_info `bodies`. Hidden bodies still count for mass and export. */
   body_display: {
     /** Body ID from `part_info` `bodies`. */
     id: string
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
     hidden?: boolean | null
     name?: string | null
   }
@@ -964,6 +1009,8 @@ export interface ToolArgs {
   set_material: {
     /** kg/m³, for a custom material. */
     density?: number | null
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
     /**
      * Library name such as `Aluminum 6061`, or a custom name with `density`.
      * Omitted clears the material.
@@ -971,13 +1018,20 @@ export interface ToolArgs {
     name?: string | null
   }
   /** Replace the open part with an empty one. Lengths are mm and angles radians. */
-  new_part: Record<string, never>
+  new_part: {
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+  }
   /** Open an .ofp part file, replacing the open part. */
   open_part: {
     path: string
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
   }
   /** Save the part as an .ofp file. */
   save_part: {
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
     /** Omitted saves to the path the part was opened from. */
     path?: string | null
   }
@@ -987,13 +1041,20 @@ export interface ToolArgs {
     path: string
     /** Configuration ID; omitted exports the active configuration. */
     configuration?: number | null
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
   }
   /** Import a .step or .iges file as a new body feature. */
   import: {
     path: string
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
   }
   /** Undo the last change. */
-  undo: Record<string, never>
+  undo: {
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+  }
 }
 
 export type ToolName = keyof ToolArgs

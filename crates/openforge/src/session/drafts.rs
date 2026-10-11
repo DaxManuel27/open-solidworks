@@ -104,34 +104,33 @@ impl Session {
                             "operation is not available inside a draft",
                         )
                     })?;
-                tool.validate(&p.params)?;
                 let before = draft.session.model.doc.clone();
                 let editing = draft.session.editing;
-                let result = draft.session.handle(&method, p.params);
-                if result.is_err() {
+                let envelope =
+                    crate::tools::envelope::call(&mut draft.session, tool, p.params, Some(&id));
+                // A failed call leaves no trace; a failed feature stays, editable.
+                if envelope.call_failed {
                     draft.session.replace_doc(before);
                     draft.session.editing = editing;
                 }
                 draft.session.undo.clear();
                 draft.session.redo.clear();
-                let result = result?;
-                let errors = errors(&draft.session.model);
-                Ok(
-                    json!({"result":result, "feature_errors":errors, "draft_revision":draft.session.revision}),
-                )
+                let mut value = envelope.to_value();
+                value["draft_revision"] = json!(draft.session.revision);
+                Ok(value)
             }
             "draft.inspect" | "draft.preview" => {
                 draft.session.editing = None;
                 let changed = draft.session.model.doc != self.model.doc;
                 Ok(
-                    json!({"snapshot":draft.session.full()?, "changed":changed, "feature_errors": errors(&draft.session.model), "blocking_errors": blocking_errors(&self.model, &draft.session.model)}),
+                    json!({"snapshot":draft.session.full()?, "changed":changed, "feature_errors": errors(&draft.session.model), "blocking_errors": blocking_errors(&self.model, &mut draft.session.model)}),
                 )
             }
             "draft.commit" => {
                 draft.session.editing = None;
                 draft.session.model.doc.validate().map_err(fail)?;
                 draft.session.model.rebuild_all();
-                if let Some((id, error)) = blocking_errors(&self.model, &draft.session.model)
+                if let Some((id, error)) = blocking_errors(&self.model, &mut draft.session.model)
                     .into_iter()
                     .next()
                 {
@@ -167,12 +166,25 @@ fn errors(model: &Model) -> BTreeMap<u32, String> {
         .collect()
 }
 
-fn blocking_errors(base: &Model, proposed: &Model) -> BTreeMap<u32, String> {
+/// New or touched feature errors, plus added or changed material features
+/// that change nothing: a draft with either cannot be committed.
+fn blocking_errors(base: &Model, proposed: &mut Model) -> BTreeMap<u32, String> {
     let baseline = errors(base);
-    errors(proposed)
+    let mut blocking: BTreeMap<u32, String> = errors(proposed)
         .into_iter()
         .filter(|(id, error)| {
             baseline.get(id) != Some(error) || base.doc.feature(*id) != proposed.doc.feature(*id)
         })
-        .collect()
+        .collect();
+    let touched: Vec<u32> = proposed
+        .doc
+        .features
+        .iter()
+        .filter(|f| base.doc.feature(f.id) != Some(*f))
+        .map(|f| f.id)
+        .collect();
+    for id in crate::tools::envelope::no_effect(proposed, touched) {
+        blocking.insert(id, crate::tools::envelope::NO_EFFECT.into());
+    }
+    blocking
 }

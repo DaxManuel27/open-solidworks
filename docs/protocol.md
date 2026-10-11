@@ -227,33 +227,33 @@ run `cargo run -p openforge -- generate` instead. -->
 
 | Tool | Method | Access | Arguments |
 | --- | --- | --- | --- |
-| `core_info` | `core.info` | read | none |
-| `part_info` | `doc.info` | read | none |
-| `get_feature` | `doc.feature` | read | `id` |
-| `topology` | `doc.topology` | read | none |
-| `get_sketch` | `sketch.get` | read | `id` |
-| `measure` | `measure` | read | `refs` |
-| `mass_properties` | `mass_properties` | read | none |
-| `new_sketch` | `sketch.new` | edit (draft) | `plane` |
-| `edit_sketch` | `sketch.edit` | edit (draft) | `id`, `op` |
-| `close_sketch` | `sketch.close` | edit (draft) | none |
-| `add_feature` | `feature.add` | edit (draft) | `feature`, `name?` |
-| `update_feature` | `feature.update` | edit (draft) | `id`, `feature` |
-| `delete_features` | `feature.delete` | edit (draft) | `ids` |
-| `set_parameter` | `parameter.set` | edit (draft) | `key`, `value` |
-| `set_equations` | `equations.set` | edit (draft) | `variables`, `equations` |
-| `create_configuration` | `configuration.create` | edit (draft) | `name`, `copy_from?` |
-| `update_configuration` | `configuration.update` | edit (draft) | `configuration` |
-| `activate_configuration` | `configuration.activate` | edit (draft) | `id` |
-| `delete_configuration` | `configuration.delete` | edit (draft) | `id` |
-| `body_display` | `body.display` | edit (draft) | `id`, `hidden?`, `name?` |
-| `set_material` | `doc.set_material` | edit (draft) | `density?`, `name?` |
-| `new_part` | `doc.new` | file/session (not in drafts) | none |
-| `open_part` | `doc.open` | file/session (not in drafts) | `path` |
-| `save_part` | `doc.save` | file/session (not in drafts) | `path?` |
-| `export` | `export` | file/session (not in drafts) | `path`, `configuration?` |
-| `import` | `import` | file/session (not in drafts) | `path` |
-| `undo` | `doc.undo` | file/session (not in drafts) | none |
+| `core_info` | `core.info` | read | `detail?` |
+| `part_info` | `doc.info` | read | `detail?` |
+| `get_feature` | `doc.feature` | read | `id`, `detail?` |
+| `topology` | `doc.topology` | read | `detail?` |
+| `get_sketch` | `sketch.get` | read | `id`, `detail?` |
+| `measure` | `measure` | read | `refs`, `detail?` |
+| `mass_properties` | `mass_properties` | read | `detail?` |
+| `new_sketch` | `sketch.new` | edit (draft) | `plane`, `detail?` |
+| `edit_sketch` | `sketch.edit` | edit (draft) | `id`, `op`, `detail?` |
+| `close_sketch` | `sketch.close` | edit (draft) | `detail?` |
+| `add_feature` | `feature.add` | edit (draft) | `feature`, `detail?`, `name?` |
+| `update_feature` | `feature.update` | edit (draft) | `id`, `feature`, `detail?` |
+| `delete_features` | `feature.delete` | edit (draft) | `ids`, `detail?` |
+| `set_parameter` | `parameter.set` | edit (draft) | `key`, `value`, `detail?` |
+| `set_equations` | `equations.set` | edit (draft) | `variables`, `equations`, `detail?` |
+| `create_configuration` | `configuration.create` | edit (draft) | `name`, `copy_from?`, `detail?` |
+| `update_configuration` | `configuration.update` | edit (draft) | `configuration`, `detail?` |
+| `activate_configuration` | `configuration.activate` | edit (draft) | `id`, `detail?` |
+| `delete_configuration` | `configuration.delete` | edit (draft) | `id`, `detail?` |
+| `body_display` | `body.display` | edit (draft) | `id`, `detail?`, `hidden?`, `name?` |
+| `set_material` | `doc.set_material` | edit (draft) | `density?`, `detail?`, `name?` |
+| `new_part` | `doc.new` | file/session (not in drafts) | `detail?` |
+| `open_part` | `doc.open` | file/session (not in drafts) | `path`, `detail?` |
+| `save_part` | `doc.save` | file/session (not in drafts) | `detail?`, `path?` |
+| `export` | `export` | file/session (not in drafts) | `path`, `configuration?`, `detail?` |
+| `import` | `import` | file/session (not in drafts) | `path`, `detail?` |
+| `undo` | `doc.undo` | file/session (not in drafts) | `detail?` |
 
 #### Sketch operations (`edit_sketch` `op`)
 

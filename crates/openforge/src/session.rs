@@ -104,6 +104,18 @@ impl Session {
         &self.model
     }
 
+    pub(crate) fn model_mut(&mut self) -> &mut Model {
+        &mut self.model
+    }
+
+    pub(crate) fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    pub(crate) fn generation(&self) -> &str {
+        &self.generation
+    }
+
     /// Snapshot the document before changing it.
     fn checkpoint(&mut self) {
         self.undo.push(self.model.doc.clone());

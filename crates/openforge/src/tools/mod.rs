@@ -2,6 +2,7 @@
 //! schemas are generated from the Rust argument types in [`params`]; examples
 //! are validated against them and replayed on the core by the tests.
 
+pub mod envelope;
 pub mod generate;
 pub mod params;
 
@@ -295,6 +296,19 @@ fn input_schema(tool: &Tool) -> Value {
     }
     normalize(&mut schema, &defs);
     let o = schema.as_object_mut().unwrap();
+    // Every tool accepts `detail`; the envelope strips it before the core call.
+    o.entry("properties")
+        .or_insert_with(|| json!({}))
+        .as_object_mut()
+        .unwrap()
+        .insert(
+            "detail".into(),
+            json!({
+                "description": "`full` returns the untrimmed result; the default `summary` omits bulky snapshot fields.",
+                "enum": ["summary", "full"],
+                "default": "summary",
+            }),
+        );
     o.insert("examples".into(), Value::Array((tool.examples)()));
     if !defs.is_empty() {
         o.insert("$defs".into(), Value::Object(defs));
@@ -495,12 +509,37 @@ fn strip(properties: &Value) -> Value {
     }
 }
 
+/// The result envelope's schema, shared by every tool.
+pub fn output_schema() -> &'static Value {
+    static SCHEMA: OnceLock<Value> = OnceLock::new();
+    SCHEMA.get_or_init(|| {
+        let mut generator = SchemaGenerator::new(SchemaSettings::draft2020_12());
+        let mut schema = generator.subschema_for::<envelope::Envelope>().to_value();
+        let mut defs: Map<String, Value> = generator.take_definitions(true).into_iter().collect();
+        if let Some(Value::String(r)) = schema.get("$ref").cloned() {
+            schema = defs[r.trim_start_matches("#/$defs/")].clone();
+        }
+        let snapshot = defs.clone();
+        for def in defs.values_mut() {
+            normalize(def, &snapshot);
+        }
+        normalize(&mut schema, &defs);
+        schema
+            .as_object_mut()
+            .unwrap()
+            .insert("$defs".into(), Value::Object(defs));
+        prune(&mut schema);
+        schema
+    })
+}
+
 /// Tool list for MCP `tools/list`.
 pub fn mcp_tools() -> Value {
     json!({ "tools": catalog().iter().map(|e| json!({
         "name": e.tool.name,
         "description": e.tool.description,
         "inputSchema": e.schema,
+        "outputSchema": output_schema(),
     })).collect::<Vec<_>>() })
 }
 
