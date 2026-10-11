@@ -110,3 +110,27 @@ Result sizes on the 40 × 30 × 20 mm block, with the scene removed: `part_info`
 
 Re-run these tasks, and add live runs once a key or local model is available, before
 changing tool names, schemas or descriptions.
+
+## After M1 (schemas)
+
+Same tasks and transcripts, re-run after the M1 commits on 2026-10-10.
+
+| Measure | M0 | After M1 |
+| --- | --- | --- |
+| Reference replay | 10/10, 62 calls | 10/10, 62 calls (unchanged: M1 changes no tool behavior) |
+| First attempts | 0/2 | 0/2 (findings 1 and 3 are M2/M3 work) |
+| Bare `object` parameters | 6 | 0 |
+| Schemas closed with `additionalProperties: false` | 0 of 27 | 27 of 27, every nested object included |
+| Longest description | 2,849 characters | 238 characters |
+| Examples | 35 in prose, 8 not JSON | 54 in schema `examples`, all validated and replayed in CI |
+| Misspelled field (`radios`) | ignored, `isError: false` | `invalid add_feature arguments: /feature: Additional properties are not allowed ('radios' was unexpected)` |
+| Unknown feature type | `unknown variant` from serde | `/feature/type: "sheet_metal" is not one of: split_line, draft, …` |
+| `tools/list` size | 10,894 bytes | 99,749 bytes |
+
+The size increase is the cost of a real contract: `add_feature` and `update_feature`
+each carry the full 24-variant feature union (about 30 KB each) and `edit_sketch`
+the sketch-op and relation unions (about 16 KB). The built-in assistant sends 21
+tools, about 92 KB, with every model request. That is affordable for cloud models,
+but it may crowd small local context windows. Measure it in the first live
+benchmark (M4). The M3 intent tools, or sending only the feature types a task
+needs, are the levers if it hurts.

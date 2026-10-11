@@ -190,6 +190,9 @@ items below are the ones that matter to us:
 | M6: Hardening | W7: injection corpus, fuzzing, operation log, budgets. | Fuzz and injection suites green. |
 | M7: Live attach | W4, after the entire app is built. | Claude Desktop or Claude Code edits the document open in the app; one Undo reverts it. |
 
+Progress: M0 and M1 done on 2026-10-10; results and the remaining live-model runs are in
+[the baseline](mcp-baseline.md).
+
 M1 and M2 come first because they raise accuracy for the built-in assistant with no new
 features, and every later step is measured against them.
 
