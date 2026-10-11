@@ -66,8 +66,11 @@ clear edit state and rebuild from the base document with that variant's override
 | `hole.sizes`, `hole.dims`, `materials.list`, `units.parse` | Existing size/material/unit utilities |
 
 Invalid parameters use JSON-RPC error `-32602`, unknown methods `-32601` and
-operation failures code `1`. Invalid feature geometry normally appears in the
-successful snapshot's `features[].error`, allowing the feature to remain editable.
+operation failures code `1`; errors may carry `data: {code, path?, allowed?}` with a
+stable code from [Tool results and error codes](#tool-results-and-error-codes).
+On these desktop methods, invalid feature geometry appears in the successful
+snapshot's `features[].error`, allowing the feature to remain editable. Catalog tools
+(MCP and `draft.apply`) report it as `ok: false` instead.
 Exports reject active unsuppressed feature errors to avoid exporting a partial
 failed configuration as though it were complete.
 
@@ -194,7 +197,7 @@ request captures both; a matching numeric revision alone is insufficient.
 | `doc.feature` | `{id}` → full authored feature definition |
 | `parameter.set` | `{key,value}` → sets a registered base parameter and removes its base equation; configuration overrides still take precedence |
 | `draft.begin` | `{generation,revision}` → `{id,base_revision,snapshot}`; refuses an open manual editor |
-| `draft.apply` | `{id,method,params}` → `{result,feature_errors,draft_revision}`; only catalog operations are allowed, and `params` must match that tool's schema |
+| `draft.apply` | `{id,method,params}` → the tool's result envelope plus `draft_revision`; only catalog operations are allowed. A failed call leaves the draft unchanged; a failed feature stays, editable |
 | `draft.inspect`, `draft.preview` | `{id}` → `{snapshot,changed,feature_errors,blocking_errors}`; closes draft editing state |
 | `draft.commit` | `{id}` → live snapshot, with one undo checkpoint if changed |
 | `draft.discard` | `{id}` → `{discarded:true}` |
@@ -203,7 +206,8 @@ Drafts are private sessions with independent authored documents. Failed operatio
 restore the previous draft document. New/open/save/import/export/global undo are
 unavailable in drafts. The live revision and editing context must still match at
 commit; new errors and changed failing features block it. Existing untouched errors
-are distinguished in `feature_errors` versus `blocking_errors`. At most four drafts
+are distinguished in `feature_errors` versus `blocking_errors`, which also lists any
+added or changed material feature that adds or removes no material. At most four drafts
 are retained, each for ten minutes. The last 32 commit IDs are idempotent within the
 document generation: re-delivery returns the current snapshot with
 `already_committed:true`, including after undo, without reapplying the task.
@@ -327,3 +331,64 @@ run `cargo run -p openforge -- generate` instead. -->
 | `sketch_entity` | `sketch`, `entity` | A point or line in a sketch. |
 
 <!-- /generated:tools -->
+
+## Tool results and error codes
+
+Every catalog tool returns one envelope: MCP `structuredContent` (its `outputSchema`
+is the same for every tool), and the `draft.apply` result. The MCP text content is a
+one-line summary followed by the same JSON.
+
+```json
+{"ok": false,
+ "error": {"code": "E_NO_EFFECT", "message": "Cut-Extrude1 added or removed no material; …",
+           "feature": 4, "repair": "Fix the feature with update_feature: …"},
+ "revision": 7, "generation": "…", "draft": "…",
+ "changed": [{"id": 4, "name": "Cut-Extrude1", "kind": "extrude", "change": "added"}],
+ "created": {"feature": 4, "entities": []}, "deleted": [],
+ "feature_errors": {}, "existing_errors": {},
+ "warnings": [], "measurements": {"volume_mm3": 24000.0, "bbox_mm": [[0,0,0],[40,30,20]], "body_count": 1},
+ "next": ["Fix the feature with update_feature: …"], "result": {"id": 4}}
+```
+
+- `ok` is false when the call fails, when it introduces a feature error or leaves one
+  on a feature it changed, or when an added or changed material feature (extrude,
+  revolve, sweep, loft, hole, shell, fillet, chamfer, variable fillet, draft,
+  pattern, mirror) adds or removes no material. MCP `isError` equals `!ok`.
+- `feature_errors` holds those errors; `existing_errors` holds errors the part
+  already had, untouched by the call.
+- `changed`, `created` and `deleted` come from comparing the document before and
+  after; `created.entities` lists new sketch entity and relation IDs.
+- `measurements` (active configuration) follow every successful change.
+- `result` is the tool's own result without scenes. By default, mutations omit the
+  snapshot (keeping `id` and `sketch`), sketch curves omit display samples and
+  `part_info` bodies omit topology index arrays; pass `detail: "full"` for everything.
+
+<!-- generated:errors -->
+<!-- Generated from the core tool catalog (crates/openforge/src/tools). Do not edit:
+run `cargo run -p openforge -- generate` instead. -->
+
+| Code | Meaning | Repair |
+| --- | --- | --- |
+| `E_INVALID_ARGS` | Arguments do not match the tool's input schema. | Fix the argument at `path`; `allowed` lists valid values. The tool schema and its examples show the shape. |
+| `E_UNKNOWN_FEATURE` | No feature has this ID. | Read feature IDs from part_info `features`; do not guess them. |
+| `E_NOT_A_SKETCH` | The feature exists but is not a sketch. | Pass a sketch feature ID (type sketch in part_info `features`). |
+| `E_UNKNOWN_ENTITY` | No sketch entity or relation has this ID, or it is the wrong kind. | Read entity IDs from get_sketch or the `created` list of the edit that made them. |
+| `E_UNKNOWN_REF` | A face, edge, plane or other reference does not resolve. | Take face and edge refs from topology or the user's selection, and plane refs from part_info. |
+| `E_UNKNOWN_PARAMETER` | No registered parameter has this key. | Use a key from part_info `parameters`. |
+| `E_UNKNOWN_CONFIGURATION` | No configuration has this ID. | Use an ID from part_info `configurations.items`. |
+| `E_UNKNOWN_BODY` | No body has this ID. | Use a body ID from part_info `bodies`. |
+| `E_INVALID_FORMULA` | A variable, equation or configuration is invalid. | Check variable names, units (lengths need mm, in, …) and that every key exists in part_info `parameters`. |
+| `E_REBUILD_FAILED` | The call added or changed a feature that failed to rebuild. | Read the feature with get_feature, then fix it with update_feature (smaller radius, other direction, valid refs) or delete it. |
+| `E_NO_EFFECT` | A material feature rebuilt but added or removed no material. | Fix the feature with update_feature: a cut sketched on a face usually needs `reverse: true`; check the sketch lies on or inside the part. |
+| `E_STALE_REVISION` | The document changed since the request's revision. | The part changed; read part_info again and start over from the current state. |
+| `E_EDIT_IN_PROGRESS` | A manual feature or sketch edit is open. | Wait until the user finishes the open feature or sketch edit. |
+| `E_DRAFT_MISSING` | The draft does not exist or expired. | Start a new draft; drafts expire after ten minutes. |
+| `E_NOT_ALLOWED` | The operation is not available here (for example, a file operation in a draft). | Use a tool from the catalog; file operations and undo stay with the user. |
+| `E_FAILED` | Any other failure. | Read the message, inspect the part with part_info, and try a different approach. |
+
+| Warning | Meaning |
+| --- | --- |
+| `W_SKETCH_UNDER_DEFINED` | The sketch can still move; add dimensions or relations. |
+| `W_SKETCH_OVER_DEFINED` | The sketch has conflicting or redundant relations. |
+
+<!-- /generated:errors -->

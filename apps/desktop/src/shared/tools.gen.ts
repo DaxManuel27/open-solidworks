@@ -21,6 +21,16 @@ export type ChamferMode =
     angle: number
   }
 
+export type Change = 'added' | 'modified' | 'removed'
+
+export type Changed = {
+  id: number
+  name: string
+  /** Feature `type`, such as `extrude` or `sketch`. */
+  kind: string
+  change: Change
+}
+
 export type Configuration = {
   /** Existing configuration ID from `configurations.items`. */
   id: number
@@ -154,6 +164,14 @@ export type ConstraintKind =
     value: number
   }
 
+/** IDs created by the call, in the form the next call accepts. */
+export type Created = {
+  /** New sketch entity and relation IDs, from `edit_sketch`. */
+  entities: number[]
+  configuration?: number | null
+  feature?: number | null
+}
+
 export type CurveSelection = {
   reference: Ref
   reverse?: boolean
@@ -192,6 +210,25 @@ export type EndCondition =
     /** mm, positive. */
     depth: number
   }
+
+/** Stable error codes reported to tool clients. Messages may change; codes do not. */
+export type ErrorCode =
+  | 'E_INVALID_ARGS'
+  | 'E_UNKNOWN_FEATURE'
+  | 'E_NOT_A_SKETCH'
+  | 'E_UNKNOWN_ENTITY'
+  | 'E_UNKNOWN_REF'
+  | 'E_UNKNOWN_PARAMETER'
+  | 'E_UNKNOWN_CONFIGURATION'
+  | 'E_UNKNOWN_BODY'
+  | 'E_INVALID_FORMULA'
+  | 'E_REBUILD_FAILED'
+  | 'E_NO_EFFECT'
+  | 'E_STALE_REVISION'
+  | 'E_EDIT_IN_PROGRESS'
+  | 'E_DRAFT_MISSING'
+  | 'E_NOT_ALLOWED'
+  | 'E_FAILED'
 
 export type FaceKind = 'face'
 
@@ -591,6 +628,13 @@ export type MaterialOverride =
     value: Material
   }
 
+export type Measurements = {
+  volume_mm3: number
+  body_count: number
+  /** Bounding box `[min, max]`, mm. */
+  bbox_mm?: [[number, number, number], [number, number, number]] | null
+}
+
 export type PatternDirection = {
   /** A straight edge, sketch line, axis, or plane/face (its normal). */
   reference: Ref
@@ -864,6 +908,58 @@ export type Thin = {
 }
 
 export type ThinKind = 'one_direction' | 'mid_plane' | 'two_direction'
+
+export type ToolError = {
+  code: ErrorCode
+  message: string
+  repair: string
+  /** Values allowed at `path`. */
+  allowed?: string[] | null
+  /** Feature the error is about. */
+  feature?: number | null
+  /** JSON path of the offending argument. */
+  path?: string | null
+}
+
+export type Warning = {
+  code: WarningCode
+  message: string
+  feature: number
+}
+
+export type WarningCode = 'W_SKETCH_UNDER_DEFINED' | 'W_SKETCH_OVER_DEFINED'
+
+/** The result of every tool call (MCP `structuredContent`, `draft.apply`). */
+export type Envelope = {
+  /**
+   * True only if the call succeeded, introduced no feature error and every
+   * added or changed material feature changed the part.
+   */
+  ok: boolean
+  /** Document revision after the call. */
+  revision: number
+  /** Document identity; it changes on new/open and core restart. */
+  generation: string
+  /** Features this call added, changed or removed. */
+  changed: Changed[]
+  created: Created
+  /** Feature IDs removed by this call. */
+  deleted: number[]
+  /** Feature errors this call introduced or left on a feature it changed. */
+  feature_errors: Record<string, string>
+  /** Errors the part already had before the call, unchanged by it. */
+  existing_errors: Record<string, string>
+  warnings: Warning[]
+  /** Suggested next steps. */
+  next: string[]
+  /** The tool's own result, trimmed unless `detail` is `full`. */
+  result: unknown
+  /** Assistant draft the call ran in. */
+  draft?: string | null
+  error?: ToolError | null
+  /** The active configuration after a change. */
+  measurements?: Measurements | null
+}
 
 /** Arguments of each catalog tool, by tool name. */
 export interface ToolArgs {

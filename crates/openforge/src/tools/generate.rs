@@ -7,7 +7,8 @@ use std::fmt::Write;
 
 use serde_json::{Map, Value};
 
-use super::{Entry, catalog};
+use super::{Entry, catalog, output_schema};
+use of_protocol::ErrorCode;
 
 /// Repository-relative output paths.
 pub const TYPESCRIPT: &str = "apps/desktop/src/shared/tools.gen.ts";
@@ -19,8 +20,9 @@ const HEADER: &str = "Generated from the core tool catalog (crates/openforge/src
 /// Every named definition across the catalog. Tools embed their own copies.
 fn definitions() -> BTreeMap<String, Value> {
     let mut defs = BTreeMap::new();
-    for entry in catalog() {
-        for (name, def) in entry.schema["$defs"].as_object().into_iter().flatten() {
+    let schemas = catalog().iter().map(|e| &e.schema).chain([output_schema()]);
+    for schema in schemas {
+        for (name, def) in schema["$defs"].as_object().into_iter().flatten() {
             if let Some(old) = defs.insert(name.clone(), def.clone()) {
                 assert_eq!(&old, def, "definition {name} differs between tools");
             }
@@ -180,6 +182,17 @@ pub fn typescript() -> String {
         doc(&mut out, "", def.get("description").and_then(Value::as_str));
         let _ = writeln!(out, "export type {name} ={}", spaced(ts(&def, "")));
     }
+    out.push('\n');
+    doc(
+        &mut out,
+        "",
+        Some("The result of every tool call (MCP `structuredContent`, `draft.apply`)."),
+    );
+    let _ = writeln!(
+        out,
+        "export type Envelope ={}",
+        spaced(ts(output_schema(), ""))
+    );
     out.push_str(
         "\n/** Arguments of each catalog tool, by tool name. */\nexport interface ToolArgs {\n",
     );
@@ -346,9 +359,45 @@ fn splice(doc: &str, name: &str, body: &str) -> String {
     .replace("\n\n\n", "\n\n")
 }
 
+/// Error and warning codes with their meaning and repair hint.
+pub fn error_table() -> String {
+    let defs = definitions();
+    let describe = |def: &str, name: &str| {
+        defs[def]["oneOf"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|b| b["const"] == name)
+            .and_then(|b| b["description"].as_str())
+            .map(cell)
+            .unwrap_or_default()
+    };
+    let mut out = String::from("| Code | Meaning | Repair |\n| --- | --- | --- |\n");
+    for code in ErrorCode::ALL {
+        let name = code.name();
+        let _ = writeln!(
+            out,
+            "| `{name}` | {} | {} |",
+            describe("ErrorCode", &name),
+            cell(code.repair())
+        );
+    }
+    out.push_str("\n| Warning | Meaning |\n| --- | --- |\n");
+    for branch in defs["WarningCode"]["oneOf"]
+        .as_array()
+        .into_iter()
+        .flatten()
+    {
+        let name = branch["const"].as_str().unwrap_or_default();
+        let _ = writeln!(out, "| `{name}` | {} |", describe("WarningCode", name));
+    }
+    out
+}
+
 pub fn protocol(current: &str) -> String {
     let (tools, features) = protocol_tables();
-    splice(&splice(current, "tools", &tools), "features", &features)
+    let doc = splice(&splice(current, "tools", &tools), "features", &features);
+    splice(&doc, "errors", &error_table())
 }
 
 /// Write the generated files under the repository `root`, or with `check`
@@ -375,6 +424,18 @@ pub fn run(root: &std::path::Path, check: bool) -> std::io::Result<Vec<String>> 
 #[cfg(test)]
 mod tests {
     use std::path::Path;
+
+    #[test]
+    fn every_error_code_is_documented() {
+        let table = super::error_table();
+        for code in of_protocol::ErrorCode::ALL {
+            let row = table
+                .lines()
+                .find(|l| l.starts_with(&format!("| `{}`", code.name())));
+            let cells: Vec<&str> = row.expect("documented").split(" | ").collect();
+            assert!(cells.iter().all(|c| !c.trim().is_empty()), "{row:?}");
+        }
+    }
 
     #[test]
     fn generated_files_are_current() {
