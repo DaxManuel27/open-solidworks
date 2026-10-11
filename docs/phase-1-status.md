@@ -1,8 +1,8 @@
 # Phase 1 implementation status
 
 The Rust/Electron Phase 1 implementation is complete for the source alpha.
-Local macOS validation passes; hosted Windows, Linux and macOS CI must pass before
-merging the phase branch or announcing the release. No hosted run is claimed here.
+Hosted CI passes on Windows, macOS and Linux for `d059df7` (see
+[Release gate](#release-gate)).
 
 This is the current implementation checklist for [the plan](plan.md). The feature
 catalog's status column describes the earlier prototype.
@@ -73,8 +73,14 @@ See [README](../README.md#building-from-source) for setup, launch and test comma
 
 ## Release gate
 
-The remaining gate is execution of the hosted three-platform workflow against
-these changes. Local checks do not establish Windows or Linux runtime success.
+Passed 2026-10-11. The hosted CI workflow ran every check above, including the
+native Electron smoke, on `windows-latest`, `macos-latest` and `ubuntu-latest`
+against `d059df7`, in runs [38089993738](https://github.com/DaxManuel27/open-solidworks/actions/runs/38089993738)
+and [38107808470](https://github.com/DaxManuel27/open-solidworks/actions/runs/38107808470)
+(pull request #2). That commit adds the smoke-test layout synchronization that the
+first `main` run (38089373458) lacked; its macOS smoke failed before the ribbon
+layout settled.
+
 Kernel operations can still reject unsuitable geometry; the alpha reports a
 feature error and preserves the preceding body. The regression corpus is a
 starting point for real-user part testing, not a guarantee for arbitrary parts.
