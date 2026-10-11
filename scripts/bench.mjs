@@ -131,8 +131,15 @@ async function runTask(task, provider, temp) {
       const entry = tool ? { tool, args: method === 'draft.apply' ? params.params : params } : null
       try {
         const result = await core.call(method, params)
-        if (entry) {
-          // Errors the start part already had are repeated in every result.
+        if (entry && 'ok' in (result ?? {})) {
+          // A tool result envelope (draft calls).
+          entry.ok = result.ok
+          if (result.error) entry.error = `${result.error.code}: ${result.error.message}`
+          entry.new_errors = result.feature_errors
+          entry.existing_errors = Object.keys(result.existing_errors).length
+          log.push(entry)
+        } else if (entry) {
+          // A raw core result (read-only calls); errors are not split by age.
           const errors = Object.entries(result?.feature_errors ?? {})
           entry.new_errors = Object.fromEntries(errors.filter(([id, e]) => existing[id] !== e))
           entry.existing_errors = errors.length - Object.keys(entry.new_errors).length
@@ -188,7 +195,9 @@ async function runTask(task, provider, temp) {
 
 function summarize(results) {
   for (const r of results) {
-    const failed = r.calls.filter((c) => c.error || Object.keys(c.new_errors ?? {}).length)
+    const failed = r.calls.filter(
+      (c) => c.ok === false || c.error || Object.keys(c.new_errors ?? {}).length,
+    )
     const checks = r.report.checks.filter((c) => !c.ok).map((c) => `${c.name}: ${c.detail}`)
     console.log(
       `${r.report.passed ? 'PASS' : 'FAIL'} ${r.id}: ${r.calls.length} tool calls, ` +

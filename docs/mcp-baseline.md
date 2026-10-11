@@ -134,3 +134,24 @@ tools, about 92 KB, with every model request. That is affordable for cloud model
 but it may crowd small local context windows. Measure it in the first live
 benchmark (M4). The M3 intent tools, or sending only the feature types a task
 needs, are the levers if it hurts.
+
+## After M2 (result envelope)
+
+Every tool now returns the envelope described in
+[the protocol](protocol.md#tool-results-and-error-codes). Re-run on 2026-10-10:
+
+| Measure | M0 | After M2 |
+| --- | --- | --- |
+| Reference replay | 10/10, 62 calls | 10/10, 62 calls |
+| First attempt 06 (face cut without `reverse`) | **committed** a hole that does not exist | `add_feature` fails with `E_NO_EFFECT` ("Cut-Extrude1 added or removed no material; a cut on a face sketch usually needs reverse: true"); the draft cannot be committed |
+| First attempt 02 (guessed IDs) | plain messages | `E_UNKNOWN_ENTITY` ×4, `E_REBUILD_FAILED` ("Revolve1 failed to rebuild: the sketch has no closed contours"), each with a repair hint |
+| Failed rebuild through MCP | `isError: false` | `isError: true`, `ok: false`, `E_REBUILD_FAILED` |
+| Task 08 read calls | broken fillet reported in every result | under `existing_errors`; `feature_errors` empty |
+| New configuration ID | not returned | `created.configuration` |
+| New sketch entities | `created` only on the sketch result | `created.entities` in every `edit_sketch` envelope |
+
+Finding 1 is fixed at the contract level: a model gets `ok: false` and a repair
+hint, and the commit gate refuses the draft. Findings 2, 4 and 6 are fixed. Findings 3
+(guessing IDs) and 5 (face sketch frames) remain for M3. A replay cannot react to
+these results, so the first attempts still fail their checks, but they no longer
+end in a false success.
