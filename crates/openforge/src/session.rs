@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use of_model::geom::{DVec2, Kind};
-use of_model::sketch::{self as sk, ConstraintKind, Geometry, Id, Sketch, tools};
+use of_model::sketch::{self as sk, Geometry, Id, Sketch, tools};
 use of_model::{
     Document, FeatureId, FeatureKind, Import, ImportFormat, Model, Ref, SketchFeature, State,
     Units, file, materials, measure,
@@ -13,6 +13,7 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
+use crate::tools::params::*;
 use crate::views;
 
 mod drafts;
@@ -44,22 +45,6 @@ fn fail(e: impl std::fmt::Display) -> RpcError {
     RpcError::failed(e.to_string())
 }
 
-#[derive(Deserialize)]
-struct FeatureInput {
-    #[serde(flatten)]
-    kind: FeatureKind,
-    #[serde(default)]
-    scope: Option<Vec<of_model::BodyId>>,
-}
-
-/// A point given by id, or a new point at a position.
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum PointArg {
-    Id { id: Id },
-    At { at: [f64; 2] },
-}
-
 fn v2(a: [f64; 2]) -> DVec2 {
     DVec2::new(a[0], a[1])
 }
@@ -74,118 +59,6 @@ impl PointArg {
             PointArg::At { at } => Ok(s.add_point(v2(*at))),
         }
     }
-}
-
-/// Sketch edits, sent as `{"op": "...", ...}`.
-#[derive(Deserialize)]
-#[serde(tag = "op", rename_all = "snake_case")]
-enum SketchOp {
-    AddPoint {
-        at: [f64; 2],
-    },
-    AddLine {
-        a: PointArg,
-        b: PointArg,
-    },
-    AddCircle {
-        center: PointArg,
-        radius: f64,
-    },
-    /// Arc from `start` to `end` passing through `via`.
-    AddArc3 {
-        start: PointArg,
-        end: PointArg,
-        via: [f64; 2],
-    },
-    /// Arc around `center` from `start`, counter-clockwise to the direction of `end`.
-    AddCenterArc {
-        center: PointArg,
-        start: PointArg,
-        end: [f64; 2],
-        #[serde(default)]
-        clockwise: bool,
-    },
-    AddTangentArc {
-        start: Id,
-        tangent: [f64; 2],
-        end: PointArg,
-    },
-    AddSpline {
-        points: Vec<PointArg>,
-        #[serde(default)]
-        closed: bool,
-    },
-    Rectangle {
-        a: [f64; 2],
-        b: [f64; 2],
-        #[serde(default)]
-        center: bool,
-    },
-    Slot {
-        a: [f64; 2],
-        b: [f64; 2],
-        width: f64,
-    },
-    Polygon {
-        center: [f64; 2],
-        vertex: [f64; 2],
-        sides: usize,
-    },
-    Constraint {
-        constraint: ConstraintKind,
-    },
-    /// A dimension measured from the geometry, optionally set to `value`.
-    Dimension {
-        constraint: ConstraintKind,
-        #[serde(default)]
-        value: Option<f64>,
-    },
-    SetValue {
-        id: Id,
-        value: f64,
-    },
-    SetDriving {
-        id: Id,
-        driving: bool,
-    },
-    Delete {
-        ids: Vec<Id>,
-    },
-    Drag {
-        point: Id,
-        to: [f64; 2],
-    },
-    Move {
-        ids: Vec<Id>,
-        delta: [f64; 2],
-    },
-    Trim {
-        entity: Id,
-        pick: [f64; 2],
-    },
-    Extend {
-        entity: Id,
-        pick: [f64; 2],
-    },
-    Offset {
-        ids: Vec<Id>,
-        distance: f64,
-    },
-    Mirror {
-        ids: Vec<Id>,
-        about: Id,
-    },
-    Fillet {
-        point: Id,
-        radius: f64,
-    },
-    Construction {
-        ids: Vec<Id>,
-        construction: bool,
-    },
-    Convert {
-        refs: Vec<Ref>,
-    },
 }
 
 impl Default for Session {
@@ -326,23 +199,15 @@ impl Session {
             return self.draft_request(method, params);
         }
         match method {
-            "assistant.tools" => Ok(crate::mcp::assistant_catalog()),
+            "assistant.tools" => Ok(crate::tools::assistant_catalog()),
             "doc.feature" => {
-                let id = params["id"]
-                    .as_u64()
-                    .and_then(|v| u32::try_from(v).ok())
-                    .ok_or_else(|| RpcError::params("feature id required"))?;
+                let FeatureRef { id } = args(params)?;
                 Ok(
                     json!({"feature":self.model.doc.feature(id).ok_or_else(|| RpcError::params("no such feature"))?}),
                 )
             }
             "parameter.set" => {
-                #[derive(Deserialize)]
-                struct P {
-                    key: String,
-                    value: f64,
-                }
-                let p: P = args(params)?;
+                let p: SetParameter = args(params)?;
                 let target = self
                     .model
                     .doc
@@ -372,23 +237,16 @@ impl Session {
             | "configuration.delete"
             | "configuration.activate" => {
                 use of_model::configurations::Configuration;
-                #[derive(Deserialize)]
-                struct P {
-                    id: Option<u32>,
-                    name: Option<String>,
-                    copy_from: Option<u32>,
-                    configuration: Option<Configuration>,
-                }
-                let p: P = args(params)?;
                 let mut trial = self.model.doc.clone();
                 let configs = &mut trial.configurations;
                 match method {
                     "configuration.create" => {
+                        let p: CreateConfiguration = args(params)?;
                         let id = configs.next_id;
                         configs.next_id = id
                             .checked_add(1)
                             .ok_or_else(|| fail("configuration IDs exhausted"))?;
-                        let name = p.name.ok_or_else(|| RpcError::params("name is required"))?;
+                        let name = p.name;
                         let mut config = if let Some(source) = p.copy_from {
                             configs
                                 .items
@@ -405,9 +263,7 @@ impl Session {
                         configs.active = id;
                     }
                     "configuration.update" => {
-                        let mut configuration = p
-                            .configuration
-                            .ok_or_else(|| RpcError::params("configuration is required"))?;
+                        let UpdateConfiguration { mut configuration } = args(params)?;
                         configuration.name = configuration.name.trim().into();
                         let target = configs
                             .items
@@ -417,7 +273,7 @@ impl Session {
                         *target = configuration;
                     }
                     "configuration.delete" => {
-                        let id = p.id.ok_or_else(|| RpcError::params("id is required"))?;
+                        let ConfigurationRef { id } = args(params)?;
                         if !configs.items.iter().any(|c| c.id == id) {
                             return Err(RpcError::params("no such configuration"));
                         }
@@ -430,7 +286,8 @@ impl Session {
                         }
                     }
                     _ => {
-                        configs.active = p.id.ok_or_else(|| RpcError::params("id is required"))?;
+                        let ConfigurationRef { id } = args(params)?;
+                        configs.active = id;
                     }
                 }
                 trial.validate().map_err(RpcError::params)?;
@@ -441,12 +298,7 @@ impl Session {
                 self.full()
             }
             "equations.set" | "equations.preview" => {
-                #[derive(Deserialize)]
-                struct P {
-                    variables: std::collections::BTreeMap<String, String>,
-                    equations: std::collections::BTreeMap<String, String>,
-                }
-                let p: P = args(params)?;
+                let p: SetEquations = args(params)?;
                 let mut trial = self.model.doc.clone();
                 trial.variables = p.variables;
                 trial.equations = p.equations;
@@ -490,13 +342,7 @@ impl Session {
                 ],
             })),
             "body.display" => {
-                #[derive(Deserialize)]
-                struct P {
-                    id: of_model::BodyId,
-                    name: Option<String>,
-                    hidden: Option<bool>,
-                }
-                let p: P = args(params)?;
+                let p: BodyDisplay = args(params)?;
                 self.display().solid(&p.id).map_err(fail)?;
                 if p.name.as_ref().is_some_and(|n| n.trim().is_empty()) {
                     return Err(RpcError::params("the body name cannot be empty"));
@@ -517,20 +363,12 @@ impl Session {
                 self.full()
             }
             "doc.open" => {
-                #[derive(Deserialize)]
-                struct P {
-                    path: PathBuf,
-                }
-                let p: P = args(params)?;
+                let p: FilePath = args(params)?;
                 *self = Session::open(p.path).map_err(fail)?;
                 self.full()
             }
             "doc.save" => {
-                #[derive(Deserialize)]
-                struct P {
-                    path: Option<PathBuf>,
-                }
-                let p: P = args(params)?;
+                let p: SavePath = args(params)?;
                 let path = p
                     .path
                     .or(self.path.clone())
@@ -565,12 +403,7 @@ impl Session {
                 Ok(self.snapshot())
             }
             "doc.set_material" => {
-                #[derive(Deserialize)]
-                struct P {
-                    name: Option<String>,
-                    density: Option<f64>,
-                }
-                let p: P = args(params)?;
+                let p: SetMaterial = args(params)?;
                 let m = match (p.name, p.density) {
                     (None, _) => None,
                     (Some(n), Some(d)) => Some(materials::Material {
@@ -598,12 +431,7 @@ impl Session {
             }
             "doc.topology" => self.topology(),
             "feature.add" => {
-                #[derive(Deserialize)]
-                struct P {
-                    feature: FeatureInput,
-                    name: Option<String>,
-                }
-                let p: P = args(params)?;
+                let p: AddFeature = args(params)?;
                 self.checkpoint();
                 let id = self.model.doc.add(p.feature.kind);
                 self.model.doc.feature_mut(id).unwrap().scope = p.feature.scope;
@@ -617,12 +445,7 @@ impl Session {
                 Ok(v)
             }
             "feature.update" => {
-                #[derive(Deserialize)]
-                struct P {
-                    id: FeatureId,
-                    feature: FeatureInput,
-                }
-                let p: P = args(params)?;
+                let p: UpdateFeature = args(params)?;
                 self.checkpoint();
                 let f = self
                     .model
@@ -636,11 +459,7 @@ impl Session {
                 self.full()
             }
             "feature.delete" => {
-                #[derive(Deserialize)]
-                struct P {
-                    ids: Vec<FeatureId>,
-                }
-                let p: P = args(params)?;
+                let p: DeleteFeatures = args(params)?;
                 self.checkpoint();
                 let first = p
                     .ids
@@ -752,11 +571,7 @@ impl Session {
                 self.full()
             }
             "sketch.new" => {
-                #[derive(Deserialize)]
-                struct P {
-                    plane: Ref,
-                }
-                let p: P = args(params)?;
+                let p: NewSketch = args(params)?;
                 // Check the plane resolves before adding anything.
                 let state = self.visible();
                 of_model_resolve_plane(&state, &p.plane)?;
@@ -773,20 +588,11 @@ impl Session {
                 Ok(v)
             }
             "sketch.get" => {
-                #[derive(Deserialize)]
-                struct P {
-                    id: FeatureId,
-                }
-                let p: P = args(params)?;
+                let p: FeatureRef = args(params)?;
                 self.sketch_view(p.id)
             }
             "sketch.edit" => {
-                #[derive(Deserialize)]
-                struct P {
-                    id: FeatureId,
-                    op: SketchOp,
-                }
-                let p: P = args(params)?;
+                let p: EditSketch = args(params)?;
                 let created = self.sketch_edit(p.id, p.op)?;
                 let mut v = self.sketch_view(p.id)?;
                 v["created"] = json!(created);
@@ -838,11 +644,7 @@ impl Session {
                 }
             }
             "measure" => {
-                #[derive(Deserialize)]
-                struct P {
-                    refs: Vec<Ref>,
-                }
-                let p: P = args(params)?;
+                let p: Measure = args(params)?;
                 let state = self.visible();
                 Ok(json!(measure::measure(&state, &p.refs).map_err(fail)?))
             }
@@ -853,13 +655,7 @@ impl Session {
                 ))
             }
             "export" => {
-                #[derive(Deserialize)]
-                struct P {
-                    path: PathBuf,
-                    format: Option<of_io::ExportFormat>,
-                    configuration: Option<u32>,
-                }
-                let p: P = args(params)?;
+                let p: Export = args(params)?;
                 let format = p
                     .format
                     .or_else(|| of_io::ExportFormat::from_path(&p.path))
@@ -892,11 +688,7 @@ impl Session {
                 Ok(json!({ "path": p.path }))
             }
             "import" => {
-                #[derive(Deserialize)]
-                struct P {
-                    path: PathBuf,
-                }
-                let p: P = args(params)?;
+                let p: FilePath = args(params)?;
                 let data = of_io::read_import(&p.path).map_err(fail)?;
                 let format = match data.kind {
                     of_io::ImportKind::Step => ImportFormat::Step,

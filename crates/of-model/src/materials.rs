@@ -1,11 +1,13 @@
 //! Materials for mass properties.
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Material {
     pub name: String,
-    /// kg/m³
+    /// kg/m³.
+    #[schemars(extend("exclusiveMinimum" = 0))]
     pub density: f64,
 }
 

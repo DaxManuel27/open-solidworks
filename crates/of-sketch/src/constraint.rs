@@ -21,7 +21,7 @@ fn yes() -> bool {
 
 /// Lengths are in millimetres and angles in radians. Where a dimension
 /// takes a point, a circle or arc may be given and its center is used.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ConstraintKind {
     /// Two points at the same place.
@@ -75,6 +75,7 @@ pub enum ConstraintKind {
         a: Id,
         b: Id,
         #[serde(default)]
+        #[schemars(skip)]
         inside: bool,
     },
     Concentric {
@@ -91,39 +92,46 @@ pub enum ConstraintKind {
     Fix {
         entity: Id,
         #[serde(default)]
+        #[schemars(skip)]
         at: Vec<f64>,
     },
-    /// Point–point, point–line, or line–line (parallel) distance.
+    /// Point–point, point–line, or line–line (parallel) distance, mm.
     Distance {
         a: Id,
         b: Id,
         value: f64,
     },
-    /// Signed horizontal distance, `b.x - a.x`.
+    /// Signed horizontal distance `b.x - a.x`, mm.
     HorizontalDistance {
         a: Id,
         b: Id,
         value: f64,
     },
-    /// Signed vertical distance, `b.y - a.y`.
+    /// Signed vertical distance `b.y - a.y`, mm.
     VerticalDistance {
         a: Id,
         b: Id,
         value: f64,
     },
+    /// Line length, mm.
     Length {
         line: Id,
+        #[schemars(range(min = 0.0))]
         value: f64,
     },
+    /// Circle or arc radius, mm.
     Radius {
         curve: Id,
+        #[schemars(range(min = 0.0))]
         value: f64,
     },
+    /// Circle or arc diameter, mm.
     Diameter {
         curve: Id,
+        #[schemars(range(min = 0.0))]
         value: f64,
     },
-    /// Signed angle from line `a`'s direction to line `b`'s.
+    /// Signed angle from line `a`'s direction to line `b`'s, radians.
     Angle {
         a: Id,
         b: Id,

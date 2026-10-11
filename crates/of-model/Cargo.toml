@@ -11,6 +11,7 @@ repository.workspace = true
 of-geom.workspace = true
 of-sketch.workspace = true
 base64.workspace = true
+schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

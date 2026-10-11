@@ -39,39 +39,40 @@ pub use of_geom as geom;
 pub use of_sketch as sketch;
 
 use of_geom::DVec3;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 pub type FeatureId = u32;
 
 /// A reference to geometry, by stable name rather than kernel index.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Ref {
-    Body {
-        id: BodyId,
-    },
+    /// A whole solid body, by its stable ID from `doc.info` `bodies`.
+    Body { id: BodyId },
+    /// A face, edge or vertex of one body, as returned by selection.
     BodyTopology {
         body: BodyId,
         kind: of_geom::Kind,
+        /// Stable topology name, such as `2.end` or `E(2.end|2.s5)`.
         name: String,
     },
+    /// The model origin point.
     Origin,
+    /// The XY plane.
     FrontPlane,
+    /// The XZ plane.
     TopPlane,
+    /// The YZ plane.
     RightPlane,
-    Face {
-        name: String,
-    },
-    Edge {
-        name: String,
-    },
-    Vertex {
-        name: String,
-    },
+    /// A face by stable name, such as `2.end`, from `doc.topology`.
+    Face { name: String },
+    /// An edge by stable name, such as `E(2.end|2.s5)`, from `doc.topology`.
+    Edge { name: String },
+    /// A vertex by stable name, from `doc.topology`.
+    Vertex { name: String },
     /// A reference plane, axis, point, coordinate system or sketch.
-    Feature {
-        id: FeatureId,
-    },
+    Feature { id: FeatureId },
     /// A point or line in a sketch.
     SketchEntity {
         sketch: FeatureId,
@@ -105,7 +106,7 @@ impl Feature {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum FeatureKind {
     SplitLine(ProjectedCurve),
@@ -119,6 +120,8 @@ pub enum FeatureKind {
     Combine(Combine),
     MoveBody(MoveBody),
     SplitBody(SplitBody),
+    /// Sketches are created with `sketch.new` and edited with `sketch.edit`.
+    #[schemars(skip)]
     Sketch(SketchFeature),
     Plane(PlaneDef),
     Axis(AxisDef),
@@ -133,6 +136,8 @@ pub enum FeatureKind {
     LinearPattern(LinearPattern),
     CircularPattern(CircularPattern),
     Mirror(MirrorDef),
+    /// Imported bodies come from the `import` method.
+    #[schemars(skip)]
     Import(Import),
 }
 

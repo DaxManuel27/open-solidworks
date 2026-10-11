@@ -2,10 +2,11 @@
 //! document. Switching configurations never writes solved geometry into the base.
 
 use crate::{Document, FeatureId, equations, materials::Material};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "mode", content = "value", rename_all = "snake_case")]
 pub enum MaterialOverride {
     #[default]
@@ -14,16 +15,22 @@ pub enum MaterialOverride {
     Set(Material),
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Configuration {
+    /// Existing configuration ID from `configurations.items`.
+    #[schemars(range(min = 1))]
     pub id: u32,
     pub name: String,
+    /// Parameter key (`f2.end1.depth`) to value in core units (mm, radians).
     #[serde(default)]
     pub parameters: BTreeMap<String, f64>,
+    /// Parameter key to formula; null stops inheriting the base equation.
     #[serde(default)]
     pub equations: BTreeMap<String, Option<String>>,
+    /// Variable name to formula, overriding base variables.
     #[serde(default)]
     pub variables: BTreeMap<String, String>,
+    /// Feature ID to suppression state in this configuration.
     #[serde(default)]
     pub suppressed: BTreeMap<FeatureId, bool>,
     #[serde(default)]

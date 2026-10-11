@@ -4,12 +4,15 @@
 use std::collections::{BTreeSet, HashSet};
 
 use of_geom::{BoolOp, DAffine3, DMat3, DVec3, Kind, Shape};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::naming::{Inputs, Naming};
 use crate::{Body, FeatureId, Ref, State, resolve};
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
+)]
 #[serde(transparent)]
 pub struct BodyId(pub String);
 
@@ -32,28 +35,35 @@ pub struct BodyDisplay {
     pub hidden: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Combine {
     /// The first selected body is the target for subtraction.
+    #[schemars(length(min = 2))]
     pub bodies: Vec<BodyId>,
     pub operation: BoolOp,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct MoveBody {
+    #[schemars(length(min = 1))]
     pub bodies: Vec<BodyId>,
+    /// XYZ, mm.
     #[serde(default)]
+    #[schemars(with = "[f64; 3]")]
     pub translation: DVec3,
     /// Euler XYZ angles in radians, applied X then Y then Z about `origin`.
     #[serde(default)]
+    #[schemars(with = "[f64; 3]")]
     pub rotation: DVec3,
+    /// XYZ, mm.
     #[serde(default)]
+    #[schemars(with = "[f64; 3]")]
     pub origin: DVec3,
     #[serde(default)]
     pub copy: bool,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum KeepSide {
     #[default]
@@ -62,9 +72,11 @@ pub enum KeepSide {
     Negative,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct SplitBody {
+    #[schemars(length(min = 1))]
     pub bodies: Vec<BodyId>,
+    /// A plane or planar face.
     pub plane: Ref,
     #[serde(default)]
     pub keep: KeepSide,

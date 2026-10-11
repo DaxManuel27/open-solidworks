@@ -33,7 +33,7 @@ impl From<cxx::Exception> for GeomError {
 pub type Result<T> = std::result::Result<T, GeomError>;
 
 /// Kinds of sub-shape.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
     Face = 0,
@@ -246,7 +246,7 @@ pub struct Distance {
 }
 
 /// Boolean operations.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum BoolOp {
     Fuse = 0,

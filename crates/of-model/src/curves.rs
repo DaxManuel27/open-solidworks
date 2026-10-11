@@ -1,6 +1,7 @@
 //! Referenceable construction curves and section/path consumers.
 use crate::{FeatureId, Ref, Resolved, State, resolve};
 use of_geom::{DVec3, Kind, Plane, Shape};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone)]
@@ -8,38 +9,51 @@ pub struct CurveBody {
     pub shape: Shape,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Helix {
+    /// Base plane; the helix axis is its normal through its origin.
     pub plane: Ref,
+    /// mm.
+    #[schemars(extend("exclusiveMinimum" = 0))]
     pub radius: f64,
+    /// mm per turn.
+    #[schemars(extend("exclusiveMinimum" = 0))]
     pub pitch: f64,
+    #[schemars(extend("exclusiveMinimum" = 0))]
     pub turns: f64,
+    /// Radians.
     #[serde(default)]
     pub start_angle: f64,
     #[serde(default)]
     pub left_handed: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct CurveSelection {
     pub reference: Ref,
     #[serde(default)]
     pub reverse: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct CompositeCurve {
+    /// Connected curves in order.
+    #[schemars(length(min = 1))]
     pub segments: Vec<CurveSelection>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ProjectedCurve {
+    /// A sketch or curve feature.
     pub source: Ref,
+    /// A face; required to be a face for a split line.
     pub target: Ref,
+    /// Projection direction, XYZ.
+    #[schemars(with = "[f64; 3]")]
     pub direction: DVec3,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SweepOrientation {
     #[default]
@@ -48,9 +62,12 @@ pub enum SweepOrientation {
     Fixed,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Sweep {
+    /// Sketch with one closed profile and no holes.
+    #[schemars(range(min = 1))]
     pub profile: FeatureId,
+    /// One connected sketch, construction curve or edge.
     pub path: Ref,
     #[serde(default)]
     pub reverse_path: bool,
@@ -66,9 +83,12 @@ fn yes() -> bool {
     true
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Loft {
+    /// Ordered profile sketch IDs, each one closed profile without holes.
+    #[schemars(length(min = 2))]
     pub profiles: Vec<FeatureId>,
+    /// Profiles whose direction is reversed.
     #[serde(default)]
     pub reversed: Vec<FeatureId>,
     #[serde(default)]

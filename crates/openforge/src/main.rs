@@ -4,6 +4,7 @@
 mod bench;
 mod mcp;
 mod session;
+mod tools;
 mod views;
 
 use std::io::{BufRead, Write};

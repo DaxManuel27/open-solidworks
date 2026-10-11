@@ -88,11 +88,10 @@ impl Session {
                 let method = p
                     .method
                     .ok_or_else(|| RpcError::params("method required"))?;
-                if !crate::mcp::assistant_methods().contains(&method.as_str()) {
-                    return Err(RpcError::params(
-                        "operation is not available inside a draft",
-                    ));
-                }
+                let tool = crate::tools::by_method(&method)
+                    .filter(|e| e.tool.draft)
+                    .ok_or_else(|| RpcError::params("operation is not available inside a draft"))?;
+                tool.validate(&p.params)?;
                 let before = draft.session.model.doc.clone();
                 let editing = draft.session.editing;
                 let result = draft.session.handle(&method, p.params);
