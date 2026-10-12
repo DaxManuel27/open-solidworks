@@ -664,6 +664,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "of-assembly"
+version = "0.1.0"
+dependencies = [
+ "of-mate",
+ "of-model",
+ "schemars",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "of-geom"
 version = "0.1.0"
 dependencies = [

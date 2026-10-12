@@ -35,6 +35,9 @@ pub struct Configuration {
     pub suppressed: BTreeMap<FeatureId, bool>,
     #[serde(default)]
     pub material: MaterialOverride,
+    /// Configuration-specific custom properties, overriding the part's.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub properties: BTreeMap<String, crate::properties::Property>,
 }
 
 impl Configuration {
@@ -47,6 +50,7 @@ impl Configuration {
             variables: BTreeMap::new(),
             suppressed: BTreeMap::new(),
             material: MaterialOverride::Inherit,
+            properties: BTreeMap::new(),
         }
     }
 }

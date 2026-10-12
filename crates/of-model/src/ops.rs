@@ -2242,12 +2242,22 @@ fn circular_pattern(
 
 fn mirror(fid: FeatureId, m: &MirrorDef, prev: &State, state: &mut State) -> RResult<()> {
     let plane = resolve(prev, &m.plane)?.plane()?;
+    if !m.keep_original && !m.features.is_empty() {
+        return Err("only a whole-body mirror can replace the original".into());
+    }
     if m.features.is_empty() {
         let body = body_of(prev)?;
         let r = body.shape.mirror(plane.origin, plane.normal).map_err(geo)?;
         let names = body
             .names
             .prefixed(&r.shape, &r.history, &format!("{fid}.m."));
+        if !m.keep_original {
+            state.body = Some(Body {
+                shape: r.shape,
+                names,
+            });
+            return Ok(());
+        }
         return apply_tool(fid, state, r.shape, names, BoolOp::Fuse, true);
     }
     for f in ordered_seeds(prev, &m.features)? {

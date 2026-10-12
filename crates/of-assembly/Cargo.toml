@@ -1,0 +1,18 @@
+[package]
+name = "of-assembly"
+description = "Assembly documents: components, mates, patterns, explode steps, BOM and analysis"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+of-model.workspace = true
+of-mate.workspace = true
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

@@ -645,6 +645,14 @@ pub struct MirrorDef {
     pub features: Vec<FeatureId>,
     /// A plane or planar face.
     pub plane: Ref,
+    /// Whole-body mirrors only: false replaces the body with its mirror
+    /// image (opposite-hand parts) instead of adding it.
+    #[serde(default = "yes", skip_serializing_if = "is_true")]
+    pub keep_original: bool,
+}
+
+fn is_true(v: &bool) -> bool {
+    *v
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
