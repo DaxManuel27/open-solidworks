@@ -48,9 +48,11 @@ Current implementation and remaining work: [Phase 1 status](phase-1-status.md).
 
 Phase 2: [implementation plan](phase-2-plan.md) and [current status](phase-2-status.md).
 
-Current priority, 2026-10-10: finish Phase 2 using the
-[remaining implementation sequence](phase-2-remaining-plan.md). The owner has deferred
-AI assistant development until Phase 2 completion and a separate decision to resume it.
+Phase 3: [implementation plan](phase-3-plan.md).
+
+Current priority, 2026-10-12: Phase 2 is merged; build Phase 3 (assemblies) on the
+`phase-3` branch following its [implementation plan](phase-3-plan.md). AI assistant
+development stays deferred until a separate decision to resume it.
 Keep the existing implementation and offline regressions; new CAD features continue
 to use the shared core and existing tool contracts.
 
@@ -76,14 +78,14 @@ OpenForge is a clean-codebase restart: a Rust CAD core that calls OpenCASCADE, w
 | CAD core | Rust, running alongside the UI | Document model, feature tree, rebuilds, topological naming, file format, scripting API |
 | Geometry kernel | OpenCASCADE (C++), called from Rust through a thin bridge | Only mature open-source B-rep kernel; solids, surfaces, booleans, fillets, STEP/IGES, hidden-line removal for drawings |
 | Sketch solver | Native Rust solver in `of-sketch` | Damped least squares, constraint diagnostics and degrees-of-freedom analysis; retained by owner decision on 2026-10-10 |
-| Assembly mate solver | OndselSolver (C++), via the same bridge | Open-source mate and kinematics solver |
+| Assembly mate solver | Native Rust solver in `of-mate` | Rigid-body mates, limits and couplers with the sketch solver's diagnostics; chosen over OndselSolver by owner decision on 2026-10-12 |
 | Simulation (later phases) | Gmsh + CalculiX | Open-source meshing and FEA |
 
 How it fits together:
 
 1. The UI process (Electron + React) handles everything the user sees and clicks.
 2. It talks to the Rust core, which owns the document and rebuilds the model.
-3. The core calls OpenCASCADE for geometry and solves sketches in Rust. OndselSolver is planned for assembly mates in Phase 3.
+3. The core calls OpenCASCADE for geometry and solves sketches in Rust. Assembly mates are solved in Rust by `of-mate` (Phase 3).
 4. After each rebuild, the core sends meshes, edge lines and stable face/edge IDs back to the viewport.
 
 Keeping face and edge references stable across edits (topological naming) is designed into the core from day one.
@@ -132,7 +134,7 @@ To make contributing easy from day one:
 
 OpenForge's own code is dual-licensed Apache-2.0 / MIT and built as a clean-room reimplementation.
 
-- License: Apache-2.0 / MIT for OpenForge code. OpenCASCADE (LGPL-2.1 with exception) and future OndselSolver integration keep their own licenses.
+- License: Apache-2.0 / MIT for OpenForge code. OpenCASCADE (LGPL-2.1 with exception) keeps its own license.
 - Clean-room: features are built from how SolidWorks behaves and from public documentation, never from its code, binaries or file internals.
 - Branding: no SolidWorks names, logos, icons or screenshots in the app or marketing.
 - Name: OpenForge is a working name.
