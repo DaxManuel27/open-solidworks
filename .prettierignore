@@ -3,3 +3,6 @@ target/
 **/out/
 docs/
 apps/desktop/src/shared/tools.gen.ts
+
+# Written by scripts/bench.mjs
+bench/results

@@ -56,6 +56,8 @@ impl Core {
 impl Drop for Core {
     fn drop(&mut self) {
         let _ = self.child.kill();
+        // Windows keeps the process's files locked until it has exited.
+        let _ = self.child.wait();
     }
 }
 
@@ -248,6 +250,7 @@ fn configuration_exports_are_isolated_and_failed_requests_are_transactional() {
             .abs()
             < 1e-6
     );
+    drop(core);
     std::fs::remove_dir_all(dir).unwrap();
 }
 
@@ -833,6 +836,7 @@ fn cosmetic_thread_metadata_preview_undo_variants_and_export_preserve_solid_geom
             .unwrap()
             .is_empty()
     );
+    drop(core);
     std::fs::remove_dir_all(dir).unwrap();
 }
 
