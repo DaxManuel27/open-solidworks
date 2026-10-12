@@ -1,10 +1,11 @@
 # Phase 2 implementation status
 
-Updated 2026-10-11. Work is on `phase-2`, based on the Phase 1 merge `8fff08d`.
-**Phase 2 is in progress, not release-complete.** The roadmap and the remaining
-acceptance criteria in [the implementation plan](phase-2-plan.md) still apply.
+Updated 2026-10-12. Built on `phase-2`, based on the Phase 1 merge `8fff08d`.
+**Phase 2 is complete** and merged into `main`. Every planned mode in
+[the implementation plan](phase-2-plan.md) and the
+[completion plan](phase-2-remaining-plan.md) is implemented; extensions left out of
+scope are listed in the last column of the tables below.
 
-Next work follows the [Phase 2 completion plan](phase-2-remaining-plan.md).
 AI assistant development is deferred by owner decision on 2026-10-10; shared CAD
 tool contracts remain in scope. This planning update adds no completion or test claims.
 
