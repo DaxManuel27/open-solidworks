@@ -17,6 +17,8 @@ pub struct CoreInfo {
     pub protocol_version: u32,
     pub scene_version: u32,
     pub part_file_version: u32,
+    #[serde(default)]
+    pub assembly_file_version: u32,
     pub capabilities: Vec<String>,
 }
 

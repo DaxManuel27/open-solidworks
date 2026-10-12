@@ -2,7 +2,12 @@
 // run `cargo run -p openforge -- generate` instead.
 // Lengths are millimetres and angles radians.
 
+/** Direction sense for mates between oriented entities. */
+export type Alignment = 'aligned' | 'anti_aligned' | 'closest'
+
 export type Axis3 = 'x' | 'y' | 'z'
+
+export type BomType = 'top_level' | 'parts_only' | 'indented'
 
 /** Boolean operations. */
 export type BoolOp = 'fuse' | 'cut' | 'common'
@@ -33,15 +38,46 @@ export type Changed = {
   change: Change
 }
 
+export type Collision = {
+  /** Check only the dragged component. */
+  dragged_only?: boolean
+}
+
+/**
+ * A reference to geometry in the assembly: a component path (empty for the
+ * assembly's own planes, axes and sketches) and a part reference inside it.
+ */
+export type CompRef = {
+  /** Face, edge, vertex, plane, axis or point inside that component. */
+  entity: Ref
+  /**
+   * Instance keys from the top: `["2"]`, `["4", "1"]` inside subassembly
+   * 4, or `["2@p7.1"]` for a pattern instance. Empty means the assembly.
+   */
+  component?: string[]
+}
+
+/** One direction of a linear component pattern. */
+export type ComponentPatternDirection = {
+  /** Edge, axis or plane (normal) for the direction. */
+  reference: CompRef
+  spacing: number
+  count: number
+  reverse?: boolean
+}
+
 export type Configuration = {
   /** Existing configuration ID from `configurations.items`. */
   id: number
   name: string
+  additionalProperties?: unknown
   /** Parameter key to formula; null stops inheriting the base equation. */
   equations?: Record<string, string | null>
   material?: MaterialOverride
   /** Parameter key (`f2.end1.depth`) to value in core units (mm, radians). */
   parameters?: Record<string, number>
+  /** Configuration-specific custom properties, overriding the part's. */
+  properties?: Record<string, Property>
   /** Feature ID to suppression state in this configuration. */
   suppressed?: Record<string, boolean>
   /** Variable name to formula, overriding base variables. */
@@ -309,6 +345,8 @@ export type CurveSelection = {
   reverse?: boolean
 }
 
+export type DragPhase = 'start' | 'move' | 'end'
+
 /** How far an extrude goes in one direction. */
 export type EndCondition =
   | {
@@ -382,6 +420,27 @@ export type ErrorCode =
   | 'E_DRAFT_MISSING'
   | 'E_NOT_ALLOWED'
   | 'E_FAILED'
+
+export type ExplodeMotion =
+  | {
+    type: 'translate'
+    direction: [number, number, number]
+    distance: number
+    /** Space components evenly: each moves `distance` further than the last. */
+    auto_space?: boolean
+  }
+  | {
+    type: 'rotate'
+    origin: [number, number, number]
+    axis: [number, number, number]
+    angle: number
+  }
+  | {
+    type: 'radial'
+    origin: [number, number, number]
+    axis: [number, number, number]
+    distance: number
+  }
 
 export type FaceKind = 'face'
 
@@ -993,9 +1052,36 @@ export type Feature =
     plane: Ref
     /** Features to mirror. Empty mirrors the whole body. */
     features?: number[]
+    /**
+     * Whole-body mirrors only: false replaces the body with its mirror
+     * image (opposite-hand parts) instead of adding it.
+     */
+    keep_original?: boolean
     /** Body IDs this feature acts on; omitted acts on the whole part. */
     scope?: string[] | null
   }
+
+/** Kinds of standard hardware. */
+export type HardwareKind =
+  | 'socket_head_cap_screw'
+  | 'socket_head_cap_screw_inch'
+  | 'hex_bolt'
+  | 'hex_screw'
+  | 'hex_nut'
+  | 'washer'
+  | 'dowel_pin'
+
+/**
+ * What to generate: a kind, a size from its table and, for screws and
+ * pins, a length in mm.
+ */
+export type HardwareSpec = {
+  kind: HardwareKind
+  /** Size designation from the catalog, such as `M6` or `1/4-20`. */
+  size: string
+  /** Length under the head (screws) or overall (pins), mm. */
+  length?: number | null
+}
 
 export type HelixInput = 'pitch_and_turns' | 'height_and_turns' | 'height_and_pitch'
 
@@ -1004,6 +1090,12 @@ export type HelixPitch = {
   turn: number
   /** mm per turn. */
   pitch: number
+}
+
+export type HingeLimit = {
+  faces: [CompRef, CompRef]
+  min: number
+  max: number
 }
 
 export type HoleEnd =
@@ -1027,6 +1119,12 @@ export type KeepSide = 'both' | 'positive' | 'negative'
 /** Kinds of sub-shape. */
 export type Kind = 'face' | 'edge' | 'vertex' | 'solid'
 
+/** A range for limit mates, in mm or radians. */
+export type Limit = {
+  min: number
+  max: number
+}
+
 /**
  * A loft end condition. The surface leaves (or meets) the end section along
  * the given tangent; `tangent_length` scales it relative to the spacing of the
@@ -1045,6 +1143,145 @@ export type LoftEnd =
     direction: Ref
     flip?: boolean
     tangent_length?: number
+  }
+
+/** The mate types: standard, advanced and mechanical. */
+export type MateKind =
+  | {
+    type: 'coincident'
+    a: CompRef
+    b: CompRef
+    alignment?: Alignment
+  }
+  | {
+    type: 'parallel'
+    a: CompRef
+    b: CompRef
+    alignment?: Alignment
+  }
+  | {
+    type: 'perpendicular'
+    a: CompRef
+    b: CompRef
+  }
+  | {
+    type: 'tangent'
+    a: CompRef
+    b: CompRef
+    alignment?: Alignment
+  }
+  | {
+    type: 'concentric'
+    a: CompRef
+    b: CompRef
+    alignment?: Alignment
+    /** Also stop rotation about the shared axis. */
+    lock_rotation?: boolean
+  }
+  | {
+    type: 'lock'
+    a: string[]
+    b: string[]
+  }
+  | {
+    type: 'distance'
+    a: CompRef
+    b: CompRef
+    distance: number
+    flip?: boolean
+    limit?: Limit | null
+  }
+  | {
+    type: 'angle'
+    a: CompRef
+    b: CompRef
+    angle: number
+    flip?: boolean
+    limit?: Limit | null
+  }
+  | {
+    type: 'profile_center'
+    a: CompRef
+    b: CompRef
+    flip?: boolean
+    lock_rotation?: boolean
+    offset?: number
+  }
+  | {
+    type: 'symmetric'
+    a: CompRef
+    b: CompRef
+    plane: CompRef
+  }
+  | {
+    type: 'width'
+    width: [CompRef, CompRef]
+    tab: [CompRef, CompRef]
+    constraint: WidthConstraint
+  }
+  | {
+    type: 'path'
+    point: CompRef
+    path: CompRef[]
+    constraint: TravelConstraint
+    /** Keep this axis of the moving component tangent to the path. */
+    follow?: CompRef | null
+    /** Roll control: keep this axis of the moving component toward `up`. */
+    roll?: Roll | null
+  }
+  | {
+    type: 'linear_coupler'
+    a: CompRef
+    b: CompRef
+    /** When `a` moves `ratio_a`, `b` moves `ratio_b`. */
+    ratio_a: number
+    ratio_b: number
+    reverse?: boolean
+  }
+  | {
+    type: 'cam'
+    cam: CompRef
+    follower: CompRef
+  }
+  | {
+    type: 'slot'
+    slot: CompRef
+    pin: CompRef
+    constraint: TravelConstraint
+  }
+  | {
+    type: 'hinge'
+    axis: [CompRef, CompRef]
+    faces: [CompRef, CompRef]
+    limit?: HingeLimit | null
+  }
+  | {
+    type: 'gear'
+    a: CompRef
+    b: CompRef
+    ratio_a: number
+    ratio_b: number
+    reverse?: boolean
+  }
+  | {
+    type: 'rack_pinion'
+    rack: CompRef
+    pinion: CompRef
+    distance_per_revolution: number
+    reverse?: boolean
+  }
+  | {
+    type: 'screw'
+    a: CompRef
+    b: CompRef
+    distance_per_revolution: number
+    reverse?: boolean
+  }
+  | {
+    type: 'universal_joint'
+    a: CompRef
+    b: CompRef
+    joint_point?: CompRef | null
   }
 
 export type Material = {
@@ -1072,6 +1309,52 @@ export type Measurements = {
   bbox_mm?: [[number, number, number], [number, number, number]] | null
 }
 
+export type MirrorItem = {
+  component: string
+  /**
+   * Write an opposite-hand part here (relative to the assembly) instead
+   * of placing a reoriented copy of the same part.
+   */
+  opposite_hand?: string | null
+}
+
+export type MirrorPosition = 'center_of_mass' | 'bounding_box' | 'origin'
+
+/** How to move a component. */
+export type Motion =
+  | {
+    mode: 'delta'
+    translation: [number, number, number]
+  }
+  | {
+    mode: 'to'
+    point: [number, number, number]
+    local?: [number, number, number]
+  }
+  | {
+    mode: 'along'
+    reference: CompRef
+    distance: number
+  }
+  | {
+    mode: 'rotate'
+    angles: [number, number, number]
+  }
+  | {
+    mode: 'about'
+    reference: CompRef
+    angle: number
+  }
+  | {
+    mode: 'pose'
+    transform: Transform
+  }
+  | {
+    mode: 'drag'
+    local: [number, number, number]
+    point: [number, number, number]
+  }
+
 /** A finite number that compares and hashes by value. */
 export type OrderedFloat = number
 
@@ -1084,6 +1367,42 @@ export type PatternDirection = {
   count: number
   reverse?: boolean
 }
+
+export type PatternKind =
+  | {
+    type: 'linear'
+    direction1: ComponentPatternDirection
+    direction2?: ComponentPatternDirection | null
+  }
+  | {
+    type: 'circular'
+    axis: CompRef
+    /** Angle between instances, or the total angle with `equal_spacing`. */
+    angle: number
+    count: number
+    equal_spacing?: boolean
+    reverse?: boolean
+  }
+  | {
+    type: 'pattern_driven'
+    /** The pattern feature: a component path and `{type: feature, id}`. */
+    feature: CompRef
+  }
+  | {
+    type: 'sketch_driven'
+    sketch: number
+    /** The seed point the instances are placed by; default the seed's origin. */
+    reference?: CompRef | null
+  }
+  | {
+    type: 'curve_driven'
+    curve: CompRef[]
+    spacing: number
+    count: number
+    reverse?: boolean
+    /** Rotate instances to follow the curve tangent. */
+    tangent?: boolean
+  }
 
 /** A point given by sketch entity ID, or a new point at a position. */
 export type PointArg =
@@ -1098,6 +1417,13 @@ export type PointArg =
 export type ProfileSelection = number | ContourSelection
 
 export type ProjectionMode = 'onto_face' | 'sketch_on_sketch' | 'intersection' | 'silhouette'
+
+export type Property = {
+  value: string
+  kind?: PropertyKind
+}
+
+export type PropertyKind = 'text' | 'number' | 'date' | 'yes_no'
 
 export type RadiusStation = {
   /** Fraction along the edge, 0 to 1. */
@@ -1217,6 +1543,11 @@ export type RibDirection = 'parallel_to_sketch' | 'normal_to_sketch'
 
 /** Which side of the sketch a rib's thickness grows to. */
 export type RibSide = 'both' | 'first' | 'second'
+
+export type Roll = {
+  axis: CompRef
+  up: CompRef
+}
 
 export type Sketch3D = {
   /** Monotonically increasing; deleted entity IDs must never be reused. */
@@ -1409,6 +1740,30 @@ export type ToolError = {
   path?: string | null
 }
 
+/** A rigid placement: translation in mm and a unit quaternion `[x, y, z, w]`. */
+export type Transform = {
+  translation: [number, number, number]
+  rotation: [number, number, number, number]
+}
+
+export type TravelConstraint =
+  | {
+    type: 'free'
+  }
+  | {
+    type: 'center'
+  }
+  | {
+    type: 'distance'
+    distance: number
+    flip?: boolean
+  }
+  | {
+    type: 'percent'
+    percent: number
+    flip?: boolean
+  }
+
 export type Warning = {
   code: WarningCode
   message: string
@@ -1416,6 +1771,23 @@ export type Warning = {
 }
 
 export type WarningCode = 'W_SKETCH_UNDER_DEFINED' | 'W_SKETCH_OVER_DEFINED'
+
+export type WidthConstraint =
+  | {
+    type: 'centered'
+  }
+  | {
+    type: 'free'
+  }
+  | {
+    type: 'dimension'
+    distance: number
+    flip?: boolean
+  }
+  | {
+    type: 'percent'
+    percent: number
+  }
 
 /** What a wrapped sketch does to the face it is wrapped onto. */
 export type WrapMode = 'emboss' | 'deboss' | 'scribe'
@@ -1687,6 +2059,186 @@ export interface ToolArgs {
     /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
     detail?: 'summary' | 'full'
   }
+  /** Replace the open document with an empty assembly. Insert parts with insert_component; the first one is fixed at the origin. */
+  new_assembly: {
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+  }
+  /** The open assembly: components (keys, files, fixed, remaining DOF, errors, children), mates (IDs, types, errors), patterns, mirrors, configurations, explode steps and solve diagnostics. */
+  assembly_info: {
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+  }
+  /** Faces and edges of one component in assembly coordinates, each with the component `ref` that add_mate and measure take. */
+  component_topology: {
+    /** Component key path from `assembly_info` `components`, such as `["2"]`. */
+    component: string[]
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+  }
+  /** Insert an .ofp part or .ofa subassembly. Returns its key as `key`. Transform rotation is a unit quaternion [x, y, z, w]. */
+  insert_component: {
+    /** `.ofp` part or `.ofa` assembly file. */
+    path: string
+    /** Part configuration ID; omitted uses the file's active configuration. */
+    configuration?: number | null
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+    /** Placement; omitted puts the component at the origin. */
+    transform?: Transform | null
+  }
+  /** Standard hardware kinds with their sizes and preferred lengths (mm). */
+  hardware_catalog: {
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+  }
+  /** Generate (or reuse) a standard screw, bolt, nut, washer or pin from hardware_catalog and insert it. Its axis is Z, its bearing face on Z = 0, the head toward +Z. */
+  insert_hardware: {
+    hardware: HardwareSpec
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+    /**
+     * Library folder; omitted uses `OPENFORGE_HARDWARE_DIR` or
+     * `~/OpenForge/Hardware`.
+     */
+    folder?: string | null
+    transform?: Transform | null
+  }
+  /** Rename, fix or float, hide, suppress, exclude from BOM, make a subassembly flexible, pick a part configuration or set the transform of a top-level component. */
+  update_component: {
+    /** Top-level component key. */
+    key: string
+    /**
+     * Part configuration ID in the active assembly configuration; null
+     * returns to the file's active configuration.
+     */
+    configuration?: number | null
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+    exclude_from_bom?: boolean | null
+    fixed?: boolean | null
+    /** Subassemblies: solve their components with this assembly's mates. */
+    flexible?: boolean | null
+    hidden?: boolean | null
+    name?: string | null
+    /** Suppression in the active assembly configuration. */
+    suppressed?: boolean | null
+    transform?: Transform | null
+  }
+  /** Delete components and every mate that uses them. Returns `deleted_mates`. */
+  delete_components: {
+    /** Top-level component keys from `assembly_info` `components`. */
+    keys: string[]
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+  }
+  /** Add a mate between component references from component_topology and solve. Fails without changing anything if the mate can't be satisfied, naming the mates it conflicts with. Lengths mm, angles radians. */
+  add_mate: {
+    mate: MateKind
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+    name?: string | null
+  }
+  /** Change a mate's definition, name or suppression by ID. */
+  update_mate: {
+    /** Mate ID from `assembly_info` `mates`. */
+    id: number
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+    mate?: MateKind | null
+    name?: string | null
+    suppressed?: boolean | null
+  }
+  /** Delete mates by ID. */
+  delete_mates: {
+    ids: number[]
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+  }
+  /** Move or rotate a floating component within its mates: by a delta, to a point, along or about a reference. With `collision` it stops before parts overlap. */
+  move_component: {
+    /** Component key path: `["2"]`, or a flexible subassembly's child `["4", "1"]`. */
+    component: string[]
+    motion: Motion
+    /** Stop before parts overlap. */
+    collision?: Collision | null
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+    /**
+     * Interactive drags: `start` snapshots for undo, `move` previews and
+     * returns only positions, `end` (the default) records the change.
+     */
+    phase?: DragPhase | null
+  }
+  /** Pattern components: linear, circular, following a part's pattern feature, at sketch points or along a curve. Instances get keys like `2@p5.1`. */
+  add_component_pattern: {
+    /** Linear, circular, pattern-driven, sketch-driven or curve-driven. */
+    pattern: PatternKind
+    /** Seed component keys. */
+    seeds: string[]
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+    name?: string | null
+    skip?: number[]
+  }
+  /** Mirror components about a plane: reoriented copies, or opposite-hand part files written next to the assembly. */
+  mirror_components: {
+    /** Plane or flat face to mirror about. */
+    plane: CompRef
+    components: MirrorItem[]
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+    name?: string | null
+    position?: MirrorPosition
+  }
+  /** Add an explode step to the active configuration and show the exploded view. Explode steps move only the display, never mates. */
+  add_explode_step: {
+    /** Component key paths to move. */
+    components: string[][]
+    /** Translate along a direction, rotate about an axis, or spread radially. */
+    motion: ExplodeMotion
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+    name?: string | null
+  }
+  /** Find components whose solids overlap, with each overlap's volume (mm³). */
+  interference: {
+    /** Check only among these component key paths; empty checks everything. */
+    components?: string[][]
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+    include_hidden?: boolean
+    subassemblies_as_components?: boolean
+    treat_coincidence?: boolean
+  }
+  /** List gaps between components smaller than `minimum` mm, smallest first. */
+  clearance: {
+    /** Report gaps smaller than this, mm. */
+    minimum: number
+    components?: string[][]
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+  }
+  /** The bill of materials: top-level, parts-only or indented rows with quantities and part properties. `csv` also writes it to a file. */
+  bill_of_materials: {
+    /** Also write the BOM as CSV here. */
+    csv?: string | null
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+    type?: BomType
+  }
+  /** Read a STEP file with several parts into a new assembly: one .ofp per distinct part in `folder`, each instance placed and fixed where the file had it. */
+  import_step_assembly: {
+    /** `.step` or `.stp` file with one or more parts. */
+    path: string
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+    /**
+     * Folder for the generated part files; omitted uses a folder named
+     * after the STEP file beside it.
+     */
+    folder?: string | null
+  }
 }
 
 export type ToolName = keyof ToolArgs
@@ -1723,6 +2275,25 @@ export const TOOL_METHODS = {
   export: 'export',
   import: 'import',
   undo: 'doc.undo',
+  new_assembly: 'asm.new',
+  assembly_info: 'asm.info',
+  component_topology: 'asm.topology',
+  insert_component: 'asm.insert',
+  hardware_catalog: 'asm.hardware_catalog',
+  insert_hardware: 'asm.insert_hardware',
+  update_component: 'asm.component.update',
+  delete_components: 'asm.component.delete',
+  add_mate: 'asm.mate.add',
+  update_mate: 'asm.mate.update',
+  delete_mates: 'asm.mate.delete',
+  move_component: 'asm.move',
+  add_component_pattern: 'asm.pattern.add',
+  mirror_components: 'asm.mirror.add',
+  add_explode_step: 'asm.explode.add',
+  interference: 'asm.interference',
+  clearance: 'asm.clearance',
+  bill_of_materials: 'asm.bom',
+  import_step_assembly: 'asm.import_step',
 } as const satisfies Record<ToolName, string>
 
 /** Schema examples, validated and replayed on the core in CI. */
@@ -1757,4 +2328,23 @@ export const TOOL_EXAMPLES: { [K in ToolName]: ToolArgs[K][] } = {
   export: [{"path":"part.step"}, {"configuration":2,"path":"part.stl"}],
   import: [{"path":"part.step"}],
   undo: [{}],
+  new_assembly: [{}],
+  assembly_info: [{}],
+  component_topology: [{"component":["2"]}],
+  insert_component: [{"path":"part.ofp","transform":{"rotation":[0,0,0,1],"translation":[0,0,40]}}],
+  hardware_catalog: [{}],
+  insert_hardware: [{"hardware":{"kind":"hex_nut","size":"M6"}}, {"hardware":{"kind":"socket_head_cap_screw","length":16,"size":"M5"},"transform":{"rotation":[0,0,0,1],"translation":[30,20,5]}}],
+  update_component: [{"key":"2","name":"Lid"}, {"fixed":true,"key":"2"}],
+  delete_components: [{"keys":["2"]}],
+  add_mate: [{"mate":{"a":{"component":["1"],"entity":{"name":"2.end","type":"face"}},"b":{"component":["2"],"entity":{"name":"2.start","type":"face"}},"type":"coincident"}}, {"mate":{"a":{"component":[],"entity":{"type":"right_plane"}},"b":{"component":["2"],"entity":{"type":"right_plane"}},"distance":10,"type":"distance"},"name":"Offset"}],
+  update_mate: [{"id":3,"name":"Seat"}, {"id":3,"suppressed":true}],
+  delete_mates: [{"ids":[3]}],
+  move_component: [{"component":["2"],"motion":{"mode":"delta","translation":[10,0,0]}}, {"collision":{},"component":["2"],"motion":{"angles":[0,0,0.5],"mode":"rotate"}}],
+  add_component_pattern: [{"pattern":{"direction1":{"count":3,"reference":{"component":[],"entity":{"type":"right_plane"}},"spacing":70},"type":"linear"},"seeds":["2"]}],
+  mirror_components: [{"components":[{"component":"2"}],"plane":{"component":[],"entity":{"type":"right_plane"}}}],
+  add_explode_step: [{"components":[["2"]],"motion":{"direction":[0,0,1],"distance":30,"type":"translate"}}],
+  interference: [{}, {"treat_coincidence":true}],
+  clearance: [{"minimum":50}],
+  bill_of_materials: [{"type":"parts_only"}],
+  import_step_assembly: [{"path":"assembly.step"}],
 }

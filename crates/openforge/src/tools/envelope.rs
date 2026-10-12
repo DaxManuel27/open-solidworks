@@ -246,7 +246,16 @@ fn trim(value: &mut Value, full: bool, mutating: bool) {
         o.retain(|k, _| {
             matches!(
                 k.as_str(),
-                "id" | "sketch" | "deleted" | "already_committed"
+                "id" | "sketch"
+                    | "deleted"
+                    | "already_committed"
+                    | "key"
+                    | "deleted_mates"
+                    | "broken_mates"
+                    | "reloaded"
+                    | "collision"
+                    | "moved"
+                    | "folder"
             )
         });
     }
@@ -260,6 +269,11 @@ fn trim(value: &mut Value, full: bool, mutating: bool) {
     drop_samples(o);
     if let Some(sketch) = o.get_mut("sketch").and_then(Value::as_object_mut) {
         drop_samples(sketch);
+    }
+    if let Some(Value::Array(found)) = o.get_mut("interferences") {
+        for i in found.iter_mut().filter_map(Value::as_object_mut) {
+            i.remove("mesh");
+        }
     }
     if let Some(Value::Array(bodies)) = o.get_mut("bodies") {
         for b in bodies.iter_mut().filter_map(Value::as_object_mut) {
@@ -671,7 +685,15 @@ mod tests {
                 if let Some(path) = example.get_mut("path") {
                     *path = json!(dir.join(path.as_str().unwrap()));
                 }
-                let mut s = example_part();
+                if let Some(folder) = example.get_mut("folder") {
+                    *folder = json!(dir.join("hardware"));
+                }
+                let method = entry.tool.method;
+                let mut s = if method.starts_with("asm.") && method != "asm.new" {
+                    crate::tools::tests::example_assembly(&dir)
+                } else {
+                    example_part()
+                };
                 match entry.tool.method {
                     "import" => drop(s.handle("export", example.clone()).unwrap()),
                     "doc.open" => drop(s.handle("doc.save", example.clone()).unwrap()),

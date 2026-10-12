@@ -370,6 +370,7 @@ pub struct Mate {
 
 /// One direction of a linear component pattern.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[schemars(rename = "ComponentPatternDirection")]
 pub struct PatternDirection {
     /// Edge, axis or plane (normal) for the direction.
     pub reference: CompRef,

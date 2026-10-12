@@ -127,7 +127,7 @@ fn capabilities_and_preview_revisions_follow_document_lifetime() {
     let mut core = Core::start();
     let info = core.ok("core.info", json!({}));
     assert_eq!(info["protocol_version"], 3);
-    assert_eq!(info["part_file_version"], 3);
+    assert_eq!(info["part_file_version"], 4);
     let start = core.ok("doc.info", json!({}));
     let feature = json!({ "type": "point", "mode": "coordinates", "x": 1, "y": 2, "z": 3 });
     let preview = core.ok(

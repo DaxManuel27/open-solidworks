@@ -159,7 +159,7 @@ run `cargo run -p openforge -- generate` instead. -->
 | `hole` | `sketch`, `kind`, `standard`, `size`, `end`, `cbore_depth_override?`, `cbore_diameter_override?`, `cosmetic_thread?`, `csink_angle_override?`, `csink_diameter_override?`, `diameter_override?`, `fit?`, `reverse?`, `scope?` | Standard holes at each standalone point of a sketch. |
 | `linear_pattern` | `features`, `direction1`, `direction2?`, `scope?` | Repeat features along one or two directions. |
 | `circular_pattern` | `features`, `axis`, `count`, `angle`, `equal_spacing?`, `reverse?`, `scope?` | Repeat features around an axis. |
-| `mirror` | `plane`, `features?`, `scope?` | Mirror features, or the whole body, about a plane. |
+| `mirror` | `plane`, `features?`, `keep_original?`, `scope?` | Mirror features, or the whole body, about a plane. |
 
 <!-- /generated:features -->
 
@@ -269,6 +269,25 @@ run `cargo run -p openforge -- generate` instead. -->
 | `export` | `export` | file/session (not in drafts) | `path`, `configuration?`, `detail?` |
 | `import` | `import` | file/session (not in drafts) | `path`, `detail?` |
 | `undo` | `doc.undo` | file/session (not in drafts) | `detail?` |
+| `new_assembly` | `asm.new` | file/session (not in drafts) | `detail?` |
+| `assembly_info` | `asm.info` | read | `detail?` |
+| `component_topology` | `asm.topology` | read | `component`, `detail?` |
+| `insert_component` | `asm.insert` | file/session (not in drafts) | `path`, `configuration?`, `detail?`, `transform?` |
+| `hardware_catalog` | `asm.hardware_catalog` | read | `detail?` |
+| `insert_hardware` | `asm.insert_hardware` | file/session (not in drafts) | `hardware`, `detail?`, `folder?`, `transform?` |
+| `update_component` | `asm.component.update` | file/session (not in drafts) | `key`, `configuration?`, `detail?`, `exclude_from_bom?`, `fixed?`, `flexible?`, `hidden?`, `name?`, `suppressed?`, `transform?` |
+| `delete_components` | `asm.component.delete` | file/session (not in drafts) | `keys`, `detail?` |
+| `add_mate` | `asm.mate.add` | file/session (not in drafts) | `mate`, `detail?`, `name?` |
+| `update_mate` | `asm.mate.update` | file/session (not in drafts) | `id`, `detail?`, `mate?`, `name?`, `suppressed?` |
+| `delete_mates` | `asm.mate.delete` | file/session (not in drafts) | `ids`, `detail?` |
+| `move_component` | `asm.move` | file/session (not in drafts) | `component`, `motion`, `collision?`, `detail?`, `phase?` |
+| `add_component_pattern` | `asm.pattern.add` | file/session (not in drafts) | `pattern`, `seeds`, `detail?`, `name?`, `skip?` |
+| `mirror_components` | `asm.mirror.add` | file/session (not in drafts) | `plane`, `components`, `detail?`, `name?`, `position?` |
+| `add_explode_step` | `asm.explode.add` | file/session (not in drafts) | `components`, `motion`, `detail?`, `name?` |
+| `interference` | `asm.interference` | read | `components?`, `detail?`, `include_hidden?`, `subassemblies_as_components?`, `treat_coincidence?` |
+| `clearance` | `asm.clearance` | read | `minimum`, `components?`, `detail?` |
+| `bill_of_materials` | `asm.bom` | read | `csv?`, `detail?`, `type?` |
+| `import_step_assembly` | `asm.import_step` | file/session (not in drafts) | `path`, `detail?`, `folder?` |
 
 #### Sketch operations (`edit_sketch` `op`)
 

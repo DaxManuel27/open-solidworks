@@ -766,6 +766,7 @@ dependencies = [
  "anyhow",
  "clap",
  "jsonschema",
+ "of-assembly",
  "of-io",
  "of-model",
  "of-protocol",
