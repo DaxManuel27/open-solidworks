@@ -13,7 +13,9 @@ import type {
 
 /** Something picked in the viewport. */
 export type Pick =
-  { kind: Kind; index: number } | { kind: 'datum'; id: number } | { kind: 'std_plane'; ref: Ref }
+  | { kind: Kind; index: number }
+  | { kind: 'datum'; id: number; ref?: Ref }
+  | { kind: 'std_plane'; ref: Ref }
 
 export type PickKind = Pick['kind']
 
@@ -24,12 +26,21 @@ export interface PickTarget {
 }
 
 export type PanelType =
+  | 'dome'
+  | 'rib'
+  | 'thread'
+  | 'face_fillet'
+  | 'wrap'
+  | 'cosmetic_thread'
+  | 'sketch3d'
   | 'draft'
   | 'variable_fillet'
   | 'sweep'
   | 'sweep_cut'
   | 'loft'
   | 'loft_cut'
+  | 'boundary'
+  | 'boundary_cut'
   | 'helix'
   | 'composite_curve'
   | 'split_line'
@@ -115,7 +126,7 @@ interface State {
   /** General selection in part mode. */
   selection: { pick: Pick; ref: Ref }[]
   /** Extra items to highlight (from panel selection boxes), as kernel indices. */
-  highlights: { kind: Kind; index: number }[]
+  highlights: Pick[]
   pickTarget: PickTarget | null
   treeSelection: number | null
   hoverFeature: number | null
@@ -154,7 +165,11 @@ interface Actions {
   openPanel(p: Panel): void
   closePanel(): Promise<void>
   preview(params: FeatureParams | null, editing?: number): Promise<void>
-  commit(params: FeatureParams, editing?: number): Promise<boolean>
+  commit(
+    params: FeatureParams,
+    editing?: number,
+    formulas?: Record<string, string | null>,
+  ): Promise<boolean>
 
   startSketch(plane: Ref): Promise<void>
   editSketch(id: number): Promise<void>
@@ -205,7 +220,7 @@ export const useStore = create<State & Actions>((set, get) => ({
   async init() {
     try {
       const info = await call<CoreInfo>('core.info')
-      if (info.protocol_version !== 2 || info.scene_version !== 2)
+      if (info.protocol_version !== 3 || info.scene_version !== 3)
         throw new Error(
           'The core and desktop versions do not match. Rebuild both before opening a part.',
         )
@@ -326,7 +341,7 @@ export const useStore = create<State & Actions>((set, get) => ({
   async pick(pick, additive) {
     const target = get().pickTarget
     let ref: Ref
-    if (pick.kind === 'datum') ref = { type: 'feature', id: pick.id }
+    if (pick.kind === 'datum') ref = pick.ref ?? { type: 'feature', id: pick.id }
     else if (pick.kind === 'std_plane') ref = pick.ref
     else {
       try {
@@ -360,8 +375,16 @@ export const useStore = create<State & Actions>((set, get) => ({
   },
 
   async setHighlights(refs) {
-    const out: { kind: Kind; index: number }[] = []
+    const out: Pick[] = []
     for (const r of refs) {
+      if (r.type === 'curve_segment') {
+        out.push({ kind: 'datum', id: r.curve, ref: r })
+        continue
+      }
+      if (r.type === 'feature') {
+        out.push({ kind: 'datum', id: r.id })
+        continue
+      }
       if (!['face', 'edge', 'vertex', 'body_topology'].includes(r.type)) continue
       try {
         const loc = await call<{ kind: Kind; index: number } | null>('select.locate', { ref: r })
@@ -410,11 +433,16 @@ export const useStore = create<State & Actions>((set, get) => ({
     }
   },
 
-  async commit(params, editing) {
+  async commit(params, editing, formulas = {}) {
+    // A new feature has no equations to clear.
+    const sent =
+      editing !== undefined
+        ? formulas
+        : Object.fromEntries(Object.entries(formulas).filter(([, f]) => f !== null))
     const snap =
       editing !== undefined
-        ? await get().run('feature.update', { id: editing, feature: params })
-        : await get().run('feature.add', { feature: params })
+        ? await get().run('feature.update', { id: editing, feature: params, formulas: sent })
+        : await get().run('feature.add', { feature: params, formulas: sent })
     if (!snap) return false
     set({
       panel: null,

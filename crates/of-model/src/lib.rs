@@ -13,9 +13,13 @@
 pub mod bodies;
 mod build;
 pub mod configurations;
+pub mod cosmetic_thread;
+pub use cosmetic_thread::{CosmeticThread, Thread};
 pub mod curves;
 pub use curves::{
-    CompositeCurve, CurveSelection, Helix, Loft, ProjectedCurve, Sweep, SweepOrientation,
+    Boundary, CompositeCurve, ContourSelection, CurveSelection, Helix, HelixInput, HelixPitch,
+    Loft, LoftEnd, OrderedFloat, ProfileSelection, ProjectedCurve, ProjectionMode, Sweep,
+    SweepOrientation,
 };
 pub mod equations;
 mod features;
@@ -31,7 +35,7 @@ pub use bodies::{BodyDisplay, BodyId, Combine, KeepSide, MoveBody, SolidBody, Sp
 pub use build::{Body, Datum, FeatureStatus, Model, State};
 pub use features::*;
 pub use naming::Naming;
-pub use ops::{HoleDims, convert_edges, hole_dims};
+pub use ops::{CUT_REMOVES_NOTHING, HoleDims, convert_edges, hole_dims};
 pub use resolve::{Resolved, resolve};
 pub use units::Units;
 
@@ -78,6 +82,17 @@ pub enum Ref {
         sketch: FeatureId,
         entity: of_sketch::Id,
     },
+    /// A generated segment with an unambiguous source-derived identity from the scene.
+    CurveSegment { curve: FeatureId, segment: String },
+    /// A complete contour with explicit direction and start/seam entity.
+    OrderedSketchContour(ContourSelection),
+    /// One complete sketch loop or open chain, identified by its member entity
+    /// IDs rather than a contour array index. Order does not affect identity.
+    SketchContour {
+        sketch: FeatureId,
+        #[schemars(length(min = 1))]
+        entities: Vec<of_sketch::Id>,
+    },
 }
 
 /// A feature in the tree.
@@ -109,12 +124,26 @@ impl Feature {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum FeatureKind {
+    /// Replace a planar circular disk face with an exact spherical cap.
+    Dome(Dome),
+    /// A thin web from an open sketch, extended until it meets material.
+    Rib(Rib),
+    /// Wrap closed sketch regions onto a cylindrical face: emboss, deboss or scribe.
+    Wrap(Wrap),
+    /// Persistent thread annotation on a cylindrical face; does not change geometry.
+    CosmeticThread(CosmeticThread),
+    /// A modeled ISO-profile thread cut into a cylindrical face.
+    Thread(Thread),
+    /// A constrained spatial sketch, with independent XYZ points and curves.
+    Sketch3d(of_sketch::spatial::Sketch3D),
     /// Split a face along a curve projected onto it.
     SplitLine(ProjectedCurve),
     /// Taper faces by `angle` about a neutral plane.
     Draft(Draft),
     /// Fillet one edge with radii varying between stations.
     VariableFillet(VariableFillet),
+    /// Blend two sets of planar faces with a rolling-ball radius.
+    FaceFillet(FaceFillet),
     /// A helical construction curve, usable as a sweep path.
     Helix(Helix),
     /// Join connected curves into one path.
@@ -125,6 +154,8 @@ pub enum FeatureKind {
     Sweep(Sweep),
     /// Loft through two or more closed profiles in order.
     Loft(Loft),
+    /// A solid bounded by sections in one direction and crossing curves in the other.
+    Boundary(Boundary),
     /// Boolean of bodies: fuse, cut (from the first) or common.
     Combine(Combine),
     /// Move, rotate or copy bodies.
@@ -169,9 +200,16 @@ impl FeatureKind {
     /// Base for default feature names ("Boss-Extrude1", "Fillet2", ...).
     pub fn base_name(&self) -> &'static str {
         match self {
+            FeatureKind::Dome(_) => "Dome",
+            FeatureKind::Rib(_) => "Rib",
+            FeatureKind::Wrap(_) => "Wrap",
+            FeatureKind::CosmeticThread(_) => "Cosmetic Thread",
+            FeatureKind::Thread(_) => "Thread",
+            FeatureKind::Sketch3d(_) => "3D Sketch",
             FeatureKind::SplitLine(_) => "Split Line",
             FeatureKind::Draft(_) => "Draft",
             FeatureKind::VariableFillet(_) => "Variable Fillet",
+            FeatureKind::FaceFillet(_) => "Face Fillet",
             FeatureKind::Helix(_) => "Helix",
             FeatureKind::CompositeCurve(_) => "Composite Curve",
             FeatureKind::ProjectedCurve(_) => "Projected Curve",
@@ -179,6 +217,8 @@ impl FeatureKind {
             FeatureKind::Sweep(_) => "Sweep",
             FeatureKind::Loft(p) if p.cut => "Lofted Cut",
             FeatureKind::Loft(_) => "Loft",
+            FeatureKind::Boundary(p) if p.cut => "Boundary-Cut",
+            FeatureKind::Boundary(_) => "Boundary",
             FeatureKind::Combine(_) => "Combine",
             FeatureKind::MoveBody(p) if p.copy => "Copy Bodies",
             FeatureKind::MoveBody(_) => "Move Bodies",
@@ -208,27 +248,60 @@ impl FeatureKind {
         let mut out = Vec::new();
         let mut refs: Vec<&Ref> = Vec::new();
         match self {
+            FeatureKind::Dome(p) => refs.push(&p.face),
+            FeatureKind::Thread(p) => refs.push(&p.face),
+            FeatureKind::CosmeticThread(p) => {
+                refs.push(&p.face);
+                // Legacy single-body cylinder faces carry the creating feature
+                // in their persistent topology name, such as "2.s1".
+                if let Ref::Face { name } = &p.face {
+                    out.extend(
+                        name.split('.')
+                            .next()
+                            .and_then(|prefix| prefix.parse::<FeatureId>().ok()),
+                    );
+                }
+            }
             FeatureKind::Draft(p) => {
                 refs.extend(&p.faces);
+                refs.extend(&p.parting_line);
                 refs.push(&p.neutral_plane);
                 refs.extend(&p.direction);
             }
             FeatureKind::VariableFillet(p) => refs.push(&p.edge),
+            FeatureKind::FaceFillet(p) => refs.extend(p.faces1.iter().chain(&p.faces2)),
             FeatureKind::Helix(p) => refs.push(&p.plane),
             FeatureKind::CompositeCurve(p) => refs.extend(p.segments.iter().map(|s| &s.reference)),
             FeatureKind::ProjectedCurve(p) | FeatureKind::SplitLine(p) => {
                 refs.extend([&p.source, &p.target])
             }
             FeatureKind::Sweep(p) => {
-                out.push(p.profile);
+                out.extend(p.profile.as_ref().map(ProfileSelection::sketch));
+                refs.extend(&p.guide);
+                refs.extend(&p.guide2);
+                out.extend(p.inner_profiles.iter().map(|profile| profile.sketch));
                 refs.push(&p.path);
             }
-            FeatureKind::Loft(p) => out.extend(&p.profiles),
+            FeatureKind::Loft(p) => {
+                out.extend(p.profiles.iter().map(ProfileSelection::sketch));
+                refs.extend(&p.guides);
+                refs.extend(&p.centerline);
+                for end in [&p.start, &p.end] {
+                    if let LoftEnd::Direction { direction, .. } = end {
+                        refs.push(direction);
+                    }
+                }
+            }
+            FeatureKind::Boundary(p) => {
+                out.extend(p.sections.iter().map(ProfileSelection::sketch));
+                refs.extend(&p.curves);
+            }
             FeatureKind::Combine(p) => out.extend(p.bodies.iter().filter_map(BodyId::creator)),
             FeatureKind::MoveBody(p) => out.extend(p.bodies.iter().filter_map(BodyId::creator)),
             FeatureKind::SplitBody(p) => {
                 out.extend(p.bodies.iter().filter_map(BodyId::creator));
                 refs.push(&p.plane);
+                refs.extend(&p.tools);
             }
             FeatureKind::Sketch(s) => refs.push(&s.plane),
             FeatureKind::Extrude(e) => {
@@ -244,6 +317,11 @@ impl FeatureKind {
                 refs.extend(r.end2.as_ref().and_then(RevolveAngle::target));
             }
             FeatureKind::Hole(h) => out.push(h.sketch),
+            FeatureKind::Rib(r) => out.push(r.sketch),
+            FeatureKind::Wrap(w) => {
+                out.push(w.sketch);
+                refs.push(&w.face);
+            }
             FeatureKind::Fillet(f) => refs.extend(f.edges.iter().chain(&f.faces)),
             FeatureKind::Chamfer(c) => refs.extend(c.edges.iter().chain(&c.faces)),
             FeatureKind::Shell(s) => refs.extend(&s.faces),
@@ -274,7 +352,11 @@ impl FeatureKind {
         for r in refs {
             match r {
                 Ref::Body { id } | Ref::BodyTopology { body: id, .. } => out.extend(id.creator()),
-                Ref::Feature { id } | Ref::SketchEntity { sketch: id, .. } => out.push(*id),
+                Ref::Feature { id }
+                | Ref::SketchEntity { sketch: id, .. }
+                | Ref::SketchContour { sketch: id, .. }
+                | Ref::CurveSegment { curve: id, .. }
+                | Ref::OrderedSketchContour(ContourSelection { sketch: id, .. }) => out.push(*id),
                 _ => {}
             }
         }

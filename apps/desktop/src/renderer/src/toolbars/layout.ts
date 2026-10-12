@@ -26,7 +26,13 @@ export const featureGroups: CommandGroup[] = [
   {
     label: 'Modification',
     columns: [
-      [{ command: 'fillet', variant: 'large', menu: ['fillet', 'variableFillet', 'chamfer'] }],
+      [
+        {
+          command: 'fillet',
+          variant: 'large',
+          menu: ['fillet', 'variableFillet', 'faceFillet', 'chamfer'],
+        },
+      ],
       [
         {
           label: 'Pattern',
@@ -36,8 +42,10 @@ export const featureGroups: CommandGroup[] = [
         },
       ],
       [{ command: 'shell' }, { command: 'draft' }, { command: 'rib' }],
-      [{ command: 'wrap' }, { command: 'intersect' }],
+      [{ command: 'wrap' }, { command: 'intersect' }, { command: 'cosmeticThread' }],
+      [{ command: 'thread' }],
       [{ command: 'moveBody' }, { command: 'splitBody' }],
+      [{ command: 'dome' }],
     ],
   },
   {
@@ -67,7 +75,7 @@ export const sketchGroups = (editing: boolean): CommandGroup[] => [
     label: 'Sketch',
     columns: [
       [{ command: editing ? 'exit' : 'sketch', variant: 'large' }],
-      [{ command: 'dimension', variant: 'large' }],
+      [{ command: 'sketch3d' }, { command: 'dimension' }],
     ],
   },
   {

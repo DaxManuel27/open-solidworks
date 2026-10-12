@@ -66,13 +66,32 @@ export function BodiesPanel({ panel }: { panel: Panel }) {
       copy: false,
       plane: null as Ref | null,
       keep: 'both',
+      tools: [] as Ref[],
+      retained_pieces: null as string[] | null,
       ...initial,
     }
   })
+  const [general, setGeneral] = useState(params.tools.length > 0)
+  const [showAllPieces, setShowAllPieces] = useState(true)
   const min = panel.type === 'combine' ? 2 : 1
-  const valid = params.bodies.length >= min && (panel.type !== 'split_body' || params.plane)
-  const feature = valid ? (params as FeatureParams) : null
-  const { error } = usePreview(feature, panel.editing)
+  const geometryValid =
+    params.bodies.length >= min &&
+    (panel.type !== 'split_body' || (general ? params.tools.length > 0 : params.plane))
+  const feature = geometryValid ? (params as FeatureParams) : null
+  const { preview, error } = usePreview(
+    feature?.type === 'split_body' && general && showAllPieces
+      ? { ...feature, retained_pieces: null }
+      : feature,
+    panel.editing,
+  )
+  const pieces = (preview?.bodies ?? []).filter(
+    (body) => body.id.includes(':piece:') && !scene?.bodies.some((b) => b.id === body.id),
+  )
+  const missingPieces =
+    general && showAllPieces && preview && !error
+      ? (params.retained_pieces ?? []).filter((id) => !pieces.some((piece) => piece.id === id))
+      : []
+  const valid = geometryValid && params.retained_pieces?.length !== 0 && !missingPieces.length
   const vector = (key: 'translation' | 'rotation' | 'origin', title: string) => (
     <Section title={title}>
       {(['X', 'Y', 'Z'] as const).map((label, axis) => {
@@ -102,7 +121,11 @@ export function BodiesPanel({ panel }: { panel: Panel }) {
             ? 'Split Bodies'
             : 'Move/Copy Bodies'
       }
-      error={error}
+      error={
+        missingPieces.length
+          ? 'Selected pieces no longer resolve. Choose Keep all pieces to select again.'
+          : error
+      }
       okDisabled={!valid}
       onCancel={() => void close()}
       onOk={() => feature && void commit(feature, panel.editing)}
@@ -164,25 +187,116 @@ export function BodiesPanel({ panel }: { panel: Panel }) {
       )}
       {panel.type === 'split_body' && (
         <>
-          <RefBox
-            label="Splitting plane"
-            refs={params.plane ? [params.plane] : []}
-            kinds={['face', 'datum', 'std_plane']}
-            active={true}
-            single
-            onActivate={() => {}}
-            onChange={(refs) => setParams({ ...params, plane: refs[0] ?? null })}
-          />
           <Choice
-            label="Keep pieces"
-            value={params.keep}
+            label="Split using"
+            value={general ? 'tools' : 'plane'}
             options={[
-              { value: 'both', label: 'Both sides' },
-              { value: 'positive', label: 'Positive side' },
-              { value: 'negative', label: 'Negative side' },
+              { value: 'plane', label: 'Plane sides' },
+              { value: 'tools', label: 'Faces, planes or tool bodies' },
             ]}
-            onChange={(keep) => setParams({ ...params, keep })}
+            onChange={(mode) => {
+              setGeneral(mode === 'tools')
+              setParams({
+                ...params,
+                tools: mode === 'tools' && params.plane ? [params.plane] : [],
+                plane: mode === 'tools' ? { type: 'front_plane' } : null,
+                keep: 'both',
+                retained_pieces: null,
+              })
+            }}
           />
+          {general ? (
+            <>
+              <RefBox
+                label="Splitting faces and planes"
+                refs={params.tools}
+                kinds={['face', 'datum', 'std_plane']}
+                active={true}
+                onActivate={() => {}}
+                onChange={(tools) => setParams({ ...params, tools })}
+              />
+              <Section title="Tool bodies (kept in the part)">
+                {(scene?.bodies ?? [])
+                  .filter((body) => !params.bodies.includes(body.id))
+                  .map((body) => (
+                    <Check
+                      key={body.id}
+                      label={body.name}
+                      value={params.tools.some((r) => r.type === 'body' && r.id === body.id)}
+                      onChange={(checked) =>
+                        setParams({
+                          ...params,
+                          tools: checked
+                            ? [...params.tools, { type: 'body', id: body.id }]
+                            : params.tools.filter((r) => r.type !== 'body' || r.id !== body.id),
+                        })
+                      }
+                    />
+                  ))}
+              </Section>
+              <Section title="Retained pieces">
+                <Check
+                  label="Show all pieces for selection"
+                  value={showAllPieces}
+                  onChange={setShowAllPieces}
+                />
+                <Check
+                  label="Keep all pieces"
+                  value={params.retained_pieces === null}
+                  onChange={(all) =>
+                    setParams({
+                      ...params,
+                      retained_pieces: all ? null : pieces.map((p) => p.id),
+                    })
+                  }
+                />
+                {pieces.map((body) => (
+                  <Check
+                    key={body.id}
+                    label={body.name}
+                    value={
+                      params.retained_pieces === null || params.retained_pieces.includes(body.id)
+                    }
+                    onChange={(checked) => {
+                      const retained = params.retained_pieces ?? pieces.map((p) => p.id)
+                      setParams({
+                        ...params,
+                        retained_pieces: checked
+                          ? [...retained, body.id]
+                          : retained.filter((id) => id !== body.id),
+                      })
+                    }}
+                  />
+                ))}
+                <p className="hint">
+                  Faces cut only within their boundaries. Clear “Show all pieces” to preview the
+                  retained result. Changed or ambiguous pieces require selection again.
+                </p>
+              </Section>
+            </>
+          ) : (
+            <>
+              <RefBox
+                label="Splitting plane"
+                refs={params.plane ? [params.plane] : []}
+                kinds={['face', 'datum', 'std_plane']}
+                active={true}
+                single
+                onActivate={() => {}}
+                onChange={(refs) => setParams({ ...params, plane: refs[0] ?? null })}
+              />
+              <Choice
+                label="Keep pieces"
+                value={params.keep}
+                options={[
+                  { value: 'both', label: 'Both sides' },
+                  { value: 'positive', label: 'Positive side' },
+                  { value: 'negative', label: 'Negative side' },
+                ]}
+                onChange={(keep) => setParams({ ...params, keep })}
+              />
+            </>
+          )}
         </>
       )}
     </PanelShell>

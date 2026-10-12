@@ -10,7 +10,10 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test:assistant": "node scripts/assistant-test.mjs",
-    "bench": "node scripts/bench.mjs replay reference"
+    "bench": "node scripts/bench.mjs replay reference",
+    "conformance": "node scripts/catalog-conformance.mjs",
+    "perf": "node scripts/phase-2-performance.mjs",
+    "perf:check": "node scripts/phase-2-performance.mjs --check"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

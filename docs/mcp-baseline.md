@@ -62,7 +62,8 @@ Reference total: 62 tool calls, 10/10 pass. First attempts: 0/2 pass.
    along the face normal unless `reverse: true` is set. It removes nothing and
    reports no feature error, so the call succeeds, `finish_task` commits, and the
    summary claims a hole that does not exist (first attempt 06). Only a volume check
-   catches it.
+   catches it. *Since fixed:* a cut that removes no material now fails with the
+   feature error "the cut does not remove material" (reported as `E_NO_EFFECT`).
 2. **Misspelled fields are ignored.** `add_feature` with `"radios": 9` next to
    `"radius": 3` succeeds (`isError: false`). Missing fields are reported, but
    without a JSON path: `missing field \`depth\``.

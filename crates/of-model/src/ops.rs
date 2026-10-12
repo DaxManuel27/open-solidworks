@@ -12,6 +12,11 @@ use crate::build::{Body, State, Tool};
 use crate::features::holes;
 use crate::naming::{Inputs, Naming};
 use crate::resolve::{RResult, Resolved, resolve};
+mod face_fillet;
+mod rib;
+mod thread;
+mod wrap;
+
 use crate::{
     Chamfer, ChamferMode, CircularPattern, EndCondition, Extrude, FeatureId, FeatureKind, Fillet,
     Hole, HoleEnd, HoleKind, HoleStandard, Import, ImportFormat, LinearPattern, MirrorDef, Ref,
@@ -25,11 +30,17 @@ pub(crate) fn build(
     state: &mut State,
 ) -> RResult<()> {
     let result = match kind {
+        FeatureKind::Dome(p) => dome(fid, p, prev, state),
+        FeatureKind::Rib(p) => rib::rib(fid, p, prev, state),
+        FeatureKind::Thread(p) => thread::thread(fid, p, prev, state),
+        FeatureKind::Wrap(p) => wrap::wrap(fid, p, prev, state),
         FeatureKind::SplitLine(p) => split_line(fid, p, prev, state),
         FeatureKind::Draft(p) => draft(fid, p, prev, state),
         FeatureKind::VariableFillet(p) => variable_fillet(fid, p, prev, state),
+        FeatureKind::FaceFillet(p) => face_fillet::face_fillet(fid, p, prev, state),
         FeatureKind::Sweep(p) => sweep(fid, p, prev, state),
         FeatureKind::Loft(p) => loft(fid, p, prev, state),
+        FeatureKind::Boundary(p) => boundary(fid, p, prev, state),
         FeatureKind::Extrude(e) => extrude(fid, e, prev, state),
         FeatureKind::Revolve(r) => revolve(fid, r, prev, state),
         FeatureKind::Fillet(f) => fillet(fid, f, prev, state),
@@ -52,6 +63,47 @@ fn geo(e: impl std::fmt::Display) -> String {
     e.to_string()
 }
 
+fn dome(fid: FeatureId, p: &crate::Dome, prev: &State, state: &mut State) -> RResult<()> {
+    let body = body_of(prev)?;
+    let (kind, face) = prev.index_of(&p.face)?;
+    if kind != Kind::Face {
+        return Err("select a planar face for the dome".into());
+    }
+    let owners = prev
+        .bodies
+        .iter()
+        .map(|solid| {
+            solid
+                .geometry
+                .shape
+                .indices_in(&body.shape, Kind::Face)
+                .map(|indices| usize::from(indices.contains(&face)))
+                .map_err(geo)
+        })
+        .collect::<RResult<Vec<_>>>()?
+        .into_iter()
+        .sum::<usize>();
+    if owners != 1 {
+        return Err(
+            "dome face is shared by multiple bodies; select its owning body in Feature scope"
+                .into(),
+        );
+    }
+    let result = if p.elliptical {
+        body.shape.dome_elliptical(face, p.height, p.inward)
+    } else {
+        body.shape.dome(face, p.height, p.inward)
+    }
+    .map_err(geo)?;
+    let names = dressup_names(fid, "dome", body, &result);
+    remember_dressup(fid, body, &result.shape, &names, state)?;
+    state.body = Some(Body {
+        shape: result.shape,
+        names,
+    });
+    Ok(())
+}
+
 fn split_line(
     fid: FeatureId,
     p: &crate::ProjectedCurve,
@@ -63,10 +115,38 @@ fn split_line(
     if kind != Kind::Face {
         return Err("select a face to split".into());
     }
-    let wire = crate::curves::projected(p, prev)?;
-    let result = body.shape.split_face(face, &wire).map_err(geo)?;
+    let result = match p.mode {
+        crate::ProjectionMode::OntoFace | crate::ProjectionMode::SketchOnSketch => {
+            let wire = crate::curves::projected(p, prev)?;
+            body.shape.split_face(face, &wire).map_err(geo)?
+        }
+        crate::ProjectionMode::Intersection => {
+            let target = body.shape.sub_shape(Kind::Face, face).map_err(geo)?;
+            let tool = match resolve(prev, &p.source)? {
+                Resolved::Plane(plane) => big_face(prev, &plane)?,
+                Resolved::Face { index, .. } => {
+                    body.shape.sub_shape(Kind::Face, index).map_err(geo)?
+                }
+                Resolved::Body { id, .. } => prev.solid(&id)?.geometry.shape.clone(),
+                _ => return Err("split with a plane, face or body".into()),
+            };
+            let edges = target
+                .section(&tool)
+                .map_err(|_| "the splitting geometry does not cross the face".to_string())?;
+            body.shape.split_tools(&edges).map_err(geo)?
+        }
+        crate::ProjectionMode::Silhouette => {
+            let edges = silhouette(&body.shape, face, p.direction)?;
+            body.shape.split_tools(&edges).map_err(geo)?
+        }
+    };
     if result.shape.count(Kind::Face) <= body.shape.count(Kind::Face) {
-        return Err("the projected curve does not divide the face".into());
+        return Err("the split line does not divide the face".into());
+    }
+    let volume = |s: &Shape| s.mass_props().map(|m| m.volume).map_err(geo);
+    let before = volume(&body.shape)?;
+    if (volume(&result.shape)? - before).abs() > 1e-7 * before.abs().max(1.0) {
+        return Err("splitting changed the part's volume".into());
     }
     let names = dressup_names(fid, "split", body, &result);
     state.body = Some(Body {
@@ -74,6 +154,48 @@ fn split_line(
         names,
     });
     Ok(())
+}
+
+/// Silhouette edges of a cylindrical or spherical face seen along `direction`:
+/// where the surface normal is perpendicular to the direction.
+fn silhouette(shape: &Shape, face: u32, direction: DVec3) -> RResult<Shape> {
+    if !direction.is_finite() || direction.length() < 1e-12 {
+        return Err("a silhouette needs a pull direction".into());
+    }
+    let d = direction.normalize();
+    let info = shape.face_info(face).map_err(geo)?;
+    let reach = shape.bbox().map_or(1.0, |b| b.diagonal()) * 2.0 + 1.0;
+    match info.kind {
+        of_geom::SurfaceKind::Cylinder => {
+            let axis = info.axis_dir.normalize();
+            let side = axis.cross(d);
+            if side.length() < 1e-9 {
+                return Err(
+                    "the pull direction runs along the cylinder; it has no silhouette".into(),
+                );
+            }
+            let side = side.normalize() * info.radius;
+            let lines = [side, -side].map(|offset| of_geom::Curve3::Line {
+                a: info.axis_origin + offset - axis * reach,
+                b: info.axis_origin + offset + axis * reach,
+            });
+            let wires = lines
+                .iter()
+                .map(|l| Shape::wire3(std::slice::from_ref(l)))
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(geo)?;
+            Ok(Shape::compound(&wires))
+        }
+        of_geom::SurfaceKind::Sphere => Shape::wire(
+            &Plane::new(info.axis_origin, d.any_orthonormal_vector(), d),
+            &[GCurve::Circle {
+                center: DVec2::ZERO,
+                radius: info.radius,
+            }],
+        )
+        .map_err(geo),
+        _ => Err("silhouette split lines support cylindrical and spherical faces".into()),
+    }
 }
 
 fn variable_fillet(
@@ -96,7 +218,10 @@ fn variable_fillet(
     } else {
         p.stations.iter().map(|s| (s.position, s.radius)).collect()
     };
-    let result = body.shape.variable_fillet(edge, &stations).map_err(geo)?;
+    let result = body
+        .shape
+        .variable_fillet(edge, &stations, p.straight)
+        .map_err(geo)?;
     let names = dressup_names(fid, "vf", body, &result);
     remember_dressup(fid, body, &result.shape, &names, state)?;
     state.body = Some(Body {
@@ -113,6 +238,41 @@ fn draft(fid: FeatureId, p: &crate::Draft, prev: &State, state: &mut State) -> R
         Some(r) => resolve(prev, r)?.direction()?,
         None => plane.normal,
     };
+    if !p.parting_line.is_empty() {
+        if !p.faces.is_empty() {
+            return Err(
+                "a parting-line draft chooses its faces from the edges; clear the face list".into(),
+            );
+        }
+        let hinged = parting_faces(prev, &p.parting_line, direction, p.other_side)?;
+        let result = if p.step {
+            step_draft(body, &hinged, direction, p.angle, p.other_side)?
+        } else {
+            let hinged = hinged
+                .into_iter()
+                .map(|f| f.hinge.map(|h| (f.face, h)))
+                .collect::<Option<Vec<_>>>()
+                .ok_or(
+                    "a face meets the parting line along edges that do not share a plane; use a step draft",
+                )?;
+            body.shape
+                .draft_hinged(&hinged, direction, p.angle)
+                .map_err(geo)?
+        };
+        let names = dressup_names(fid, "draft", body, &result);
+        remember_dressup(fid, body, &result.shape, &names, state)?;
+        state.body = Some(Body {
+            shape: result.shape,
+            names,
+        });
+        return Ok(());
+    }
+    if p.faces.is_empty() {
+        return Err("select faces to draft, or parting-line edges".into());
+    }
+    if p.step {
+        return Err("a step draft needs parting-line edges".into());
+    }
     let faces = p
         .faces
         .iter()
@@ -137,13 +297,180 @@ fn draft(fid: FeatureId, p: &crate::Draft, prev: &State, state: &mut State) -> R
     Ok(())
 }
 
+/// Step draft: each planar face tilts about a line normal to the pull direction
+/// through its parting line's nearest point, so the tilt is a true draft even
+/// where the parting line climbs. The material between the face and its tilted
+/// plane is removed or added inside the column standing on the face, whose walls
+/// along the parting line become the perpendicular step faces.
+fn step_draft(
+    body: &Body,
+    faces: &[PartingFace],
+    pull: DVec3,
+    angle: f64,
+    other_side: bool,
+) -> RResult<of_geom::OpResult> {
+    let pull = pull.normalize();
+    let side = if other_side { -1.0 } else { 1.0 };
+    let scale = body.shape.bbox().map_or(1.0, |b| b.diagonal().max(1.0));
+    let remove = side * angle > 0.0;
+    let mut tools = Vec::new();
+    for PartingFace { face, points, .. } in faces {
+        let info = body.shape.face_info(*face).map_err(geo)?;
+        if info.kind != of_geom::SurfaceKind::Plane {
+            return Err("a step draft needs planar faces next to the parting line".into());
+        }
+        let n = info.normal.normalize();
+        let up = pull - n * pull.dot(n);
+        if up.length() < 1e-6 {
+            return Err("a face next to the parting line is normal to the pull direction".into());
+        }
+        let up = up.normalize();
+        let hinge = points
+            .iter()
+            .copied()
+            .min_by(|a, b| (side * a.dot(pull)).total_cmp(&(side * b.dot(pull))))
+            .ok_or("a parting-line edge has no points")?;
+        // Tilt so that the face moves into the material going along the pull.
+        let tilted = n * angle.cos() + up * angle.sin();
+        let plane = Plane::new(hinge, n.cross(tilted), tilted);
+        let outside = hinge + tilted * scale;
+        let half = Shape::half_space(
+            &Shape::plane_face(&plane).map_err(geo)?,
+            if remove {
+                outside
+            } else {
+                hinge - tilted * scale
+            },
+        )
+        .map_err(geo)?;
+        let column = body
+            .shape
+            .sub_shape(Kind::Face, *face)
+            .map_err(geo)?
+            .prism(if remove { -n * scale } else { n * scale })
+            .map_err(geo)?;
+        let tool = column
+            .shape
+            .boolean(of_geom::BoolOp::Common, &half)
+            .map_err(geo)?;
+        tools.push(tool.shape);
+    }
+    let tools = Shape::compound(&tools);
+    let op = if remove {
+        of_geom::BoolOp::Cut
+    } else {
+        of_geom::BoolOp::Fuse
+    };
+    let result = body.shape.boolean(op, &tools).map_err(geo)?;
+    if result.shape.count(Kind::Solid) != body.shape.count(Kind::Solid) {
+        return Err("the step draft splits or joins bodies; reduce the angle".into());
+    }
+    Ok(result)
+}
+
+/// A face next to a parting line: its hinge plane through its parting edges
+/// (missing when they do not share a plane) and points along those edges.
+struct PartingFace {
+    face: u32,
+    hinge: Option<Plane>,
+    points: Vec<DVec3>,
+}
+
+/// For a parting-line draft: each face next to a parting edge on the chosen side
+/// of the pull direction, with a hinge plane through its edge and points sampled
+/// along all its parting edges. The hinge is missing when the face's parting
+/// edges do not share a plane.
+fn parting_faces(
+    prev: &State,
+    edges: &[Ref],
+    pull: DVec3,
+    other_side: bool,
+) -> RResult<Vec<PartingFace>> {
+    let body = body_of(prev)?;
+    let pull = pull.normalize();
+    let adjacent = body.shape.edge_faces();
+    let scale = body.shape.bbox().map_or(1.0, |b| b.diagonal().max(1.0));
+    let tol = 1e-7 * scale;
+    let mut out: Vec<PartingFace> = Vec::new();
+    for r in edges {
+        let (kind, edge) = prev.index_of(r)?;
+        if kind != Kind::Edge {
+            return Err("parting-line references must be edges".into());
+        }
+        let info = body.shape.edge_info(edge).map_err(geo)?;
+        let hinge = match info.kind {
+            of_geom::CurveKind::Line => {
+                let along = (info.end - info.start).normalize();
+                let normal = pull - along * pull.dot(along);
+                if normal.length() < 1e-6 {
+                    return Err("a parting-line edge runs along the pull direction".into());
+                }
+                Plane::new(info.start, along, normal.normalize())
+            }
+            of_geom::CurveKind::Circle => {
+                let x = (info.start - info.center).normalize_or_zero();
+                let x = if x.length() > 0.5 {
+                    x
+                } else {
+                    info.axis.any_orthonormal_vector()
+                };
+                Plane::new(info.center, x, info.axis.normalize())
+            }
+            _ => return Err("parting-line edges must be straight or circular".into()),
+        };
+        let side = |face: u32| -> RResult<f64> {
+            Ok((body.shape.face_info(face).map_err(geo)?.centroid - info.mid).dot(pull))
+        };
+        let mut chosen = None;
+        for &face in &adjacent[edge as usize] {
+            let offset = side(face)?;
+            if (!other_side && offset > tol) || (other_side && offset < -tol) {
+                chosen = Some(face);
+            }
+        }
+        let face = chosen.ok_or(
+            "no face lies on that side of a parting-line edge; flip the side or the pull direction",
+        )?;
+        let samples = body
+            .shape
+            .edge_samples(edge, 1e-3 * scale, 0.05)
+            .map_err(geo)?;
+        match out.iter_mut().find(|f| f.face == face) {
+            Some(PartingFace {
+                hinge: existing,
+                points,
+                ..
+            }) => {
+                // A face meeting the parting line along several edges hinges about
+                // one plane, unless the draft steps.
+                let on = |e: &Plane, p: DVec3| (p - e.origin).dot(e.normal).abs() < tol;
+                if existing
+                    .is_some_and(|e| !(on(&e, info.start) && on(&e, info.end) && on(&e, info.mid)))
+                {
+                    *existing = None;
+                }
+                points.extend(samples);
+            }
+            None => out.push(PartingFace {
+                face,
+                hinge: Some(hinge),
+                points: samples,
+            }),
+        }
+    }
+    Ok(out)
+}
+
 fn section_names(prev: &State, id: FeatureId, shape: &Shape) -> RResult<Vec<String>> {
     let (plane, sketch) = sketch_of(prev, id)?;
     let curves = sketch
         .curve_ids()
         .filter_map(|id| sketch.curve(id).ok().map(|c| (id, c)))
         .collect::<Vec<_>>();
-    (0..shape.count(Kind::Edge))
+    // An entity split by an interior seam gives two edges: the one after the
+    // seam comes first in the section, the one before it last.
+    let mut seen = std::collections::HashSet::new();
+    let names = (0..shape.count(Kind::Edge))
         .map(|edge| {
             let mid = plane.to_local(shape.edge_info(edge).map_err(geo)?.mid);
             let (entity, _) = curves
@@ -156,24 +483,56 @@ fn section_names(prev: &State, id: FeatureId, shape: &Shape) -> RResult<Vec<Stri
                 .ok_or("profile has no curves")?;
             Ok(format!("s{id}.e{entity}"))
         })
-        .collect()
+        .collect::<RResult<Vec<String>>>()?;
+    Ok(names
+        .into_iter()
+        .map(|n| {
+            if seen.insert(n.clone()) {
+                n
+            } else {
+                format!("{n}.before")
+            }
+        })
+        .collect())
 }
 
-fn sweep(fid: FeatureId, p: &crate::Sweep, prev: &State, state: &mut State) -> RResult<()> {
-    let (plane, section) = crate::curves::section(prev, p.profile)?;
-    let path = crate::curves::path(prev, &p.path)?;
-    let path = if p.reverse_path {
-        path.reversed()
-    } else {
-        path
-    };
-    let orientation = match p.orientation {
-        crate::SweepOrientation::MinimumTwist => 0,
-        crate::SweepOrientation::Frenet => 1,
-        crate::SweepOrientation::Fixed => 2,
-    };
-    let result = section.sweep(&path, &plane, orientation).map_err(geo)?;
-    let edges = section_names(prev, p.profile, &section)?;
+/// How a sweep orients its section along the path.
+enum SweepFrame<'a> {
+    Mode(u8),
+    Guided {
+        guide: Option<&'a Shape>,
+        twist: f64,
+    },
+    /// Guides that scale (one) or stretch (two) the section.
+    Scaled {
+        guide: &'a Shape,
+        second: Option<&'a Shape>,
+        scale: bool,
+    },
+}
+
+/// Sweep one closed section wire, naming its side faces after `edges` (one per
+/// section edge) and its caps with `cap_prefix`.
+#[allow(clippy::too_many_arguments)]
+fn sweep_section(
+    fid: FeatureId,
+    section: &Shape,
+    plane: &Plane,
+    edges: &[String],
+    path: &Shape,
+    frame: &SweepFrame,
+    cap_prefix: &str,
+) -> RResult<Body> {
+    let result = match frame {
+        SweepFrame::Mode(orientation) => section.sweep(path, plane, *orientation),
+        SweepFrame::Guided { guide, twist } => section.sweep_guided(path, *guide, *twist),
+        SweepFrame::Scaled {
+            guide,
+            second,
+            scale,
+        } => section.sweep_scaled(path, guide, *second, *scale),
+    }
+    .map_err(geo)?;
     let names = Naming::from_history(
         &result.shape,
         &result.history,
@@ -182,10 +541,10 @@ fn sweep(fid: FeatureId, p: &crate::Sweep, prev: &State, state: &mut State) -> R
         },
         &mut |h| {
             if h.rel == Relation::StartCap {
-                return Some(format!("{fid}.start"));
+                return Some(format!("{fid}.{cap_prefix}start"));
             }
             if h.rel == Relation::EndCap {
-                return Some(format!("{fid}.end"));
+                return Some(format!("{fid}.{cap_prefix}end"));
             }
             (h.input == 0 && h.from_kind == Kind::Edge)
                 .then(|| edges.get(h.from as usize).map(|e| format!("{fid}.{e}")))
@@ -193,11 +552,195 @@ fn sweep(fid: FeatureId, p: &crate::Sweep, prev: &State, state: &mut State) -> R
         },
         &fid.to_string(),
     );
-    apply_tool(
+    Ok(Body {
+        shape: result.shape,
+        names,
+    })
+}
+
+fn sweep_profile(
+    fid: FeatureId,
+    profile: &crate::ProfileSelection,
+    prev: &State,
+    path: &Shape,
+    frame: &SweepFrame,
+    cap_prefix: &str,
+) -> RResult<Body> {
+    let (plane, section) = crate::curves::section(prev, profile)?;
+    let edges = section_names(prev, profile.sketch(), &section)?;
+    sweep_section(fid, &section, &plane, &edges, path, frame, cap_prefix)
+}
+
+/// Subtract a swept hole from the outer sweep after checking it stays inside.
+fn subtract_swept_hole(fid: FeatureId, body: Body, tool: Body) -> RResult<Body> {
+    // Curvature can fold an inner section outside the swept outer profile even
+    // when the sketch is valid, so check full containment after sweeping.
+    let excess = tool.shape.boolean(BoolOp::Cut, &body.shape).map_err(geo)?;
+    let tolerance = (tool.shape.mass_props().map_err(geo)?.volume.abs() * 1e-8).max(1e-8);
+    if excess.shape.count(Kind::Solid) > 0
+        && excess.shape.mass_props().map_err(geo)?.volume.abs() > tolerance
+    {
+        return Err(
+            "a swept profile hole leaves the outer sweep; reduce curvature or hole size".into(),
+        );
+    }
+    let result = body.shape.boolean(BoolOp::Cut, &tool.shape).map_err(geo)?;
+    let names = Naming::from_history(
+        &result.shape,
+        &result.history,
+        Inputs {
+            named: [Some(&body.names), Some(&tool.names)],
+        },
+        &mut |_| None,
+        &fid.to_string(),
+    );
+    Ok(Body {
+        shape: result.shape,
+        names,
+    })
+}
+
+fn sweep(fid: FeatureId, p: &crate::Sweep, prev: &State, state: &mut State) -> RResult<()> {
+    crate::curves::validate_inner_profiles(prev, p)?;
+    let path = crate::curves::path(prev, &p.path)?;
+    let path = if p.reverse_path {
+        path.reversed()
+    } else {
+        path
+    };
+    let guide = p
+        .guide
+        .as_ref()
+        .map(|g| crate::curves::path(prev, g))
+        .transpose()?;
+    if !p.twist.is_finite() {
+        return Err("the twist angle must be finite".into());
+    }
+    let second = p
+        .guide2
+        .as_ref()
+        .map(|g| crate::curves::path(prev, g))
+        .transpose()?;
+    if (p.guide_scale || second.is_some()) && guide.is_none() {
+        return Err("select the first guide curve".into());
+    }
+    if (p.guide_scale || second.is_some()) && p.twist != 0.0 {
+        return Err("a sweep twists or follows scaling guides, not both".into());
+    }
+    let frame = if let (Some(guide), true) = (&guide, p.guide_scale || second.is_some()) {
+        SweepFrame::Scaled {
+            guide,
+            second: second.as_ref(),
+            scale: p.guide_scale,
+        }
+    } else if guide.is_some() || p.twist != 0.0 {
+        SweepFrame::Guided {
+            guide: guide.as_ref(),
+            twist: p.twist,
+        }
+    } else {
+        SweepFrame::Mode(match p.orientation {
+            crate::SweepOrientation::MinimumTwist => 0,
+            crate::SweepOrientation::Frenet => 1,
+            crate::SweepOrientation::Fixed => 2,
+        })
+    };
+    let mut body = match (&p.profile, p.circle_diameter, &p.thin) {
+        (Some(_), Some(_), _) => {
+            return Err("sweep a sketch profile or a circle, not both".into());
+        }
+        (None, None, _) => return Err("select a profile or set a circle diameter".into()),
+        (None, Some(_), Some(_)) => return Err("a thin sweep needs a sketch profile".into()),
+        (None, Some(d), None) => {
+            if !(d.is_finite() && d > 1e-9) {
+                return Err("the circle diameter must be more than zero".into());
+            }
+            let start = path.path_start().map_err(geo)?;
+            let circle = Shape::wire(
+                &start,
+                &[GCurve::Circle {
+                    center: DVec2::ZERO,
+                    radius: d / 2.0,
+                }],
+            )
+            .map_err(geo)?;
+            sweep_section(
+                fid,
+                &circle,
+                &start,
+                &["circle".to_string()],
+                &path,
+                &frame,
+                "",
+            )?
+        }
+        (Some(profile), None, Some(thin)) => {
+            let crate::ProfileSelection::Sketch(sketch) = profile else {
+                return Err("a thin sweep uses the whole profile sketch".into());
+            };
+            if !p.inner_profiles.is_empty() {
+                return Err("a thin sweep cannot also have profile holes".into());
+            }
+            let (plane, sk) = sketch_of(prev, *sketch)?;
+            let contours = sk.contours().map_err(geo)?;
+            if contours.loops.len() + contours.open.len() != 1 {
+                return Err("a thin sweep needs a sketch with one connected chain".into());
+            }
+            let faces = thin_faces(sk, &contours, thin)?;
+            let face = &faces[0];
+            let outer = Shape::wire(plane, &face.outer).map_err(geo)?;
+            let mut body = sweep_section(
+                fid,
+                &outer,
+                plane,
+                &vec!["thin".to_string(); outer.count(Kind::Edge) as usize],
+                &path,
+                &frame,
+                "",
+            )?;
+            for hole in &face.holes {
+                let wire = Shape::wire(plane, hole).map_err(geo)?;
+                let tool = sweep_section(
+                    fid,
+                    &wire,
+                    plane,
+                    &vec!["thin.in".to_string(); wire.count(Kind::Edge) as usize],
+                    &path,
+                    &frame,
+                    "hole.",
+                )?;
+                body = subtract_swept_hole(fid, body, tool)?;
+            }
+            body
+        }
+        (Some(profile), None, None) => sweep_profile(fid, profile, prev, &path, &frame, "")?,
+    };
+    for inner in &p.inner_profiles {
+        let mut entities = inner.entities.clone();
+        entities.sort_unstable();
+        let cap_prefix = format!(
+            "hole:{}.",
+            entities
+                .iter()
+                .map(u32::to_string)
+                .collect::<Vec<_>>()
+                .join("-")
+        );
+        let tool = sweep_profile(
+            fid,
+            &crate::ProfileSelection::Contour(inner.clone()),
+            prev,
+            &path,
+            &frame,
+            &cap_prefix,
+        )?;
+        body = subtract_swept_hole(fid, body, tool)?;
+    }
+    apply_feature_tool(
         fid,
         state,
-        result.shape,
-        names,
+        body.shape,
+        body.names,
         if p.cut { BoolOp::Cut } else { BoolOp::Fuse },
         p.merge,
     )
@@ -207,43 +750,207 @@ fn loft(fid: FeatureId, p: &crate::Loft, prev: &State, state: &mut State) -> RRe
     if p.profiles.len() < 2 {
         return Err("select at least two ordered profiles".into());
     }
+    if p.closed && !p.guides.is_empty() {
+        return Err("a closed loft can't also use guide curves".into());
+    }
+    let ends = !p.start.is_free() || !p.end.is_free();
+    if ends && (p.closed || !p.guides.is_empty() || p.centerline.is_some()) {
+        return Err(
+            "start/end conditions can't be combined with guides, a centerline or a closed loft"
+                .into(),
+        );
+    }
+    if p.centerline.is_some() && (p.closed || !p.guides.is_empty()) {
+        return Err("a centerline loft can't also use guide curves or be closed".into());
+    }
+    if ends && p.ruled {
+        return Err("a ruled loft has no start/end conditions".into());
+    }
     let mut unique = std::collections::HashSet::new();
-    if p.profiles.iter().any(|id| !unique.insert(id)) {
+    if p.profiles
+        .iter()
+        .any(|profile| !unique.insert(profile.sketch()))
+    {
         return Err("each loft profile must be different".into());
     }
     let mut profiles = Vec::new();
     let mut edges = Vec::new();
     for id in &p.profiles {
-        let (_, section) = crate::curves::section(prev, *id)?;
-        let section = if p.reversed.contains(id) {
+        let (_, section) = crate::curves::section(prev, id)?;
+        let section = if p.reversed.contains(&id.sketch()) {
             section.reversed()
         } else {
             section
         };
-        edges.extend(section_names(prev, *id, &section)?);
+        edges.extend(section_names(prev, id.sketch(), &section)?);
         profiles.push(section);
     }
-    let result = Shape::loft(&profiles, p.ruled).map_err(geo)?;
+    if !p.guides.is_empty() {
+        if p.guides.len() < 2 {
+            return Err("loft guide curves need at least two curves; add another guide".into());
+        }
+        let guides = p
+            .guides
+            .iter()
+            .map(|r| crate::curves::path(prev, r))
+            .collect::<RResult<Vec<_>>>()?;
+        let result = Shape::boundary(&profiles, &guides).map_err(geo)?;
+        let gaps = guides.len() as u32;
+        let names = Naming::from_history(
+            &result.shape,
+            &result.history,
+            Inputs {
+                named: [None, None],
+            },
+            &mut |h| match h.rel {
+                Relation::StartCap => Some(format!("{fid}.start")),
+                Relation::EndCap => Some(format!("{fid}.end")),
+                Relation::Generated => Some(format!("{fid}.g{}.{}", h.from / gaps, h.from % gaps)),
+                _ => None,
+            },
+            &fid.to_string(),
+        );
+        return apply_feature_tool(
+            fid,
+            state,
+            result.shape,
+            names,
+            if p.cut { BoolOp::Cut } else { BoolOp::Fuse },
+            p.merge,
+        );
+    }
+    let explicit = p
+        .profiles
+        .iter()
+        .any(|p| matches!(p, crate::ProfileSelection::Contour(_)));
+    let named = |result: of_geom::OpResult| {
+        let names = Naming::from_history(
+            &result.shape,
+            &result.history,
+            Inputs {
+                named: [None, None],
+            },
+            &mut |h| {
+                if h.rel == Relation::StartCap {
+                    return Some(format!("{fid}.start"));
+                }
+                if h.rel == Relation::EndCap {
+                    return Some(format!("{fid}.end"));
+                }
+                (h.from_kind == Kind::Edge)
+                    .then(|| edges.get(h.from as usize).map(|e| format!("{fid}.{e}")))
+                    .flatten()
+            },
+            &fid.to_string(),
+        );
+        (result.shape, names)
+    };
+    if let Some(centerline) = &p.centerline {
+        let centerline = crate::curves::path(prev, centerline)?;
+        let (shape, names) = named(Shape::loft_centerline(&profiles, &centerline).map_err(geo)?);
+        return apply_feature_tool(
+            fid,
+            state,
+            shape,
+            names,
+            if p.cut { BoolOp::Cut } else { BoolOp::Fuse },
+            p.merge,
+        );
+    }
+    if ends {
+        let condition = |end: &crate::LoftEnd| -> RResult<of_geom::EndTangent> {
+            Ok(match end {
+                crate::LoftEnd::None => of_geom::EndTangent::Free,
+                crate::LoftEnd::Normal { tangent_length } => {
+                    of_geom::EndTangent::Normal(*tangent_length)
+                }
+                crate::LoftEnd::Direction {
+                    direction,
+                    flip,
+                    tangent_length,
+                } => {
+                    let d = resolve(prev, direction)?.direction()?;
+                    of_geom::EndTangent::Direction(if *flip { -d } else { d }, *tangent_length)
+                }
+            })
+        };
+        let result = Shape::loft_tangent(
+            &profiles,
+            explicit,
+            condition(&p.start)?,
+            condition(&p.end)?,
+        )
+        .map_err(geo)?;
+        let (shape, names) = named(result);
+        return apply_feature_tool(
+            fid,
+            state,
+            shape,
+            names,
+            if p.cut { BoolOp::Cut } else { BoolOp::Fuse },
+            p.merge,
+        );
+    }
+    if p.closed {
+        if p.profiles.len() < 3 {
+            return Err("a closed loft needs at least three sections".into());
+        }
+        // The kernel closes a loft whose last section is the first one again.
+        profiles.push(profiles[0].clone());
+    }
+    if explicit
+        && profiles
+            .iter()
+            .any(|p| p.count(Kind::Edge) != profiles[0].count(Kind::Edge))
+    {
+        return Err(
+            "explicit loft correspondence requires the same number of edges in each section".into(),
+        );
+    }
+    let (shape, names) = named(Shape::loft_ordered(&profiles, p.ruled, explicit).map_err(geo)?);
+    apply_feature_tool(
+        fid,
+        state,
+        shape,
+        names,
+        if p.cut { BoolOp::Cut } else { BoolOp::Fuse },
+        p.merge,
+    )
+}
+
+fn boundary(fid: FeatureId, p: &crate::Boundary, prev: &State, state: &mut State) -> RResult<()> {
+    if p.sections.len() < 2 {
+        return Err("select at least two direction 1 sections".into());
+    }
+    if p.curves.len() < 2 {
+        return Err("select at least two direction 2 curves".into());
+    }
+    let mut sections = Vec::new();
+    for selection in &p.sections {
+        sections.push(crate::curves::section(prev, selection)?.1);
+    }
+    let curves = p
+        .curves
+        .iter()
+        .map(|r| crate::curves::path(prev, r))
+        .collect::<RResult<Vec<_>>>()?;
+    let result = Shape::boundary(&sections, &curves).map_err(geo)?;
+    let gaps = p.curves.len() as u32;
     let names = Naming::from_history(
         &result.shape,
         &result.history,
         Inputs {
             named: [None, None],
         },
-        &mut |h| {
-            if h.rel == Relation::StartCap {
-                return Some(format!("{fid}.start"));
-            }
-            if h.rel == Relation::EndCap {
-                return Some(format!("{fid}.end"));
-            }
-            (h.from_kind == Kind::Edge)
-                .then(|| edges.get(h.from as usize).map(|e| format!("{fid}.{e}")))
-                .flatten()
+        &mut |h| match h.rel {
+            Relation::StartCap => Some(format!("{fid}.start")),
+            Relation::EndCap => Some(format!("{fid}.end")),
+            Relation::Generated => Some(format!("{fid}.b{}.{}", h.from / gaps, h.from % gaps)),
+            _ => None,
         },
         &fid.to_string(),
     );
-    apply_tool(
+    apply_feature_tool(
         fid,
         state,
         result.shape,
@@ -282,32 +989,35 @@ struct ProfileShape {
 }
 
 fn sketch_of(prev: &State, id: FeatureId) -> RResult<&(Plane, Sketch)> {
-    prev.sketches
-        .get(&id)
-        .ok_or_else(|| "the sketch is missing or failed to build".to_string())
+    prev.sketches.get(&id).ok_or_else(|| {
+        "the sketch is missing, failed to build or comes later in the feature tree".to_string()
+    })
+}
+
+/// A sketch's closed regions as profile faces, outer loops with their holes.
+fn closed_regions(contours: &of_sketch::Contours) -> RResult<Vec<ProfileFace>> {
+    if contours.regions.is_empty() {
+        return Err("the sketch has no closed contours".into());
+    }
+    Ok(contours
+        .regions
+        .iter()
+        .map(|r| ProfileFace {
+            outer: contours.loops[r.outer].curves.iter().map(to_geom).collect(),
+            holes: r
+                .holes
+                .iter()
+                .map(|h| contours.loops[*h].curves.iter().map(to_geom).collect())
+                .collect(),
+        })
+        .collect())
 }
 
 fn sketch_profile(prev: &State, sketch: FeatureId, thin: Option<&Thin>) -> RResult<ProfileShape> {
     let (plane, sk) = sketch_of(prev, sketch)?;
     let contours = sk.contours().map_err(geo)?;
     let faces: Vec<ProfileFace> = match thin {
-        None => {
-            if contours.regions.is_empty() {
-                return Err("the sketch has no closed contours".into());
-            }
-            contours
-                .regions
-                .iter()
-                .map(|r| ProfileFace {
-                    outer: contours.loops[r.outer].curves.iter().map(to_geom).collect(),
-                    holes: r
-                        .holes
-                        .iter()
-                        .map(|h| contours.loops[*h].curves.iter().map(to_geom).collect())
-                        .collect(),
-                })
-                .collect()
-        }
+        None => closed_regions(&contours)?,
         Some(t) => thin_faces(sk, &contours, t)?,
     };
     let profile = Profile {
@@ -675,6 +1385,28 @@ fn keep_touching(
     body_names: &Naming,
     start: &Shape,
 ) -> RResult<(Shape, Naming)> {
+    keep_solids(
+        fid,
+        prefix,
+        r,
+        names,
+        body_names,
+        |s| s.distance(start).map(|d| d.value < 1e-6).unwrap_or(false),
+        "nothing to extrude up to",
+    )
+}
+
+/// Keep the solids of an operation's result accepted by `keep`, with names carried
+/// through the boolean that removes the rest.
+fn keep_solids(
+    fid: FeatureId,
+    prefix: &str,
+    r: of_geom::OpResult,
+    names: &Naming,
+    body_names: &Naming,
+    keep: impl Fn(&Shape) -> bool,
+    empty: &str,
+) -> RResult<(Shape, Naming)> {
     let mut generate = |_: &HistoryEntry| Some(format!("{fid}.{prefix}end"));
     let all = Naming::from_history(
         &r.shape,
@@ -686,11 +1418,9 @@ fn keep_touching(
         &fid.to_string(),
     );
     let solids = r.shape.solids();
-    let (keep, drop): (Vec<&Shape>, Vec<&Shape>) = solids
-        .iter()
-        .partition(|s| s.distance(start).map(|d| d.value < 1e-6).unwrap_or(false));
-    if keep.is_empty() {
-        return Err("nothing to extrude up to".into());
+    let (kept, drop): (Vec<&Shape>, Vec<&Shape>) = solids.iter().partition(|s| keep(s));
+    if kept.is_empty() {
+        return Err(empty.into());
     }
     if drop.is_empty() {
         return Ok((r.shape, all));
@@ -730,6 +1460,41 @@ fn clip_by_face(
 }
 
 /// Combine a tool with the body and remember it for patterns.
+/// The rebuild error for a feature cut that misses every body.
+pub const CUT_REMOVES_NOTHING: &str = "the cut does not remove material";
+
+/// [`apply_tool`] for a feature's own cut, which must remove material. Pattern and
+/// mirror copies use `apply_tool` directly so one copy off the part doesn't fail them.
+fn apply_feature_tool(
+    fid: FeatureId,
+    state: &mut State,
+    tool: Shape,
+    names: Naming,
+    op: BoolOp,
+    merge: bool,
+) -> RResult<()> {
+    let volume = |state: &State| -> RResult<f64> {
+        Ok(state
+            .body
+            .as_ref()
+            .map(|b| b.shape.mass_props().map(|m| m.volume.abs()))
+            .transpose()
+            .map_err(geo)?
+            .unwrap_or(0.0))
+    };
+    let before = match (op, &state.body) {
+        (BoolOp::Cut, Some(_)) => Some(volume(state)?),
+        _ => None,
+    };
+    apply_tool(fid, state, tool, names, op, merge)?;
+    if let Some(before) = before
+        && before - volume(state)? <= (before * 1e-9).max(1e-9)
+    {
+        return Err(CUT_REMOVES_NOTHING.into());
+    }
+    Ok(())
+}
+
 fn apply_tool(
     fid: FeatureId,
     state: &mut State,
@@ -849,7 +1614,7 @@ fn extrude(fid: FeatureId, e: &Extrude, prev: &State, state: &mut State) -> RRes
         tool = r.shape;
     }
     let op = if e.cut { BoolOp::Cut } else { BoolOp::Fuse };
-    apply_tool(fid, state, tool, names, op, e.merge)
+    apply_feature_tool(fid, state, tool, names, op, e.merge)
 }
 
 fn rotation_about(origin: DVec3, dir: DVec3, angle: f64) -> DAffine3 {
@@ -890,7 +1655,7 @@ fn revolve(fid: FeatureId, r: &Revolve, prev: &State, state: &mut State) -> RRes
         shape = combined.shape;
     }
     let op = if r.cut { BoolOp::Cut } else { BoolOp::Fuse };
-    apply_tool(fid, state, shape, names, op, r.merge)
+    apply_feature_tool(fid, state, shape, names, op, r.merge)
 }
 
 fn revolve_side(
@@ -1167,6 +1932,13 @@ fn shell(fid: FeatureId, s: &ShellDef, prev: &State, state: &mut State) -> RResu
     }
     let t = if s.outward { -s.thickness } else { s.thickness };
     let r = body.shape.shell(&faces, t).map_err(geo)?;
+    // A wall as thick as half the part leaves no cavity: the kernel returns the
+    // solid unchanged rather than failing.
+    let volume = |shape: &Shape| shape.mass_props().map(|m| m.volume).map_err(geo);
+    let before = volume(&body.shape)?;
+    if (volume(&r.shape)? - before).abs() <= 1e-9 * before.abs().max(1.0) {
+        return Err("the shell is too thick for the part; reduce the thickness".into());
+    }
     let names = dressup_names(fid, "s", body, &r);
     remember_dressup(fid, body, &r.shape, &names, state)?;
     state.body = Some(Body {
@@ -1318,7 +2090,50 @@ fn hole(fid: FeatureId, h: &Hole, prev: &State, state: &mut State) -> RResult<()
     }
     let tool = Shape::compound(tools.iter());
     let names = Naming::from_faces(&tool, all_faces);
-    apply_tool(fid, state, tool, names, BoolOp::Cut, true)
+    if h.cosmetic_thread {
+        if h.kind != HoleKind::Tapped {
+            return Err("cosmetic threads apply to tapped holes".into());
+        }
+        let size = holes::find(h.standard, &h.size).ok_or("unknown hole size")?;
+        let pitch = holes::pitch(h.standard, size)
+            .ok_or_else(|| format!("no coarse pitch is listed for {}", h.size))?;
+        let body = body_of(prev)?;
+        let threads = points
+            .iter()
+            .map(|p| {
+                let start = plane.to_world(*p);
+                let axis = -out;
+                // The thread runs through the material the drill passes.
+                let probe = Shape::wire3(&[of_geom::Curve3::Line {
+                    a: start,
+                    b: start + axis * depth,
+                }])
+                .map_err(geo)?;
+                let inside = probe.boolean(BoolOp::Common, &body.shape).map_err(geo)?;
+                let length = (0..inside.shape.count(Kind::Edge))
+                    .filter_map(|e| inside.shape.edge_info(e).ok())
+                    .filter(|e| {
+                        (e.start - start).length() < 1e-6 || (e.end - start).length() < 1e-6
+                    })
+                    .map(|e| e.length)
+                    .next()
+                    .unwrap_or(0.0);
+                if length <= 1e-9 {
+                    return Err("a tapped hole starts outside the material".to_string());
+                }
+                Ok(crate::cosmetic_thread::HoleThread {
+                    start,
+                    axis,
+                    diameter: size.nominal,
+                    pitch,
+                    length,
+                    size: size.name.to_string(),
+                })
+            })
+            .collect::<RResult<Vec<_>>>()?;
+        state.hole_threads.insert(fid, threads);
+    }
+    apply_feature_tool(fid, state, tool, names, BoolOp::Cut, true)
 }
 
 /// Replay selections in feature-tree order, regardless of click order.
@@ -1475,12 +2290,80 @@ fn import(fid: FeatureId, i: &Import, state: &mut State) -> RResult<()> {
     };
     let _ = std::fs::remove_file(&path);
     let shape = shape.map_err(geo)?;
-    let names = Naming::by_index(&shape, &fid.to_string());
+    // Faces are named by their position in the file, qualified by the file's
+    // content: replacing the data with a different file reports missing
+    // references instead of silently binding them to unrelated faces. The bare
+    // position names of older files stay as aliases.
+    let content = crate::naming::content_hash(i.data.as_bytes());
+    let faces = (0..shape.count(Kind::Face))
+        .map(|f| vec![format!("{fid}.i{content}.f{f}"), format!("{fid}.f{f}")])
+        .collect();
+    let names = Naming::from_faces(&shape, faces);
     apply_tool(fid, state, shape, names, BoolOp::Fuse, false)
 }
 
+/// Replaces each face reference by references to all of its boundary edges, outer
+/// and inner loops, keeping the selection order and dropping repeated edges.
+fn expand_face_edges(state: &State, refs: &[Ref]) -> RResult<Vec<Ref>> {
+    let mut out: Vec<Ref> = Vec::new();
+    let push = |r: Ref, out: &mut Vec<Ref>| {
+        if !out.contains(&r) {
+            out.push(r);
+        }
+    };
+    for r in refs {
+        match r {
+            Ref::Face { name } => {
+                let body = body_of(state)?;
+                let face = body
+                    .names
+                    .face(name)
+                    .ok_or_else(|| format!("face {name} no longer exists"))?;
+                for &e in &body.shape.face_edges()[face as usize] {
+                    let name = body
+                        .names
+                        .edges
+                        .get(e as usize)
+                        .ok_or("unnamed face edge")?;
+                    push(Ref::Edge { name: name.clone() }, &mut out);
+                }
+            }
+            Ref::BodyTopology {
+                body: id,
+                kind: Kind::Face,
+                name,
+            } => {
+                let selected = &state.solid(id)?.geometry;
+                let face = selected
+                    .names
+                    .faces
+                    .iter()
+                    .position(|n| n.first() == Some(name))
+                    .ok_or_else(|| format!("body topology {name} no longer exists"))?;
+                for &e in &selected.shape.face_edges()[face] {
+                    let name = selected
+                        .names
+                        .edges
+                        .get(e as usize)
+                        .ok_or("unnamed face edge")?;
+                    push(
+                        Ref::BodyTopology {
+                            body: id.clone(),
+                            kind: Kind::Edge,
+                            name: name.clone(),
+                        },
+                        &mut out,
+                    );
+                }
+            }
+            other => push(other.clone(), &mut out),
+        }
+    }
+    Ok(out)
+}
+
 /// Sketch geometry for model edges projected onto a sketch plane, for
-/// Convert Entities. Returns the new entity ids.
+/// Convert Entities. Face references convert every boundary edge. Returns the new entity ids.
 pub fn convert_edges(
     state: &State,
     plane: &Plane,
@@ -1488,8 +2371,9 @@ pub fn convert_edges(
     edges: &[Ref],
 ) -> RResult<Vec<of_sketch::Id>> {
     let body = body_of(state)?;
+    let edges = expand_face_edges(state, edges)?;
     let mut out = Vec::new();
-    for r in edges {
+    for r in &edges {
         let Ok(Resolved::Edge { index, info }) = resolve(state, r) else {
             return Err("select model edges to convert".into());
         };

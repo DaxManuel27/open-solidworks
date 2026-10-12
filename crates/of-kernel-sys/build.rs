@@ -47,9 +47,22 @@ fn main() {
         )
     });
 
-    let mut build = cxx_build::bridge("src/lib.rs");
+    let probes = env::var_os("CARGO_FEATURE_KERNEL_PROBES").is_some();
+    let mut bridges = vec!["src/lib.rs"];
+    if probes {
+        bridges.push("src/probes.rs");
+    }
+    let mut build = cxx_build::bridges(bridges);
+    if probes {
+        build.file("cpp/probes.cpp");
+    }
     build
         .file("cpp/ofk.cpp")
+        .file("cpp/dome.cpp")
+        .file("cpp/wrap.cpp")
+        .file("cpp/boundary.cpp")
+        .file("cpp/thread.cpp")
+        .file("cpp/skin.cpp")
         .include(&include)
         .std("c++17")
         .flag_if_supported("-Wno-unused-parameter")
@@ -75,7 +88,15 @@ fn main() {
 
     println!("cargo:rerun-if-changed=cpp/ofk.h");
     println!("cargo:rerun-if-changed=cpp/ofk.cpp");
+    println!("cargo:rerun-if-changed=cpp/dome.cpp");
+    println!("cargo:rerun-if-changed=cpp/wrap.cpp");
+    println!("cargo:rerun-if-changed=cpp/boundary.cpp");
+    println!("cargo:rerun-if-changed=cpp/thread.cpp");
+    println!("cargo:rerun-if-changed=cpp/skin.cpp");
     println!("cargo:rerun-if-changed=src/lib.rs");
+    println!("cargo:rerun-if-changed=src/probes.rs");
+    println!("cargo:rerun-if-changed=cpp/probes.h");
+    println!("cargo:rerun-if-changed=cpp/probes.cpp");
     for var in ["OCCT_INCLUDE_DIR", "OCCT_LIB_DIR", "CONDA_PREFIX"] {
         println!("cargo:rerun-if-env-changed={var}");
     }

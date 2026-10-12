@@ -142,8 +142,22 @@ struct Parser<'a, F> {
     at: usize,
     depth: usize,
     lookup: F,
+    /// Validates grammar, function names and arity without values or units.
+    syntax_only: bool,
 }
 impl<F: FnMut(&str) -> Result<Quantity, String>> Parser<'_, F> {
+    fn combine(
+        &self,
+        a: Quantity,
+        b: Quantity,
+        op: impl FnOnce(Quantity, Quantity) -> Result<Quantity, String>,
+    ) -> Result<Quantity, String> {
+        if self.syntax_only {
+            Ok(Quantity::scalar(0.0))
+        } else {
+            op(a, b)
+        }
+    }
     fn take(&mut self, symbol: char) -> bool {
         if self.tokens[self.at] == Token::Symbol(symbol) {
             self.at += 1;
@@ -156,9 +170,11 @@ impl<F: FnMut(&str) -> Result<Quantity, String>> Parser<'_, F> {
         let mut q = self.product()?;
         loop {
             if self.take('+') {
-                q = q.add(self.product()?, false)?;
+                let b = self.product()?;
+                q = self.combine(q, b, |a, b| a.add(b, false))?;
             } else if self.take('-') {
-                q = q.add(self.product()?, true)?;
+                let b = self.product()?;
+                q = self.combine(q, b, |a, b| a.add(b, true))?;
             } else {
                 break;
             }
@@ -169,9 +185,11 @@ impl<F: FnMut(&str) -> Result<Quantity, String>> Parser<'_, F> {
         let mut q = self.atom()?;
         loop {
             if self.take('*') {
-                q = q.multiply(self.atom()?, false)?;
+                let b = self.atom()?;
+                q = self.combine(q, b, |a, b| a.multiply(b, false))?;
             } else if self.take('/') {
-                q = q.multiply(self.atom()?, true)?;
+                let b = self.atom()?;
+                q = self.combine(q, b, |a, b| a.multiply(b, true))?;
             } else {
                 break;
             }
@@ -205,7 +223,7 @@ impl<F: FnMut(&str) -> Result<Quantity, String>> Parser<'_, F> {
                     if let Token::Name(unit) = &self.tokens[self.at]
                         && let Some(u) = constant(unit).filter(|u| u.length != 0 || u.angle != 0)
                     {
-                        q = q.multiply(u, false)?;
+                        q = self.combine(q, u, |a, b| a.multiply(b, false))?;
                         self.at += 1;
                     }
                     Ok(q)
@@ -222,7 +240,14 @@ impl<F: FnMut(&str) -> Result<Quantity, String>> Parser<'_, F> {
                         if !self.take(')') {
                             return Err("expected ')' after function arguments".into());
                         }
-                        function(&name, first, second)
+                        check_arity(&name, second.is_some())?;
+                        if self.syntax_only {
+                            Ok(Quantity::scalar(0.0))
+                        } else {
+                            function(&name, first, second)
+                        }
+                    } else if self.syntax_only {
+                        Ok(Quantity::scalar(0.0))
                     } else {
                         constant(&name)
                             .map(Ok)
@@ -234,6 +259,18 @@ impl<F: FnMut(&str) -> Result<Quantity, String>> Parser<'_, F> {
         };
         self.depth -= 1;
         result?.checked()
+    }
+}
+
+fn check_arity(name: &str, two: bool) -> Result<(), String> {
+    match name {
+        "min" | "max" if !two => Err(format!("{name} requires two arguments")),
+        "min" | "max" => Ok(()),
+        "abs" | "sqrt" | "sin" | "cos" | "tan" if two => {
+            Err(format!("{name} requires one argument"))
+        }
+        "abs" | "sqrt" | "sin" | "cos" | "tan" => Ok(()),
+        _ => Err(format!("unknown function {name}")),
     }
 }
 
@@ -287,12 +324,37 @@ fn evaluate(
     text: &str,
     lookup: impl FnMut(&str) -> Result<Quantity, String>,
 ) -> Result<Quantity, String> {
+    run(text, lookup, false)
+}
+
+/// Rejects malformed formulas, unknown functions and wrong argument counts without
+/// evaluating names, so missing variables and cycles stay per-field diagnostics.
+pub fn check_syntax(text: &str) -> Result<(), String> {
+    run(text, |_| Ok(Quantity::scalar(0.0)), true).map(|_| ())
+}
+
+/// Checks submitted formulas, naming the first variable or parameter that fails.
+pub fn check_formulas<'a>(
+    formulas: impl IntoIterator<Item = (&'a String, &'a String)>,
+) -> Result<(), String> {
+    for (name, text) in formulas {
+        check_syntax(text).map_err(|error| format!("{name}: {error}"))?;
+    }
+    Ok(())
+}
+
+fn run(
+    text: &str,
+    lookup: impl FnMut(&str) -> Result<Quantity, String>,
+    syntax_only: bool,
+) -> Result<Quantity, String> {
     let tokens = tokens(text.trim().strip_prefix('=').unwrap_or(text.trim()))?;
     let mut parser = Parser {
         tokens: &tokens,
         at: 0,
         depth: 0,
         lookup,
+        syntax_only,
     };
     let value = parser.expression()?;
     if tokens[parser.at] != Token::End {
@@ -325,6 +387,25 @@ fn param(feature: FeatureId, path: String, value: f64, angle: bool, integer: boo
 }
 
 pub fn parameters(feature: &Feature) -> Vec<Parameter> {
+    if let FeatureKind::Sketch3d(sketch) = &feature.kind {
+        return sketch
+            .constraints
+            .iter()
+            .filter_map(|constraint| {
+                if let of_sketch::spatial::Relation3::Distance { value, .. } = constraint.relation {
+                    Some(param(
+                        feature.id,
+                        format!("dimension.{}", constraint.id),
+                        value,
+                        false,
+                        false,
+                    ))
+                } else {
+                    None
+                }
+            })
+            .collect();
+    }
     if let FeatureKind::Sketch(s) = &feature.kind {
         return s
             .sketch
@@ -362,10 +443,19 @@ pub fn parameters(feature: &Feature) -> Vec<Parameter> {
                 if let Some(n) = value.as_f64() {
                     let angle = matches!(
                         key.as_str(),
-                        "angle" | "angle1" | "angle2" | "start_angle" | "csink_angle_override"
+                        "angle"
+                            | "angle1"
+                            | "angle2"
+                            | "start_angle"
+                            | "csink_angle_override"
+                            | "twist"
+                            | "draft"
                     );
                     let integer = key == "count";
-                    let scalar = key == "turns";
+                    let scalar = matches!(
+                        key.as_str(),
+                        "turns" | "position" | "turn" | "tangent_length"
+                    );
                     if angle
                         || integer
                         || scalar
@@ -385,6 +475,9 @@ pub fn parameters(feature: &Feature) -> Vec<Parameter> {
                                 | "spacing"
                                 | "pitch"
                                 | "height"
+                                | "diameter"
+                                | "circle_diameter"
+                                | "length"
                                 | "diameter_override"
                                 | "cbore_diameter_override"
                                 | "cbore_depth_override"
@@ -397,17 +490,25 @@ pub fn parameters(feature: &Feature) -> Vec<Parameter> {
                         out.push(parameter);
                     }
                 } else if let Value::Array(values) = value {
-                    if matches!(key.as_str(), "translation" | "rotation" | "origin") {
+                    if matches!(
+                        key.as_str(),
+                        "translation" | "rotation" | "origin" | "direction"
+                    ) {
                         for (i, value) in values.iter().enumerate() {
                             if let Some(n) = value.as_f64() {
-                                out.push(param(
-                                    fid,
-                                    format!("{path}.{i}"),
-                                    n,
-                                    key == "rotation",
-                                    false,
-                                ));
+                                let mut parameter =
+                                    param(fid, format!("{path}.{i}"), n, key == "rotation", false);
+                                if key == "direction" {
+                                    parameter.value.length = 0;
+                                }
+                                out.push(parameter);
                             }
+                        }
+                    } else if key == "stations" || key == "variable_pitch" {
+                        // Station ordering is authored, so each scalar retains its
+                        // position in the variable-fillet definition.
+                        for (i, value) in values.iter().enumerate() {
+                            walk(fid, value, &format!("{path}.{i}"), out);
                         }
                     }
                 } else {
@@ -444,6 +545,26 @@ pub fn set_parameter(
         ));
     }
     if let Some(id) = parameter.path.strip_prefix("dimension.") {
+        if let FeatureKind::Sketch3d(sketch) = &mut feature.kind {
+            let id = id
+                .parse::<of_sketch::Id>()
+                .map_err(|_| "invalid constraint ID")?;
+            let constraint = sketch
+                .constraints
+                .iter_mut()
+                .find(|constraint| constraint.id == id)
+                .ok_or("parameter no longer exists")?;
+            if let of_sketch::spatial::Relation3::Distance {
+                value: distance, ..
+            } = &mut constraint.relation
+            {
+                if value.value <= 0.0 {
+                    return Err("spatial distance must be positive".into());
+                }
+                *distance = value.value;
+                return Ok(());
+            }
+        }
         if let FeatureKind::Sketch(s) = &mut feature.kind {
             return s
                 .sketch
@@ -507,6 +628,10 @@ impl Evaluator<'_> {
             return Err("equation dependency depth exceeds 128".into());
         }
         self.stack.push(name.into());
+        if self.doc.equations.contains_key(name) && !self.params.contains_key(name) {
+            self.stack.pop();
+            return Err(format!("parameter {name} no longer exists"));
+        }
         let expression = self
             .doc
             .variables
@@ -540,6 +665,26 @@ impl Evaluator<'_> {
         self.cache.insert(name.into(), value.clone());
         value
     }
+}
+
+/// Evaluate `text` with the document's variables and parameters, as the active
+/// configuration resolves them.
+pub fn evaluate_in(doc: &Document, text: &str) -> Result<Quantity, String> {
+    check_syntax(text)?;
+    let resolved = crate::configurations::resolve(doc)?;
+    let params: BTreeMap<_, _> = resolved
+        .features
+        .iter()
+        .flat_map(parameters)
+        .map(|p| (p.key.clone(), p))
+        .collect();
+    let mut evaluator = Evaluator {
+        doc: &resolved,
+        params,
+        cache: BTreeMap::new(),
+        stack: Vec::new(),
+    };
+    evaluate(text, |name| evaluator.get(name))
 }
 
 pub fn effective(doc: &Document) -> Evaluation {
@@ -592,6 +737,11 @@ pub fn effective(doc: &Document) -> Evaluation {
             }
         }
     }
+    // A numeric field needs its effective value just as a driven field does.
+    // Resolve every registered parameter after applying configuration overrides.
+    for name in evaluator.params.keys().cloned().collect::<Vec<_>>() {
+        let _ = evaluator.get(&name);
+    }
     Evaluation {
         document,
         errors,
@@ -623,5 +773,27 @@ mod tests {
             assert!(eval(text).is_err(), "{text}");
         }
         assert!(eval(&format!("{}1{}", "(".repeat(100), ")".repeat(100))).is_err());
+    }
+    #[test]
+    fn syntax_check_ignores_names_and_units() {
+        for text in [
+            "f2.end1.depth * 2 + 1mm",
+            "=min(a, 3deg)",
+            "sqrt(1mm) + missing",
+        ] {
+            assert!(check_syntax(text).is_ok(), "{text}");
+        }
+        for text in [
+            "2 *",
+            "(1",
+            "1 2",
+            "foo(1)",
+            "min(1)",
+            "abs(1, 2)",
+            "1 $ 2",
+            "",
+        ] {
+            assert!(check_syntax(text).is_err(), "{text}");
+        }
     }
 }

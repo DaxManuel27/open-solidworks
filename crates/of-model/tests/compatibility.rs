@@ -17,7 +17,7 @@ fn phase_one_files_migrate_without_geometry_or_identity_changes() {
         let serialized = file::to_string(&model.doc);
         assert_eq!(
             serde_json::from_str::<serde_json::Value>(&serialized).unwrap()["version"],
-            2
+            file::VERSION
         );
         let loaded = Model::new(file::from_str(&serialized).unwrap());
         assert_eq!(
@@ -69,6 +69,36 @@ fn header_errors_precede_unknown_feature_errors() {
         file::from_str(&future.replace("99", "0"))
             .unwrap_err()
             .contains("version 0")
+    );
+}
+
+#[test]
+fn version_two_parts_keep_authored_parameters_and_body_identity() {
+    let mut source: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/v1-block.ofp")).unwrap();
+    source["version"] = 2.into();
+    let mut old = file::from_str(&source.to_string()).unwrap();
+    old.variables.insert("depth".into(), "12mm".into());
+    old.equations.insert("f2.end1.depth".into(), "depth".into());
+    source["document"] = serde_json::to_value(&old).unwrap();
+    let model = Model::new(file::from_str(&source.to_string()).unwrap());
+    let reopened = Model::new(file::from_str(&file::to_string(&model.doc)).unwrap());
+    assert!(model.statuses().iter().all(|s| s.error.is_none()));
+    assert_eq!(model.doc, reopened.doc);
+    assert_eq!(model.state().bodies[0].id, reopened.state().bodies[0].id);
+    assert!(
+        (reopened
+            .state()
+            .body
+            .as_ref()
+            .unwrap()
+            .shape
+            .mass_props()
+            .unwrap()
+            .volume
+            - 2400.0)
+            .abs()
+            < 1e-6
     );
 }
 

@@ -85,9 +85,21 @@ export async function modelReply(
   tools: ToolSpec[],
   signal: AbortSignal,
   onText: (text: string) => void,
+  options: { requireTool?: boolean } = {},
 ): Promise<ModelReply> {
   if (settings.provider === 'chatgpt')
-    return responsesReply(settings.model, key, system, turns, tools, signal, onText)
+    return responsesReply(
+      settings.model,
+      key,
+      system,
+      turns,
+      tools,
+      signal,
+      onText,
+      !!options.requireTool,
+    )
+  if (options.requireTool)
+    throw new Error('Required tool choice is only supported by the ChatGPT adapter.')
   const local = settings.provider === 'ollama'
   const messages = local
     ? [
@@ -234,6 +246,7 @@ async function responsesReply(
   tools: ToolSpec[],
   signal: AbortSignal,
   onText: (text: string) => void,
+  requireTool: boolean,
 ): Promise<ModelReply> {
   const input = turns.flatMap<unknown>((t) =>
     t.role === 'tool'
@@ -252,6 +265,8 @@ async function responsesReply(
       store: false,
       stream: true,
       include: ['reasoning.encrypted_content'],
+      // Connection probes must exercise the tool channel, not optional plain-text replies.
+      ...(requireTool ? { tool_choice: 'required' } : {}),
       tools: [
         {
           type: 'namespace',

@@ -2,7 +2,7 @@
 
 use of_model::geom::{DVec2, DVec3, Kind, Plane, Shape};
 use of_model::sketch::{Definition, Geometry, Sketch, SolveReport};
-use of_model::{Datum, Document, FeatureKind, Model, State};
+use of_model::{Datum, Document, FeatureKind, Model, Ref, State};
 use of_protocol::{MeshPayload, b64_f32, b64_u32};
 use serde_json::{Value, json};
 
@@ -114,16 +114,82 @@ pub fn scene(doc: &Document, state: &State) -> Result<Value, String> {
                         .map_err(|e| e.0)
                 })
                 .collect::<Result<Vec<_>, String>>()?;
-            Ok(json!({ "id": id, "name": name(*id), "polylines": polylines }))
+            let segments = curve.segments.iter().map(|(segment, shape)| {
+                let polylines = (0..shape.count(Kind::Edge)).map(|edge| {
+                    shape.edge_samples(edge, 0.05, ANGULAR).map(|points| points.iter()
+                        .flat_map(|p| [p.x, p.y, p.z]).collect::<Vec<_>>()).map_err(|e| e.0)
+                }).collect::<Result<Vec<_>, _>>()?;
+                Ok(json!({ "reference": Ref::CurveSegment { curve: *id, segment: segment.clone() }, "polylines": polylines }))
+            }).collect::<Result<Vec<Value>, String>>()?;
+            Ok(json!({ "id": id, "name": name(*id), "polylines": polylines, "segments": segments }))
         })
         .collect::<Result<Vec<_>, String>>()?;
+    let sketches3d: Vec<_> = state
+        .sketches3d
+        .iter()
+        .map(|(id, (sk, report))| {
+            let polylines: Vec<Vec<f64>> = sk
+                .entities
+                .iter()
+                .filter(|e| {
+                    !e.construction
+                        && !matches!(
+                            e.geometry,
+                            of_model::sketch::spatial::Geometry3::Point { .. }
+                        )
+                })
+                .map(|e| {
+                    (0..=48)
+                        .filter_map(|i| sk.sample(e.id, i as f64 / 48.0).ok())
+                        .flat_map(|p| p.to_array())
+                        .collect()
+                })
+                .collect();
+            json!({"id":id,"name":name(*id),"polylines":polylines,"sketch":sk,"report":report})
+        })
+        .collect();
+    let mut bounds = bbox.map(|b| (b.min, b.max));
+    for (sk, _) in state.sketches3d.values() {
+        for e in &sk.entities {
+            if let of_model::sketch::spatial::Geometry3::Point { at } = e.geometry {
+                bounds = Some(bounds.map_or((at, at), |(lo, hi)| (lo.min(at), hi.max(at))));
+            }
+        }
+    }
+    let hole_threads = state.hole_threads.iter().map(|(id, threads)| {
+        json!({
+            "id": id, "name": name(*id),
+            "parameters": {"holes": threads},
+            "body": null,
+            "hidden": false,
+            "polylines": threads
+                .iter()
+                .map(|t| t.points().iter().flat_map(|p| p.to_array()).collect::<Vec<_>>())
+                .collect::<Vec<_>>(),
+            "error": null,
+        })
+    });
+    let cosmetic_threads: Vec<Value> = state.cosmetic_threads.iter().map(|(id, thread)| {
+        match of_model::cosmetic_thread::annotation(thread, state) {
+            Ok(annotation) => json!({
+                "id": id, "name": name(*id), "parameters": thread,
+                "body": annotation.body,
+                "hidden": doc.body_display.get(&annotation.body).is_some_and(|d| d.hidden),
+                "polylines": [annotation.points.iter().flat_map(|p| p.to_array()).collect::<Vec<_>>()],
+                "error": null,
+            }),
+            Err(error) => json!({"id":id,"name":name(*id),"parameters":thread,"body":null,"hidden":false,"polylines":[],"error":error}),
+        }
+    }).chain(hole_threads).collect();
     Ok(json!({
         "body": body,
         "bodies": body_views(doc, state)?,
-        "bbox": bbox.map(|b| json!({ "min": v3(b.min), "max": v3(b.max) })),
+        "bbox": bounds.map(|(lo,hi)| json!({ "min": v3(lo), "max": v3(hi) })),
         "datums": datums,
         "sketches": sketches,
         "curves": curves,
+        "sketches3d": sketches3d,
+        "cosmetic_threads": cosmetic_threads,
     }))
 }
 
@@ -207,7 +273,18 @@ pub fn sketch(id: u32, plane: &Plane, sk: &Sketch, report: &SolveReport) -> Valu
             v
         })
         .collect();
-    let profile_error = sk.contours().err().map(|e| e.to_string());
+    let contour_result = sk.contours();
+    let profile_error = contour_result.as_ref().err().map(|e| e.to_string());
+    let contours: Vec<Value> = contour_result.map(|c| {
+        c.loops.into_iter().map(|chain| (chain, true))
+            .chain(c.open.into_iter().map(|chain| (chain, false)))
+            .map(|(chain, closed)| {
+                let ordered_entities = chain.entities;
+                let mut entities = ordered_entities.clone();
+                entities.sort_unstable();
+                json!({ "reference": Ref::SketchContour { sketch: id, entities }, "closed": closed, "ordered_entities": ordered_entities })
+            }).collect()
+    }).unwrap_or_default();
     json!({
         "id": id,
         "plane": plane_json(plane),
@@ -218,6 +295,7 @@ pub fn sketch(id: u32, plane: &Plane, sk: &Sketch, report: &SolveReport) -> Valu
         "status": report.summary(),
         "solved": report.status == of_model::sketch::SolveStatus::Solved,
         "profile_error": profile_error,
+        "contours": contours,
     })
 }
 

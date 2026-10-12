@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use of_model::geom::{DVec2, Kind};
+use of_model::geom::{DVec2, DVec3, Kind};
 use of_model::sketch::{self as sk, Geometry, Id, Sketch, tools};
 use of_model::{
     Document, FeatureId, FeatureKind, Import, ImportFormat, Model, Ref, SketchFeature, State,
@@ -260,11 +260,13 @@ impl Session {
                 doc.equations.remove(&p.key);
                 self.checkpoint();
                 self.model.doc = doc;
-                self.model.rebuild_all();
+                // Only features whose effective definition changed are rebuilt.
+                self.model.rebuild();
                 self.full()
             }
             "configuration.create"
             | "configuration.update"
+            | "configuration.preview"
             | "configuration.delete"
             | "configuration.activate" => {
                 use of_model::configurations::Configuration;
@@ -298,9 +300,27 @@ impl Session {
                         configs.items.push(config);
                         configs.active = id;
                     }
-                    "configuration.update" => {
-                        let UpdateConfiguration { mut configuration } = args(params)?;
+                    "configuration.update" | "configuration.preview" => {
+                        let UpdateConfiguration {
+                            mut configuration,
+                            revision,
+                        } = args(params)?;
+                        if revision.is_some_and(|revision| revision != self.revision) {
+                            return Err(RpcError::coded(
+                                ErrorCode::StaleRevision,
+                                "the document changed; refresh before editing a configuration",
+                            ));
+                        }
                         configuration.name = configuration.name.trim().into();
+                        of_model::equations::check_formulas(
+                            configuration.variables.iter().chain(
+                                configuration
+                                    .equations
+                                    .iter()
+                                    .filter_map(|(k, v)| v.as_ref().map(|v| (k, v))),
+                            ),
+                        )
+                        .map_err(|e| RpcError::coded(ErrorCode::InvalidFormula, e))?;
                         let target = configs
                             .items
                             .iter_mut()
@@ -311,7 +331,11 @@ impl Session {
                                     "no such configuration",
                                 )
                             })?;
+                        let preview_id = configuration.id;
                         *target = configuration;
+                        if method == "configuration.preview" {
+                            configs.active = preview_id;
+                        }
                     }
                     "configuration.delete" => {
                         let ConfigurationRef { id } = args(params)?;
@@ -343,40 +367,132 @@ impl Session {
                 trial
                     .validate()
                     .map_err(|e| RpcError::coded(ErrorCode::InvalidFormula, e))?;
+                if method == "configuration.preview" {
+                    let model = Model::new(trial);
+                    return Ok(json!({
+                        "values": views::equation_values(&model.doc),
+                        "features": views::snapshot(&model)["features"],
+                        "scene": views::scene(&model.doc, model.state()).map_err(fail)?,
+                    }));
+                }
                 self.checkpoint();
                 self.model.doc = trial;
-                self.model.rebuild_all();
+                // Only features whose effective definition changed are rebuilt.
+                self.model.rebuild();
                 self.editing = None;
                 self.full()
             }
             "equations.set" | "equations.preview" => {
                 let p: SetEquations = args(params)?;
-                let mut trial = self.model.doc.clone();
-                trial.variables = p.variables;
-                trial.equations = p.equations;
-                trial
-                    .validate()
+                if p.revision.is_some_and(|revision| revision != self.revision) {
+                    return Err(RpcError::coded(
+                        ErrorCode::StaleRevision,
+                        "the document changed; refresh before editing parameters",
+                    ));
+                }
+                // Preview reports syntax errors per field so the editor can disable OK.
+                if method == "equations.set" {
+                    of_model::equations::check_formulas(
+                        p.variables.iter().chain(
+                            p.equations
+                                .iter()
+                                .filter_map(|(k, v)| v.as_ref().map(|v| (k, v))),
+                        ),
+                    )
                     .map_err(|e| RpcError::coded(ErrorCode::InvalidFormula, e))?;
-                let keys: std::collections::HashSet<_> = trial
+                }
+                let mut trial = self.model.doc.clone();
+                let registered: std::collections::BTreeMap<_, _> = trial
                     .features
                     .iter()
                     .flat_map(of_model::equations::parameters)
-                    .map(|p| p.key)
+                    .map(|p| (p.key.clone(), p))
                     .collect();
-                if let Some(key) = trial.equations.keys().find(|key| !keys.contains(*key)) {
-                    return Err(RpcError::coded(
-                        ErrorCode::UnknownParameter,
-                        format!("parameter {key} no longer exists"),
-                    ));
+                for key in p.equations.keys().chain(p.parameters.keys()) {
+                    if !registered.contains_key(key) {
+                        return Err(RpcError::coded(
+                            ErrorCode::UnknownParameter,
+                            format!("parameter {key} no longer exists"),
+                        ));
+                    }
+                    if p.parameters.contains_key(key)
+                        && p.equations.get(key).is_some_and(Option::is_some)
+                    {
+                        return Err(RpcError::params(format!(
+                            "parameter {key} cannot have both a value and an equation"
+                        )));
+                    }
                 }
+                if let Some(id) = p.configuration {
+                    let config = trial
+                        .configurations
+                        .items
+                        .iter_mut()
+                        .find(|c| c.id == id)
+                        .ok_or_else(|| {
+                            RpcError::coded(
+                                ErrorCode::UnknownConfiguration,
+                                "no such configuration",
+                            )
+                        })?;
+                    config.parameters = p.parameters;
+                    config.equations = p.equations;
+                    config.variables = p.variables;
+                    // Evaluate the selected variant, even if a caller edits an inactive one.
+                    // Commit below preserves the original active configuration.
+                    trial.configurations.active = id;
+                    of_model::configurations::resolve(&trial).map_err(fail)?;
+                } else {
+                    trial.variables = p.variables;
+                    trial.equations = p
+                        .equations
+                        .into_iter()
+                        .filter_map(|(key, value)| value.map(|value| (key, value)))
+                        .collect();
+                    for (key, value) in p.parameters {
+                        let parameter = &registered[&key];
+                        of_model::equations::set_parameter(
+                            trial.feature_mut(parameter.feature).unwrap(),
+                            parameter,
+                            of_model::equations::Quantity {
+                                value,
+                                ..parameter.value
+                            },
+                        )
+                        .map_err(fail)?;
+                        trial.equations.remove(&key);
+                    }
+                }
+                trial
+                    .validate()
+                    .map_err(|e| RpcError::coded(ErrorCode::InvalidFormula, e))?;
                 if method == "equations.preview" {
-                    return Ok(json!({ "values": views::equation_values(&trial) }));
+                    // Base fields must show base evaluations even while a variant is active.
+                    if p.configuration.is_none() {
+                        trial.configurations = Default::default();
+                    }
+                    let model = Model::new(trial);
+                    return Ok(json!({
+                        "values": views::equation_values(&model.doc),
+                        "features": views::snapshot(&model)["features"],
+                        "scene": views::scene(&model.doc, model.state()).map_err(fail)?,
+                    }));
                 }
+                trial.configurations.active = self.model.doc.configurations.active;
                 self.checkpoint();
                 self.model.doc = trial;
-                self.model.rebuild_all();
+                // Only features whose effective definition changed are rebuilt.
+                self.model.rebuild();
                 self.editing = None;
                 self.full()
+            }
+            "sketch3d.solve" => {
+                let p: SolveSpatialSketch = args(params)?;
+                let mut sketch = p.sketch;
+                let report = sketch
+                    .solve(p.drag.map(|d| (d.point, DVec3::from(d.to))))
+                    .map_err(RpcError::params)?;
+                Ok(json!({"sketch": sketch, "report": report}))
             }
             "core.info" => Ok(json!(of_protocol::CoreInfo {
                 protocol_version: of_protocol::PROTOCOL_VERSION,
@@ -389,10 +505,33 @@ impl Session {
                     "multibody".into(),
                     "equations".into(),
                     "configurations".into(),
+                    "cosmetic_threads".into(),
+                    "modeled_threads".into(),
                     "curves".into(),
+                    "sketch_contour_paths".into(),
+                    "ordered_profile_contours".into(),
+                    "curve_segment_references".into(),
+                    "general_body_split".into(),
+                    "constrained_spatial_sketch".into(),
+                    "part_v2_read".into(),
                     "sweep_loft".into(),
                     "draft".into(),
+                    "circular_spherical_dome".into(),
+                    "elliptical_dome".into(),
+                    "noncircular_dome".into(),
+                    "step_draft".into(),
+                    "rib".into(),
+                    "cylindrical_wrap".into(),
+                    "conical_wrap".into(),
+                    "freeform_wrap".into(),
+                    "loft_centerline".into(),
+                    "loft_end_conditions".into(),
+                    "sweep_scaling_guides".into(),
+                    "interior_contour_seams".into(),
+                    "projected_curve_pieces".into(),
+                    "boundary".into(),
                     "variable_fillet".into(),
+                    "planar_face_fillet".into(),
                     "split_line".into(),
                 ],
             })),
@@ -489,12 +628,16 @@ impl Session {
             "doc.topology" => self.topology(),
             "feature.add" => {
                 let p: AddFeature = args(params)?;
-                self.checkpoint();
-                let id = self.model.doc.add(p.feature.kind);
-                self.model.doc.feature_mut(id).unwrap().scope = p.feature.scope;
+                let mut trial = self.model.doc.clone();
+                let id = trial.add(p.feature.kind);
+                trial.feature_mut(id).unwrap().scope = p.feature.scope;
                 if let Some(n) = p.name {
-                    self.model.doc.feature_mut(id).unwrap().name = n;
+                    trial.feature_mut(id).unwrap().name = n;
                 }
+                apply_formulas(&mut trial, id, &p.formulas)?;
+                self.checkpoint();
+                self.model.doc = trial;
+                // Formulas may drive earlier features; the rebuild cache finds them.
                 self.model.invalidate(id);
                 self.editing = None;
                 let mut v = self.full()?;
@@ -503,16 +646,38 @@ impl Session {
             }
             "feature.update" => {
                 let p: UpdateFeature = args(params)?;
-                self.checkpoint();
-                let f =
-                    self.model.doc.feature_mut(p.id).ok_or_else(|| {
-                        RpcError::coded(ErrorCode::UnknownFeature, "no such feature")
-                    })?;
+                let mut trial = self.model.doc.clone();
+                let f = trial
+                    .feature_mut(p.id)
+                    .ok_or_else(|| RpcError::coded(ErrorCode::UnknownFeature, "no such feature"))?;
                 f.kind = p.feature.kind;
                 f.scope = p.feature.scope;
+                apply_formulas(&mut trial, p.id, &p.formulas)?;
+                self.checkpoint();
+                self.model.doc = trial;
+                // Formulas may drive earlier features; the rebuild cache finds them.
                 self.model.invalidate(p.id);
                 self.editing = None;
                 self.full()
+            }
+            "ref.locate" => {
+                let p: LocateRef = args(params)?;
+                let resolved = self
+                    .model
+                    .resolve(&p.reference)
+                    .map_err(|e| RpcError::coded(ErrorCode::UnknownRef, e))?;
+                let point = resolved.point().ok().map(|p| p.to_array());
+                let plane = resolved
+                    .plane()
+                    .ok()
+                    .map(|p| json!({"origin": p.origin.to_array(), "normal": p.normal.to_array()}));
+                Ok(json!({ "point": point, "plane": plane }))
+            }
+            "equations.evaluate" => {
+                let p: EvaluateFormula = args(params)?;
+                let value = of_model::equations::evaluate_in(&self.model.doc, &p.expression)
+                    .map_err(|e| RpcError::coded(ErrorCode::InvalidFormula, e))?;
+                Ok(json!({ "value": value }))
             }
             "feature.delete" => {
                 let p: DeleteFeatures = args(params)?;
@@ -1051,4 +1216,42 @@ fn of_model_resolve_plane(state: &State, r: &Ref) -> Result<of_model::geom::Plan
     of_model::resolve(state, r)
         .and_then(|x| x.plane())
         .map_err(|e| RpcError::coded(ErrorCode::UnknownRef, e))
+}
+
+/// Store a feature's formulas as equations on its parameters, after checking
+/// that each path names one of its parameters and each formula parses.
+fn apply_formulas(
+    doc: &mut of_model::Document,
+    id: FeatureId,
+    formulas: &std::collections::BTreeMap<String, Option<String>>,
+) -> Result<(), RpcError> {
+    if formulas.is_empty() {
+        return Ok(());
+    }
+    let feature = doc.feature(id).expect("feature exists");
+    let registered: std::collections::BTreeSet<String> = of_model::equations::parameters(feature)
+        .into_iter()
+        .map(|p| p.path)
+        .collect();
+    for (path, formula) in formulas {
+        if formula.is_some() && !registered.contains(path) {
+            return Err(RpcError::coded(
+                ErrorCode::UnknownParameter,
+                format!("{path} is not a parameter of this feature"),
+            ));
+        }
+        let key = format!("f{id}.{path}");
+        match formula {
+            Some(text) => {
+                of_model::equations::check_syntax(text).map_err(|e| {
+                    RpcError::coded(ErrorCode::InvalidFormula, format!("{path}: {e}"))
+                })?;
+                doc.equations.insert(key, text.clone());
+            }
+            None => {
+                doc.equations.remove(&key);
+            }
+        }
+    }
+    Ok(())
 }

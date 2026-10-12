@@ -41,11 +41,19 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: cargo fmt --check
-      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo clippy --all-targets --all-features -- -D warnings
       - run: cargo test
+      - name: Phase 2 kernel feasibility regressions
+        run: cargo test -p of-kernel-sys --features kernel-probes --test phase2_probes
       - run: cargo build
       - name: Generated tool types and protocol tables are current
         run: cargo run -q -p openforge -- generate --check
+      - name: Catalog conformance
+        run: pnpm conformance
+      - name: Performance budgets (debug build, scaled for hosted runners)
+        run: pnpm perf:check
+        env:
+          OPENFORGE_BUDGET_SCALE: 4
       - run: pnpm install --frozen-lockfile
       - name: Benchmark replay (recorded transcripts, no model calls)
         run: pnpm bench

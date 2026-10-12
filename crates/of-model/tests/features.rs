@@ -634,6 +634,7 @@ fn hole_wizard_and_mirror() {
         cbore_depth_override: None,
         csink_diameter_override: None,
         csink_angle_override: None,
+        cosmetic_thread: false,
     };
     let dims = hole_dims(&h).unwrap();
     assert_eq!(dims.diameter, 6.6);
@@ -1172,4 +1173,199 @@ fn corrupt_sketch_file_is_rejected_before_rebuild() {
             .unwrap_err()
             .contains("invalid sketch")
     );
+}
+
+fn error_of(m: &Model, id: FeatureId) -> Option<String> {
+    m.statuses().into_iter().find(|s| s.id == id)?.error
+}
+
+#[test]
+fn cut_that_removes_no_material_fails() {
+    // Misses the block entirely, then only touches its end face.
+    for (p0, p1) in [
+        (DVec2::new(100.0, 100.0), DVec2::new(110.0, 110.0)),
+        (DVec2::new(40.0, 0.0), DVec2::new(50.0, 20.0)),
+    ] {
+        let (mut m, _, _) = block();
+        let s = rect_sketch(&mut m.doc, Ref::FrontPlane, p0, p1);
+        let mut cut = blind(s, 0.0);
+        cut.cut = true;
+        cut.end1 = EndCondition::ThroughAll;
+        let id = m.doc.add(FeatureKind::Extrude(cut));
+        m.rebuild();
+        assert_eq!(
+            error_of(&m, id).as_deref(),
+            Some("the cut does not remove material")
+        );
+        assert_close(volume(&m), 8000.0, 1e-6);
+    }
+}
+
+#[test]
+fn patterned_cut_copies_off_the_part_are_skipped() {
+    let (mut m, _, _) = block();
+    let mut sk = Sketch::new();
+    sk.add_circle_at(DVec2::new(5.0, 5.0), 2.0);
+    let s = m.doc.add(FeatureKind::Sketch(SketchFeature {
+        plane: Ref::FrontPlane,
+        sketch: sk,
+    }));
+    let mut cut = blind(s, 0.0);
+    cut.cut = true;
+    cut.end1 = EndCondition::ThroughAll;
+    let c = m.doc.add(FeatureKind::Extrude(cut));
+    // Six copies 10 mm apart: the last two fall past the 40 mm block.
+    m.doc.add(FeatureKind::LinearPattern(LinearPattern {
+        features: vec![c],
+        direction1: PatternDirection {
+            reference: Ref::RightPlane,
+            spacing: 10.0,
+            count: 6,
+            reverse: false,
+        },
+        direction2: None,
+    }));
+    m.rebuild();
+    no_errors(&m);
+    assert_close(volume(&m), 8000.0 - 4.0 * PI * 4.0 * 10.0, 1e-3);
+}
+
+#[test]
+fn convert_entities_accepts_faces_with_all_loops() {
+    let (mut m, _, _) = block();
+    let top = face_with_normal(&m, DVec3::Z);
+    let plane = m.resolve(&top).unwrap().plane().unwrap();
+    let mut sk = Sketch::new();
+    // A face and one of its own edges convert each edge once.
+    let mut refs = vec![top.clone()];
+    refs.push(edges_of(&m, DVec3::Z)[0].clone());
+    let created = convert_edges(m.state(), &plane, &mut sk, &refs).unwrap();
+    assert_eq!(created.len(), 4);
+    let s = m.doc.add(FeatureKind::Sketch(SketchFeature {
+        plane: top,
+        sketch: sk,
+    }));
+    m.doc.add(FeatureKind::Extrude(blind(s, 5.0)));
+    m.rebuild();
+    no_errors(&m);
+    assert_close(volume(&m), 12000.0, 1e-3);
+
+    // A face with a hole converts the outer and inner loops.
+    let mut doc = Document::new();
+    let mut sk = Sketch::new();
+    tools::corner_rectangle(&mut sk, DVec2::ZERO, DVec2::new(40.0, 20.0));
+    sk.add_circle_at(DVec2::new(20.0, 10.0), 5.0);
+    let s = doc.add(FeatureKind::Sketch(SketchFeature {
+        plane: Ref::FrontPlane,
+        sketch: sk,
+    }));
+    doc.add(FeatureKind::Extrude(blind(s, 10.0)));
+    let mut m = Model::new(doc);
+    no_errors(&m);
+    let holed = 8000.0 - PI * 250.0;
+    assert_close(volume(&m), holed, 1e-3);
+    let top = face_with_normal(&m, DVec3::Z);
+    let plane = m.resolve(&top).unwrap().plane().unwrap();
+    let mut sk = Sketch::new();
+    let created = convert_edges(m.state(), &plane, &mut sk, std::slice::from_ref(&top)).unwrap();
+    assert_eq!(created.len(), 5);
+    let s = m.doc.add(FeatureKind::Sketch(SketchFeature {
+        plane: top,
+        sketch: sk,
+    }));
+    m.doc.add(FeatureKind::Extrude(blind(s, 5.0)));
+    m.rebuild();
+    no_errors(&m);
+    assert_close(volume(&m), holed * 1.5, 1e-3);
+}
+
+#[test]
+fn tapped_holes_carry_cosmetic_thread_metadata() {
+    let (mut m, _, _) = block();
+    let top = face_with_normal(&m, DVec3::Z);
+    let mut sk = Sketch::new();
+    sk.add_point(DVec2::new(10.0, 10.0));
+    sk.add_point(DVec2::new(30.0, 10.0));
+    let s = m.doc.add(FeatureKind::Sketch(SketchFeature {
+        plane: top,
+        sketch: sk,
+    }));
+    let mut h = Hole {
+        sketch: s,
+        kind: HoleKind::Tapped,
+        standard: HoleStandard::Iso,
+        size: "M6".into(),
+        fit: HoleFit::Normal,
+        end: HoleEnd::ThroughAll,
+        reverse: false,
+        diameter_override: None,
+        cbore_diameter_override: None,
+        cbore_depth_override: None,
+        csink_diameter_override: None,
+        csink_angle_override: None,
+        cosmetic_thread: false,
+    };
+    let plain = m.doc.add(FeatureKind::Hole(h.clone()));
+    m.rebuild();
+    no_errors(&m);
+    let mass = volume(&m);
+    m.doc.delete(&[plain]);
+    h.cosmetic_thread = true;
+    let id = m.doc.add(FeatureKind::Hole(h.clone()));
+    m.rebuild_all();
+    no_errors(&m);
+    // The annotation leaves the solid unchanged.
+    assert_close(volume(&m), mass, 1e-9);
+    let threads = &m.state().hole_threads[&id];
+    assert_eq!(threads.len(), 2);
+    for t in threads {
+        assert_eq!(t.size, "M6");
+        assert_close(t.diameter, 6.0, 1e-12);
+        assert_close(t.pitch, 1.0, 1e-12);
+        // Through the 10 mm block, measured along the drill.
+        assert_close(t.length, 10.0, 1e-6);
+        assert_close(t.axis.z, -1.0, 1e-12);
+    }
+    // ANSI sizes take the pitch from threads per inch.
+    let size = holes::find(HoleStandard::Ansi, "1/4-20").unwrap();
+    assert_close(holes::pitch(HoleStandard::Ansi, size).unwrap(), 1.27, 1e-12);
+    // Only tapped holes carry threads.
+    if let FeatureKind::Hole(hole) = &mut m.doc.feature_mut(id).unwrap().kind {
+        hole.kind = HoleKind::Simple;
+    }
+    m.rebuild_all();
+    assert!(m.status(id).unwrap().error.unwrap().contains("tapped"));
+}
+
+#[test]
+fn closed_spline_extrusion_has_mass_properties() {
+    let mut doc = Document::new();
+    let mut sk = Sketch::new();
+    let points = [(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)]
+        .map(|(x, y)| sk.add_point(DVec2::new(x, y)));
+    sk.add_spline(points.to_vec(), true).unwrap();
+    let s = doc.add(FeatureKind::Sketch(SketchFeature {
+        plane: Ref::FrontPlane,
+        sketch: sk,
+    }));
+    doc.add(FeatureKind::Extrude(blind(s, 1.0)));
+    let m = Model::new(doc);
+    no_errors(&m);
+    // The periodic spline face once made volume integration fail outright.
+    let v = volume(&m);
+    assert!(v > 50.0 && v < 150.0, "{v}");
+}
+
+#[test]
+fn shell_as_thick_as_half_the_part_fails() {
+    let (mut m, _, _) = block();
+    let id = m.doc.add(FeatureKind::Shell(ShellDef {
+        faces: vec![],
+        thickness: 5.0,
+        outward: false,
+    }));
+    m.rebuild();
+    let error = m.status(id).unwrap().error.unwrap();
+    assert!(error.contains("too thick"), "{error}");
+    assert_close(volume(&m), 8000.0, 1e-9);
 }

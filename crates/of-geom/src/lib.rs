@@ -10,7 +10,7 @@ mod curves;
 mod plane;
 mod profile;
 
-pub use curves::Curve3;
+pub use curves::{Curve3, EndTangent};
 pub use glam::{DAffine3, DMat3, DVec2, DVec3};
 pub use plane::Plane;
 pub use profile::{Curve2, Profile, ProfileFace};
@@ -346,6 +346,33 @@ impl Shape {
             shape: Shape(shape),
             history: convert_history(h),
         })
+    }
+
+    /// An unbounded planar cutting face, retaining the authored plane normal.
+    pub fn plane_face(plane: &Plane) -> Result<Shape> {
+        Ok(Shape(ffi::plane_face(&plane.to_ffi())?))
+    }
+
+    /// Partition this shape with bounded faces, solids or unbounded plane faces.
+    /// History input 1 describes the cutting tools; tool material is not included.
+    pub fn split_tools(&self, tools: &Shape) -> Result<OpResult> {
+        let mut history = Vec::new();
+        let shape = ffi::split_tools(&self.0, &tools.0, &mut history)?;
+        Ok(OpResult {
+            shape: Shape(shape),
+            history: convert_history(history),
+        })
+    }
+
+    /// Topological orientation of a boundary face within this solid (+1 / -1).
+    /// Thicken faces from [`Profile::wrap_onto`] radially by `depth`, outward
+    /// (emboss) or inward (deboss), into solids.
+    pub fn wrap_solid(&self, depth: f64, outward: bool) -> Result<Shape> {
+        Ok(Shape(ffi::wrap_solid(&self.0, depth, outward)?))
+    }
+
+    pub fn face_orientation(&self, face: u32) -> Result<i8> {
+        Ok(ffi::face_orientation(&self.0, face)?)
     }
 
     pub fn revolve(&self, origin: DVec3, axis: DVec3, angle: f64) -> Result<OpResult> {

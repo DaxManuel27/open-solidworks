@@ -5,6 +5,12 @@ commit `8fff08d`. Prepared and started 2026-10-10. See
 [Phase 2 status](phase-2-status.md) for delivered checkpoints, verification and
 remaining scope. This plan's acceptance criteria have not all been met.
 
+Execution update, 2026-10-10: follow the [completion plan](phase-2-remaining-plan.md)
+for the remaining implementation sequence, dependencies and release gates. The owner
+has deferred AI assistant work to prioritize Phase 2 CAD completion. This document
+remains the feature specification; the completion plan supersedes its suggested
+execution order without reducing required scope.
+
 ## Goal and starting point
 
 Deliver the advanced part modeling scope in [the roadmap](plan.md): sweep, loft,
@@ -68,7 +74,8 @@ explicit roadmap revision.
 | P2.10 | Modeled and cosmetic threads | P2.4, P2.6 | Internal/external thread features plus lightweight cosmetic representation |
 | P2.11 | Integrated corpus, desktop workflows and release gate | All above | Hosted three-platform checks pass on the exact release candidate |
 
-Recommended execution order is the table order. Independent milestones may be
+The original recommended execution order was the table order; use the completion
+plan's R0–R9 order for the remaining work. Independent milestones may be
 reordered once their prerequisites pass. No calendar commitment yet: estimate
 after P2.0 resolves the difficult geometry paths and P2.1 establishes migration
 cost. The first implementation PR should establish P2.0 contracts and fixtures,

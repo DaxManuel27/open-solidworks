@@ -51,13 +51,25 @@ dialog.showErrorBox = (title, message) => {
 const timeout = setTimeout(() => {
   console.error('Desktop smoke timed out')
   app.exit(1)
-}, 180000)
+}, 360000)
 
 async function run(win) {
-  const js = (code) =>
-    win.webContents.executeJavaScript(code, true).catch((error) => {
-      throw new Error(`${error.message}\nRenderer script: ${code}`)
-    })
+  // A renderer script that never settles fails with its source instead of
+  // stalling until the whole smoke times out.
+  const js = (code) => {
+    let timer
+    return Promise.race([
+      win.webContents.executeJavaScript(code, true).catch((error) => {
+        throw new Error(`${error.message}\nRenderer script: ${code}`)
+      }),
+      new Promise((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`Renderer script did not settle in 20 s: ${code}`)),
+          20000,
+        )
+      }),
+    ]).finally(() => clearTimeout(timer))
+  }
   const wait = async (fn, label) => {
     const deadline = Date.now() + 15000
     while (Date.now() < deadline) {
@@ -137,7 +149,7 @@ async function run(win) {
           )
         }
         await click('Reference Geometry')
-        await new Promise((r) => setTimeout(r, 60))
+        await wait(() => js(`!!document.querySelector('.of-menu')`), 'layout menu opened')
         assert.equal(
           await js(
             `(() => { const r = document.querySelector('.of-menu').getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight })()`,
@@ -241,10 +253,6 @@ async function run(win) {
     'rebuild',
     'properties',
     'options',
-    'boundary',
-    'boundaryCut',
-    'rib',
-    'wrap',
     'direct',
     'zoomArea',
     'previousView',
@@ -585,18 +593,28 @@ async function run(win) {
   await new Promise((r) => setTimeout(r, 250))
   assert.deepEqual(await js('window.__smokeErrors'), [], 'renderer errors after revolve')
   console.log('Core desktop checks passed; testing Phase 2 and assistant…')
-  await phase2Smoke({ js, call, click, wait, enabled, root, part })
+  await phase2Smoke({
+    js,
+    call,
+    click,
+    wait,
+    enabled,
+    root,
+    part,
+    sendInput: (event) => win.webContents.sendInputEvent(event),
+  })
   await assistantSmoke({ js, call, click, wait })
   const screenshot = await win.capturePage()
   const artifact = process.env.OPENFORGE_SMOKE_SCREENSHOT
   if (artifact) writeFileSync(artifact, screenshot.toPNG())
   console.log(
-    'Desktop smoke passed: toolbar layout/themes, keyboard/menu isolation, sketch tools, dropdown panels, views, draw/extrude/revolve, body visibility/copy, equations, configurations, undo/redo, save/reopen/import/export',
+    'Desktop smoke passed: toolbar layout/themes, keyboard/menu isolation, sketch tools, dropdown panels, views, draw/extrude/revolve, body visibility/copy/split retention, scoped formulas, configurations, spatial sketches, hollow sweeps, domes, cosmetic threads, ribs with formula entry, modeled threads, boundaries, tangent lofts, undo/redo, save/reopen/import/export',
   )
 }
 
 app.once('browser-window-created', (_event, win) => {
   win.webContents.setBackgroundThrottling(false)
+  win.hide()
   win.webContents.once('did-finish-load', () => {
     run(win)
       .then(() => {

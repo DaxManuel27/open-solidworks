@@ -1,86 +1,49 @@
-import { useEffect, useState } from 'react'
-import { call } from '../core'
-import type { EquationValue } from '../protocol'
+import { useState } from 'react'
 import { useStore } from '../store'
-import { Choice, PanelShell, Section } from './fields'
+import { Choice, FormulaField, PanelShell, ParameterField, Section } from './fields'
+import { EditScope, useEquationDraft, without } from './parameter-editor'
 
 export function EquationsPanel() {
-  const snapshot = useStore((s) => s.snapshot)!
-  const run = useStore((s) => s.run)
   const close = useStore((s) => s.closePanel)
-  const [variables, setVariables] = useState(snapshot.variables)
-  const [equations, setEquations] = useState(snapshot.equations)
+  const editor = useEquationDraft()
+  const { snapshot, draft, setDraft, values } = editor
   const [name, setName] = useState('')
   const [parameter, setParameter] = useState(snapshot.parameters[0]?.key ?? '')
-  const [values, setValues] = useState<Record<string, EquationValue>>(snapshot.equation_values)
-  const [error, setError] = useState<string | null>(null)
-  useEffect(() => {
-    let current = true
-    const timer = setTimeout(() => {
-      void call<{ values: Record<string, EquationValue> }>('equations.preview', {
-        variables,
-        equations,
-      })
-        .then((result) => {
-          if (current) {
-            setValues(result.values)
-            setError(null)
-          }
-        })
-        .catch((e: Error) => {
-          if (current) setError(e.message)
-        })
-    }, 200)
-    return () => {
-      current = false
-      clearTimeout(timer)
-    }
-  }, [variables, equations])
-  const result = (key: string) => {
-    const v = values[key]
-    if (v?.error) return <span className="panel-error">{v.error}</span>
-    if (!v?.value) return null
-    const q = v.value
-    return (
-      <small>
-        {Number(q.value.toPrecision(8))}
-        {q.length !== 0 ? ` mm${q.length !== 1 ? `^${q.length}` : ''}` : ''}
-        {q.angle !== 0 ? ` rad${q.angle !== 1 ? `^${q.angle}` : ''}` : ''}
-      </small>
-    )
-  }
-  const remove = (map: Record<string, string>, key: string) =>
-    Object.fromEntries(Object.entries(map).filter(([k]) => k !== key))
+  const keys = [...new Set([...Object.keys(draft.equations), ...Object.keys(draft.parameters)])]
   return (
     <PanelShell
       title="Equations and Variables"
-      error={error}
-      okDisabled={!!error}
+      error={editor.error}
+      okDisabled={editor.pending || !!editor.error}
       onCancel={() => void close()}
       onOk={() => {
-        void run('equations.set', { variables, equations }).then((saved) => {
+        void editor.save().then((saved) => {
           if (saved) void close()
         })
       }}
     >
+      <EditScope editor={editor} />
       <p>
         Use explicit units, for example <code>width / 2 + 1mm</code> or <code>45deg</code>. Bare
-        numbers are dimensionless.
+        numbers in formulas are dimensionless.
       </p>
       <Section title="Global variables">
-        {Object.entries(variables).map(([key, expression]) => (
+        {Object.entries(draft.variables).map(([key, expression]) => (
           <div key={key}>
-            <label className="field">
-              <span>{key}</span>
-              <input
-                aria-label={`Expression for ${key}`}
-                value={expression}
-                onChange={(e) => setVariables({ ...variables, [key]: e.target.value })}
-              />
-            </label>
-            {result(key)}{' '}
-            <button className="link" onClick={() => setVariables(remove(variables, key))}>
-              Remove
+            <FormulaField
+              label={key}
+              ariaLabel={`Expression for ${key}`}
+              expression={expression}
+              result={values[key]}
+              onChange={(value) =>
+                setDraft({ ...draft, variables: { ...draft.variables, [key]: value } })
+              }
+            />
+            <button
+              className="link"
+              onClick={() => setDraft({ ...draft, variables: without(draft.variables, key) })}
+            >
+              {draft.scope === 'base' ? 'Remove' : 'Reset to base'}
             </button>
           </div>
         ))}
@@ -93,9 +56,15 @@ export function EquationsPanel() {
           />
         </label>
         <button
-          disabled={!name.trim() || name.trim() in variables}
+          disabled={!name.trim() || name.trim() in draft.variables}
           onClick={() => {
-            setVariables({ ...variables, [name.trim()]: '10mm' })
+            setDraft({
+              ...draft,
+              variables: {
+                ...draft.variables,
+                [name.trim()]: snapshot.variables[name.trim()] ?? '10mm',
+              },
+            })
             setName('')
           }}
         >
@@ -113,33 +82,47 @@ export function EquationsPanel() {
           onChange={setParameter}
         />
         <button
-          disabled={!parameter || parameter in equations}
+          disabled={!parameter || keys.includes(parameter)}
           onClick={() => {
             const p = snapshot.parameters.find((p) => p.key === parameter)!
-            setEquations({
-              ...equations,
-              [parameter]: `${p.value.value}${p.value.angle ? 'rad' : p.value.length ? 'mm' : ''}`,
-            })
+            editor.change(
+              parameter,
+              `${values[parameter]?.value?.value ?? p.value.value}${p.value.angle ? 'rad' : p.value.length ? 'mm' : ''}`,
+            )
           }}
         >
           Drive with equation
         </button>
-        {Object.entries(equations).map(([key, expression]) => (
-          <div key={key}>
-            <label className="field">
-              <span>{key}</span>
-              <input
-                aria-label={`Equation for ${key}`}
-                value={expression}
-                onChange={(e) => setEquations({ ...equations, [key]: e.target.value })}
-              />
-            </label>
-            {result(key)}{' '}
-            <button className="link" onClick={() => setEquations(remove(equations, key))}>
-              Remove
-            </button>
-          </div>
-        ))}
+        <button
+          disabled={!parameter || keys.includes(parameter)}
+          onClick={() => {
+            const p = snapshot.parameters.find((p) => p.key === parameter)!
+            editor.change(parameter, values[parameter]?.value?.value ?? p.value.value)
+          }}
+        >
+          Edit numeric value
+        </button>
+        {keys.map((key) => {
+          const p = snapshot.parameters.find((p) => p.key === key)
+          return (
+            <div key={key}>
+              {p ? (
+                <ParameterField
+                  parameter={p}
+                  value={draft.parameters[key] ?? values[key]?.value?.value ?? p.value.value}
+                  expression={draft.equations[key]}
+                  result={values[key]}
+                  onChange={(value) => editor.change(key, value)}
+                />
+              ) : (
+                <p className="panel-error">Parameter {key} no longer exists.</p>
+              )}
+              <button className="link" onClick={() => editor.reset(key)}>
+                {draft.scope === 'base' ? 'Remove' : 'Reset to base'}
+              </button>
+            </div>
+          )
+        })}
       </Section>
     </PanelShell>
   )

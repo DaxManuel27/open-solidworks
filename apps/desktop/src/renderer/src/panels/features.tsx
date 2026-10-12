@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { call } from '../core'
 import type { EndCondition, FeatureParams, FeatureView, Ref, SketchView, Thin } from '../protocol'
 import { type Panel, type PickKind, useStore } from '../store'
 import { formatLength } from '../units'
 import { BodyScope } from './bodies'
+import { ParameterEditor, useEquationDraft } from './parameter-editor'
 import {
   AngleField,
   Check,
@@ -26,7 +27,13 @@ const PATTERNABLE = new Set([
   'revolve',
   'sweep',
   'loft',
+  'boundary',
   'draft',
+  'dome',
+  'rib',
+  'thread',
+  'face_fillet',
+  'wrap',
   'variable_fillet',
   'fillet',
   'chamfer',
@@ -55,18 +62,67 @@ export function useFeature(panel: Panel, params: FeatureParams | null) {
         'scope'
       ] as string[] | null) ?? null,
   )
+  const [editMode, setEditMode] = useState<'definition' | 'parameters'>('definition')
+  // Formulas already on the edited feature's parameters, by path.
+  const [formulas, setFormulas] = useState<Record<string, string | null>>(() => {
+    const equations = useStore.getState().snapshot?.equations ?? {}
+    const prefix = `f${panel.editing}.`
+    return panel.editing === undefined
+      ? {}
+      : Object.fromEntries(
+          Object.entries(equations)
+            .filter(([key]) => key.startsWith(prefix))
+            .map(([key, formula]) => [key.slice(prefix.length), formula]),
+        )
+  })
+  const formulaScope = useMemo(
+    () => ({
+      formulas,
+      set: (path: string, formula: string | null) =>
+        setFormulas((current) => ({ ...current, [path]: formula })),
+    }),
+    [formulas],
+  )
+  const equationEditor = useEquationDraft(panel.editing !== undefined && editMode === 'parameters')
   const scoped = params ? { ...params, scope } : null
-  const { error } = usePreview(scoped, panel.editing)
+  const { error } = usePreview(scoped, panel.editing, editMode === 'definition')
   const commit = useStore((s) => s.commit)
   const close = useStore((s) => s.closePanel)
   return {
-    error,
+    error: editMode === 'parameters' ? equationEditor.error : error,
     onOk: () => {
-      if (scoped) void commit(scoped, panel.editing)
+      if (editMode === 'parameters') {
+        void equationEditor.save().then((saved) => {
+          if (saved) void close()
+        })
+      } else if (scoped) void commit(scoped, panel.editing, formulas)
     },
     onCancel: () => void close(),
-    okDisabled: !params,
-    footer: supportsScope ? <BodyScope value={scope} onChange={setScope} /> : undefined,
+    formulaScope,
+    okDisabled:
+      editMode === 'parameters' ? equationEditor.pending || !!equationEditor.error : !params,
+    editor:
+      editMode === 'parameters' && panel.editing !== undefined ? (
+        <ParameterEditor editor={equationEditor} feature={panel.editing} />
+      ) : undefined,
+    footer: (
+      <>
+        {panel.editing !== undefined && (
+          <Choice
+            label="Edit feature"
+            value={editMode}
+            options={[
+              { value: 'definition', label: 'Shared feature definition' },
+              { value: 'parameters', label: 'Parameters and formulas' },
+            ]}
+            onChange={setEditMode}
+          />
+        )}
+        {editMode === 'definition' && supportsScope && (
+          <BodyScope value={scope} onChange={setScope} />
+        )}
+      </>
+    ),
   }
 }
 
@@ -90,7 +146,12 @@ function SketchChoice(props: { value: number | null; onChange: (id: number) => v
   )
 }
 
-function ThinEditor(props: { value: Thin | null; onChange: (t: Thin | null) => void }) {
+export function ThinEditor(props: {
+  value: Thin | null
+  onChange: (t: Thin | null) => void
+  /** Formula path prefix, such as `thin`. */
+  path?: string
+}) {
   const t = props.value
   return (
     <Section title="Thin Feature" open={!!t}>
@@ -116,12 +177,14 @@ function ThinEditor(props: { value: Thin | null; onChange: (t: Thin | null) => v
           <LengthField
             label="Thickness"
             value={t.thickness}
+            path={props.path && `${props.path}.thickness`}
             onChange={(v) => props.onChange({ ...t, thickness: v })}
           />
           {t.kind === 'two_direction' && (
             <LengthField
               label="Thickness 2"
               value={t.thickness2 ?? t.thickness}
+              path={props.path && `${props.path}.thickness2`}
               onChange={(v) => props.onChange({ ...t, thickness2: v })}
             />
           )}
@@ -177,6 +240,8 @@ function EndEditor(props: {
   allowMid: boolean
   active: boolean
   onActivate: () => void
+  /** Formula path prefix: `end1` or `end2`. */
+  path: string
 }) {
   const d = props.value
   const set = (patch: Partial<EndDraft>) => props.onChange({ ...d, ...patch })
@@ -198,7 +263,12 @@ function EndEditor(props: {
         onChange={(type) => set({ type, target: null })}
       />
       {(d.type === 'blind' || d.type === 'mid_plane') && (
-        <LengthField label="Depth" value={d.depth} onChange={(depth) => set({ depth })} />
+        <LengthField
+          label="Depth"
+          value={d.depth}
+          path={`${props.path}.depth`}
+          onChange={(depth) => set({ depth })}
+        />
       )}
       {(d.type === 'up_to_vertex' ||
         d.type === 'up_to_surface' ||
@@ -215,7 +285,12 @@ function EndEditor(props: {
       )}
       {d.type === 'offset_from_surface' && (
         <>
-          <LengthField label="Offset" value={d.offset} onChange={(offset) => set({ offset })} />
+          <LengthField
+            label="Offset"
+            value={d.offset}
+            path={`${props.path}.offset`}
+            onChange={(offset) => set({ offset })}
+          />
           <Check
             label="Reverse offset"
             value={d.reverse_offset}
@@ -268,12 +343,14 @@ export function ExtrudePanel({ panel }: { panel: Panel }) {
         <LengthField
           label="Start offset"
           value={startOffset}
+          path="start_offset"
           onChange={setStartOffset}
           min={-1e9}
         />
       </Section>
       <Section title="Direction 1">
         <EndEditor
+          path="end1"
           value={end1}
           onChange={setEnd1}
           allowMid={!end2}
@@ -291,6 +368,7 @@ export function ExtrudePanel({ panel }: { panel: Panel }) {
         />
         {end2 && (
           <EndEditor
+            path="end2"
             value={end2}
             onChange={setEnd2}
             allowMid={false}
@@ -299,7 +377,7 @@ export function ExtrudePanel({ panel }: { panel: Panel }) {
           />
         )}
       </Section>
-      <ThinEditor value={thin} onChange={setThin} />
+      <ThinEditor value={thin} onChange={setThin} path="thin" />
       {!cut && (
         <Section title="Options">
           <Check label="Merge result" value={merge} onChange={setMerge} />
@@ -393,7 +471,12 @@ function RevolveEndEditor({
         }}
       />
       {d.type === 'blind' ? (
-        <AngleField label="Angle" value={d.angle} onChange={(angle) => set({ angle })} />
+        <AngleField
+          label="Angle"
+          value={d.angle}
+          path="end2.angle"
+          onChange={(angle) => set({ angle })}
+        />
       ) : (
         <RefBox
           label={d.type === 'up_to_vertex' ? 'Vertex or reference point' : 'Face or plane'}
@@ -551,6 +634,7 @@ export function RevolvePanel({ panel }: { panel: Panel }) {
           <AngleField
             label={mode === 'two_direction' ? 'Angle 1' : 'Angle'}
             value={angle1}
+            path={mode === 'two_direction' ? 'angle.angle1' : 'angle.angle'}
             onChange={setAngle1}
           />
         )}
@@ -567,12 +651,18 @@ export function RevolvePanel({ panel }: { panel: Panel }) {
         )}
         {mode === 'offset_from_surface' && (
           <>
-            <LengthField label="Offset" value={offset} onChange={setOffset} min={0} />
+            <LengthField
+              label="Offset"
+              value={offset}
+              path="angle.offset"
+              onChange={setOffset}
+              min={0}
+            />
             <Check label="Reverse offset" value={reverseOffset} onChange={setReverseOffset} />
           </>
         )}
         {mode === 'two_direction' && (
-          <AngleField label="Angle 2" value={angle2} onChange={setAngle2} />
+          <AngleField label="Angle 2" value={angle2} path="angle.angle2" onChange={setAngle2} />
         )}
         <Check label="Reverse direction" value={reverse} onChange={setReverse} />
       </Section>
@@ -589,7 +679,7 @@ export function RevolvePanel({ panel }: { panel: Panel }) {
           )}
         </Section>
       )}
-      <ThinEditor value={thin} onChange={setThin} />
+      <ThinEditor value={thin} onChange={setThin} path="thin" />
       {!cut && (
         <Section title="Options">
           <Check label="Merge result" value={merge} onChange={setMerge} />
@@ -635,7 +725,7 @@ export function FilletPanel({ panel }: { panel: Panel }) {
   return (
     <PanelShell title="Fillet" {...f}>
       <Section title="Items to Fillet">
-        <LengthField label="Radius" value={radius} onChange={setRadius} />
+        <LengthField label="Radius" value={radius} path="radius" onChange={setRadius} />
         <RefBox
           label="Edges and faces"
           refs={refs}
@@ -696,13 +786,14 @@ export function ChamferPanel({ panel }: { panel: Panel }) {
         <LengthField
           label={mode === 'distance_distance' ? 'Distance 1' : 'Distance'}
           value={d1}
+          path={mode === 'distance_distance' ? 'mode.d1' : 'mode.distance'}
           onChange={setD1}
         />
         {mode === 'distance_distance' && (
-          <LengthField label="Distance 2" value={d2} onChange={setD2} />
+          <LengthField label="Distance 2" value={d2} path="mode.d2" onChange={setD2} />
         )}
         {mode === 'angle_distance' && (
-          <AngleField label="Angle" value={angle} onChange={setAngle} />
+          <AngleField label="Angle" value={angle} path="mode.angle" onChange={setAngle} />
         )}
         {mode !== 'equal' && <Check label="Flip direction" value={flip} onChange={setFlip} />}
         <RefBox
@@ -733,7 +824,7 @@ export function ShellPanel({ panel }: { panel: Panel }) {
   return (
     <PanelShell title="Shell" {...f}>
       <Section title="Parameters">
-        <LengthField label="Thickness" value={thickness} onChange={setThickness} />
+        <LengthField label="Thickness" value={thickness} path="thickness" onChange={setThickness} />
         <RefBox
           label="Faces to remove (none hollows the part)"
           refs={faces}
@@ -774,6 +865,7 @@ export function HolePanel({ panel }: { panel: Panel }) {
   const [endType, setEndType] = useState(end0.type)
   const [depth, setDepth] = useState(end0.depth ?? 10)
   const [reverse, setReverse] = useState(!!init['reverse'])
+  const [cosmeticThread, setCosmeticThread] = useState(!!init['cosmetic_thread'])
   const [sizes, setSizes] = useState<{ iso: string[]; ansi: string[] }>({ iso: [], ansi: [] })
   const [dims, setDims] = useState<HoleDims | null>(null)
 
@@ -783,7 +875,19 @@ export function HolePanel({ panel }: { panel: Panel }) {
 
   const end = endType === 'blind' ? { type: 'blind', depth } : { type: 'through_all' }
   const params: FeatureParams | null =
-    sketch !== null ? { type: 'hole', sketch, kind, standard, size, fit, end, reverse } : null
+    sketch !== null
+      ? {
+          type: 'hole',
+          sketch,
+          kind,
+          standard,
+          size,
+          fit,
+          end,
+          reverse,
+          cosmetic_thread: kind === 'tapped' && cosmeticThread,
+        }
+      : null
   const json = JSON.stringify(params)
   useEffect(() => {
     if (json === 'null') return
@@ -866,6 +970,13 @@ export function HolePanel({ panel }: { panel: Panel }) {
         />
         {endType === 'blind' && <LengthField label="Depth" value={depth} onChange={setDepth} />}
         <Check label="Reverse direction" value={reverse} onChange={setReverse} />
+        {kind === 'tapped' && (
+          <Check
+            label="Cosmetic thread (nominal size, coarse pitch)"
+            value={cosmeticThread}
+            onChange={setCosmeticThread}
+          />
+        )}
       </Section>
     </PanelShell>
   )
@@ -921,6 +1032,8 @@ function DirectionEditor(props: {
   onChange: (d: DirDraft) => void
   active: boolean
   onActivate: () => void
+  /** Formula path prefix: `direction1` or `direction2`. */
+  path: string
 }) {
   const d = props.value
   return (
@@ -942,11 +1055,13 @@ function DirectionEditor(props: {
       <LengthField
         label="Spacing"
         value={d.spacing}
+        path={`${props.path}.spacing`}
         onChange={(spacing) => props.onChange({ ...d, spacing })}
       />
       <IntField
         label="Instances"
         value={d.count}
+        path={`${props.path}.count`}
         onChange={(count) => props.onChange({ ...d, count })}
       />
     </>
@@ -974,6 +1089,7 @@ export function LinearPatternPanel({ panel }: { panel: Panel }) {
     <PanelShell title="Linear Pattern" {...f}>
       <Section title="Direction 1">
         <DirectionEditor
+          path="direction1"
           value={d1}
           onChange={setD1}
           active={active === 1}
@@ -988,6 +1104,7 @@ export function LinearPatternPanel({ panel }: { panel: Panel }) {
         />
         {d2 && (
           <DirectionEditor
+            path="direction2"
             value={d2}
             onChange={setD2}
             active={active === 2}
@@ -1050,9 +1167,10 @@ export function CircularPatternPanel({ panel }: { panel: Panel }) {
         <AngleField
           label={equal ? 'Total angle' : 'Angle between'}
           value={angle}
+          path="angle"
           onChange={setAngle}
         />
-        <IntField label="Instances" value={count} onChange={setCount} />
+        <IntField label="Instances" value={count} path="count" onChange={setCount} />
       </Section>
       <Section title="Features to Pattern">
         <FeatureList label="Features" value={ids} onChange={setIds} editing={panel.editing} />

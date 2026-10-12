@@ -83,16 +83,26 @@ export class AssistantCoordinator {
       const result = await modelReply(
         settings,
         await connectionKey(connected),
-        'Call connection_check with the exact requested nonce. No other actions.',
-        [{ role: 'user', text: nonce }],
+        'This is an OpenForge connection test. Call the supplied connection_check function with the exact nonce in the user message. Use a real tool call, not a JSON or text reply. This function only checks the connection and does not modify a part.',
+        [
+          {
+            role: 'user',
+            text: `Check the connection by calling connection_check with nonce: ${nonce}`,
+          },
+        ],
         [tool],
         AbortSignal.any([controller.signal, AbortSignal.timeout(90000)]),
         () => {},
+        { requireTool: settings.provider === 'chatgpt' },
       )
-      if (!result.calls.some((c) => c.name === tool.name && c.input.nonce === nonce))
+      if (!result.calls.some((c) => c.name === tool.name && c.input.nonce === nonce)) {
+        const reason = result.calls.length
+          ? 'The model returned a tool call, but its name or check value did not match.'
+          : 'The model replied without calling the connection-check tool.'
         throw new Error(
-          'Connected, but this model did not pass the tool-calling check. Select a model with tool support.',
+          `${settings.model}: ${reason} Tool support could not be verified. Retry Test connection; if it keeps failing, report this message with the selected provider and model.`,
         )
+      }
       return 'Connected. Tool calling works.'
     } finally {
       this.checking = null

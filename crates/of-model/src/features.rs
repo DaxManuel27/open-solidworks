@@ -6,6 +6,110 @@ use serde::{Deserialize, Serialize};
 
 use crate::{FeatureId, Ref};
 
+/// A dome on a planar face without holes. On a circular disk it is an exact
+/// spherical cap (or half an ellipsoid); on other faces it is a smooth surface
+/// through the face's edges and a point `height` above the face's centroid.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Dome {
+    pub face: Ref,
+    /// Height in millimetres, positive; a spherical cap's height is at most the
+    /// disk radius.
+    #[schemars(extend("exclusiveMinimum" = 0))]
+    pub height: f64,
+    /// Remove an inward cap rather than adding an outward cap.
+    #[serde(default)]
+    pub inward: bool,
+    /// Meet the faces beside the boundary tangentially: half an ellipsoid of
+    /// revolution on a disk (its height may exceed the radius), or a surface
+    /// tangent to the side faces on a face whose boundary has no corners.
+    #[serde(default)]
+    pub elliptical: bool,
+}
+
+/// What a wrapped sketch does to the face it is wrapped onto.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum WrapMode {
+    /// Add raised material of `depth` outward from the face.
+    #[default]
+    Emboss,
+    /// Remove material `depth` into the face.
+    Deboss,
+    /// Split the face along the wrapped outline without changing material.
+    Scribe,
+}
+
+/// Closed sketch regions wrapped onto a curved face by true arc length.
+///
+/// Cylinders map exactly from a sketch plane parallel to the axis; cones unroll
+/// exactly from a plane parallel to one tangent to the cone. Other curved faces
+/// map along geodesics from the point under the sketch origin, where the sketch
+/// plane must be tangent; lengths may stretch by at most 1%.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Wrap {
+    /// Sketch feature ID with closed profiles (see above for the plane).
+    #[schemars(range(min = 1))]
+    pub sketch: FeatureId,
+    /// The curved face to wrap onto.
+    pub face: Ref,
+    #[serde(default)]
+    pub mode: WrapMode,
+    /// Depth in mm for emboss and deboss, along the face normal (away from the
+    /// axis for cylinders and cones); ignored for scribe.
+    #[serde(default)]
+    #[schemars(range(min = 0.0))]
+    pub depth: f64,
+}
+
+/// Which side of the sketch a rib's thickness grows to.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RibSide {
+    /// Half the thickness on each side of the sketch.
+    #[default]
+    Both,
+    /// All of the thickness on one side: the plane normal side for a rib parallel
+    /// to its sketch, the chain's offset side for a rib normal to it.
+    First,
+    /// All of the thickness on the opposite side.
+    Second,
+}
+
+/// How a rib's material grows from its sketch to the surrounding material.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RibDirection {
+    /// Grow within the sketch plane, perpendicular to the chain's chord; thickness
+    /// is measured normal to the sketch plane.
+    #[default]
+    ParallelToSketch,
+    /// Grow along the sketch plane normal; thickness is measured within the plane.
+    NormalToSketch,
+}
+
+/// A thin web grown from an open sketch until it meets existing material.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Rib {
+    /// Sketch feature ID with one or more open chains of lines and arcs.
+    #[schemars(range(min = 1))]
+    pub sketch: FeatureId,
+    /// Web thickness, mm.
+    #[schemars(extend("exclusiveMinimum" = 0))]
+    pub thickness: f64,
+    #[serde(default)]
+    pub side: RibSide,
+    #[serde(default)]
+    pub direction: RibDirection,
+    /// Grow away from the part instead of toward it. By default material grows
+    /// toward the center of the existing part.
+    #[serde(default)]
+    pub flip: bool,
+    /// Taper the rib's thickness faces by this angle (radians) so the web
+    /// thickens away from its sketch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub draft: Option<f64>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SketchFeature {
     /// A standard plane, reference plane or planar face.
@@ -307,25 +411,60 @@ pub struct RadiusStation {
     pub radius: f64,
 }
 
+/// A rolling-ball blend between two sets of planar faces.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct FaceFillet {
+    /// Faces in one plane on the first side of the blend.
+    #[schemars(length(min = 1))]
+    pub faces1: Vec<Ref>,
+    /// Faces in one plane on the other side; not parallel to the first.
+    #[schemars(length(min = 1))]
+    pub faces2: Vec<Ref>,
+    /// Blend radius, mm.
+    #[schemars(extend("exclusiveMinimum" = 0))]
+    pub radius: f64,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct VariableFillet {
+    /// An edge of the chain to fillet; tangent-continuous neighbours join the chain.
     pub edge: Ref,
-    /// Ordered stations; include positions 0 and 1.
+    /// Ordered stations; include positions 0 and 1. Positions are fractions of
+    /// the chain's length, measured in the selected edge's direction.
     #[schemars(length(min = 2))]
     pub stations: Vec<RadiusStation>,
+    /// Measure positions from the other end of the chain.
     #[serde(default)]
     pub reverse: bool,
+    /// Change the radius linearly between stations instead of smoothly.
+    #[serde(default)]
+    pub straight: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Draft {
-    #[schemars(length(min = 1))]
+    /// Faces to taper about the neutral plane. Leave empty for a parting-line draft.
+    #[serde(default)]
     pub faces: Vec<Ref>,
+    /// The neutral plane; with parting-line edges, only its normal (the pull
+    /// direction) is used.
     pub neutral_plane: Ref,
     pub direction: Option<Ref>,
     /// Signed draft angle, radians.
     #[schemars(range(min = -std::f64::consts::FRAC_PI_2, max = std::f64::consts::FRAC_PI_2))]
     pub angle: f64,
+    /// Parting-line edges (straight or circular). Each face next to an edge on the
+    /// pull side tapers about a plane through that edge.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parting_line: Vec<Ref>,
+    /// Draft the faces on the side opposite the pull direction instead.
+    #[serde(default)]
+    pub other_side: bool,
+    /// Step draft: each planar face tilts about a line normal to the pull
+    /// direction through the parting line's nearest point, and perpendicular step
+    /// faces join it to inclined parts of the parting line.
+    #[serde(default)]
+    pub step: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -448,6 +587,10 @@ pub struct Hole {
     #[serde(default)]
     #[schemars(extend("exclusiveMinimum" = 0, "exclusiveMaximum" = std::f64::consts::PI))]
     pub csink_angle_override: Option<f64>,
+    /// Show a cosmetic thread in each tapped hole: nominal diameter and coarse
+    /// pitch from the size table, through the material the hole drills.
+    #[serde(default)]
+    pub cosmetic_thread: bool,
 }
 
 fn normal_fit() -> HoleFit {
@@ -740,6 +883,35 @@ pub mod holes {
         table(standard)
             .iter()
             .find(|s| s.name.eq_ignore_ascii_case(name))
+    }
+
+    /// Coarse thread pitch, mm: the ISO 261 coarse series for metric sizes, and
+    /// 25.4 mm over the threads per inch given after the dash in an ANSI size name.
+    pub fn pitch(standard: HoleStandard, size: &HoleSize) -> Option<f64> {
+        match standard {
+            HoleStandard::Iso => match size.name {
+                "M1.6" => Some(0.35),
+                "M2" => Some(0.4),
+                "M2.5" => Some(0.45),
+                "M3" => Some(0.5),
+                "M4" => Some(0.7),
+                "M5" => Some(0.8),
+                "M6" => Some(1.0),
+                "M8" => Some(1.25),
+                "M10" => Some(1.5),
+                "M12" => Some(1.75),
+                "M16" => Some(2.0),
+                "M20" => Some(2.5),
+                "M24" => Some(3.0),
+                _ => None,
+            },
+            HoleStandard::Ansi => size
+                .name
+                .rsplit_once('-')
+                .and_then(|(_, tpi)| tpi.parse::<f64>().ok())
+                .filter(|tpi| *tpi > 0.0)
+                .map(|tpi| IN / tpi),
+        }
     }
 
     pub fn clearance(size: &HoleSize, fit: HoleFit) -> f64 {

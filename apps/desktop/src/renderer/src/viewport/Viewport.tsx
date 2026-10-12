@@ -6,6 +6,8 @@ import { type Pick, type PickKind, useStore } from '../store'
 import { formatAngle, formatLength, parseAngle, parseLength } from '../units'
 import { Engine } from './engine'
 import { type Label, Sketcher } from './sketcher'
+import { SpatialSketcher } from './spatial-sketcher'
+import { useSpatial } from './spatial-state'
 
 interface Prompt {
   x: number
@@ -21,6 +23,7 @@ export function Viewport() {
   const host = useRef<HTMLDivElement>(null)
   const engineRef = useRef<Engine | null>(null)
   const sketcherRef = useRef<Sketcher | null>(null)
+  const spatialRef = useRef<SpatialSketcher | null>(null)
   const [labels, setLabels] = useState<Label[]>([])
   const [prompt, setPrompt] = useState<Prompt | null>(null)
   const [hover, setHover] = useState<Pick | null>(null)
@@ -61,9 +64,10 @@ export function Viewport() {
       status: (t) => useStore.getState().setStatus(t),
       askValue,
       convertAt: (x, y) => {
-        const p = engine.pick(x, y, ['edge'])
-        if (p?.kind !== 'edge') return
-        void call<{ ref: Ref }>('select.ref', { kind: 'edge', index: p.index }).then((r) =>
+        // A picked face converts all of its boundary loops; edges win near a boundary.
+        const p = engine.pick(x, y, ['edge', 'face'])
+        if (p?.kind !== 'edge' && p?.kind !== 'face') return
+        void call<{ ref: Ref }>('select.ref', { kind: p.kind, index: p.index }).then((r) =>
           useStore.getState().sketchEdit({ op: 'convert', refs: [r.ref] }),
         )
       },
@@ -71,16 +75,19 @@ export function Viewport() {
       polygonSides: () => useStore.getState().polygonSides,
     })
     sketcherRef.current = sketcher
+    const spatial = new SpatialSketcher(engine, () => engine.onCamera())
+    spatialRef.current = spatial
     let labelFrame = 0
     engine.onCamera = () => {
       if (labelFrame) return
       labelFrame = requestAnimationFrame(() => {
         labelFrame = 0
-        setLabels(sketcher.active ? sketcher.labels() : [])
+        setLabels(spatial.active ? spatial.labels() : sketcher.active ? sketcher.labels() : [])
       })
     }
     return () => {
       sketcher.dispose()
+      spatial.dispose()
       engine.dispose()
     }
   }, [])
@@ -141,16 +148,20 @@ export function Viewport() {
   useEffect(() => {
     const engine = engineRef.current!
     const sketcher = sketcherRef.current!
+    const spatial = spatialRef.current!
     const canvas = engine.canvas
     let nav: { mode: 'rotate' | 'pan'; x: number; y: number; pivot?: THREE.Vector3 } | null = null
     let down: { x: number; y: number; button: number } | null = null
     let sketchOwns = false
+    let spatialOwns = false
     let hoverFrame = 0
 
     const onDown = (e: PointerEvent) => {
       canvas.setPointerCapture(e.pointerId)
       down = { x: e.clientX, y: e.clientY, button: e.button }
       sketchOwns = false
+      spatialOwns = spatial.onDown(e)
+      if (spatialOwns) return
       if (e.button === 0 && sketcher.active && !e.altKey) {
         sketchOwns = sketcher.onPointerDown(e)
         if (sketchOwns) return
@@ -161,6 +172,10 @@ export function Viewport() {
     }
 
     const onMove = (e: PointerEvent) => {
+      if (spatialOwns) {
+        spatial.onMove(e)
+        return
+      }
       if (sketchOwns || (sketcher.active && !down)) sketcher.onPointerMove(e)
       if (nav && down) {
         const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y) > 3
@@ -194,6 +209,11 @@ export function Viewport() {
       const wasDown = down
       down = null
       nav = null
+      if (spatialOwns) {
+        spatialOwns = false
+        spatial.onUp()
+        return
+      }
       if (sketchOwns) {
         sketchOwns = false
         void sketcher.onPointerUp(e)
@@ -233,7 +253,8 @@ export function Viewport() {
     canvas.addEventListener('dblclick', onDbl)
     canvas.addEventListener('contextmenu', onContext)
     const onKey = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement).tagName === 'INPUT') return
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement).tagName)) return
+      if (spatial.onKey(e)) return
       void sketcher.onKey(e).then((handled) => {
         if (handled) return
         if (e.key === 'Escape') {
@@ -257,6 +278,23 @@ export function Viewport() {
 
   const editDimension = (l: Label) => {
     if (l.kind !== 'dim') return
+    const spatial = useSpatial.getState()
+    if (spatial.sketch) {
+      const c = spatial.sketch.constraints.find((c) => c.id === l.id)
+      if (c?.kind !== 'distance') return
+      const text = formatLength(c.value, useStore.getState().snapshot!.units, false)
+      new Promise<number | null>((resolve) =>
+        setPrompt({ x: l.x, y: l.y, text, angle: false, resolve }),
+      ).then((value) => {
+        const state = useSpatial.getState()
+        if (value !== null && state.sketch)
+          void state.change({
+            ...state.sketch,
+            constraints: state.sketch.constraints.map((x) => (x.id === c.id ? { ...c, value } : x)),
+          })
+      })
+      return
+    }
     const s = useStore.getState()
     const c = s.sketch?.constraints.find((x) => x.id === l.id)
     if (!c || c.value === undefined) return
@@ -273,6 +311,13 @@ export function Viewport() {
   }
 
   const toggleLabel = (l: Label, additive: boolean) => {
+    const spatial = useSpatial.getState()
+    if (spatial.sketch) {
+      useSpatial.setState({
+        selection: additive ? [...new Set([...spatial.selection, l.id])] : [l.id],
+      })
+      return
+    }
     const s = useStore.getState()
     const cur = s.sketchSelection
     if (additive)

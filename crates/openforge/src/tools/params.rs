@@ -15,6 +15,19 @@ use serde::Deserialize;
 pub struct Empty {}
 
 #[derive(Deserialize, JsonSchema)]
+pub struct SolveSpatialSketch {
+    pub sketch: of_model::sketch::spatial::Sketch3D,
+    #[serde(default)]
+    pub drag: Option<SpatialDrag>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct SpatialDrag {
+    pub point: Id,
+    pub to: [f64; 3],
+}
+
+#[derive(Deserialize, JsonSchema)]
 pub struct FeatureRef {
     /// Feature ID from `part_info` `features`.
     #[schemars(range(min = 1))]
@@ -38,10 +51,21 @@ pub struct SetParameter {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct SetEquations {
+    /// Omitted edits shared base values; otherwise replaces this configuration's
+    /// variable/equation/numeric overrides. Removing an override restores the base.
+    #[serde(default)]
+    pub configuration: Option<u32>,
+    /// Numeric parameter values in mm/radians. Base edits update only these keys;
+    /// configuration edits replace that configuration's numeric override map.
+    #[serde(default)]
+    pub parameters: BTreeMap<String, f64>,
+    /// Reject a stale preview or commit if the document changed while editing.
+    #[serde(default)]
+    pub revision: Option<u64>,
     /// Every global variable: name to formula, such as `"8mm"` or `"width / 2"`.
     pub variables: BTreeMap<String, String>,
-    /// Every equation: parameter key to formula, such as `"thickness * 2"`.
-    pub equations: BTreeMap<String, String>,
+    /// Parameter key to formula; null disables the inherited equation in a variant.
+    pub equations: BTreeMap<String, Option<String>>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -55,6 +79,9 @@ pub struct CreateConfiguration {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct UpdateConfiguration {
+    /// Reject an edit based on an older document revision.
+    #[serde(default)]
+    pub revision: Option<u64>,
     /// The complete configuration. Omitted maps and `material` are reset.
     pub configuration: Configuration,
 }
@@ -145,6 +172,10 @@ pub struct AddFeature {
     /// Tree label; omitted uses a default such as `Boss-Extrude2`.
     #[schemars(length(min = 1))]
     pub name: Option<String>,
+    /// Parameter path within this feature (such as `end1.depth`) to a formula,
+    /// stored as an equation on the new feature; null removes one.
+    #[serde(default)]
+    pub formulas: BTreeMap<String, Option<String>>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -153,6 +184,22 @@ pub struct UpdateFeature {
     pub id: FeatureId,
     /// The complete replacement definition, same shape as `add_feature`.
     pub feature: FeatureInput,
+    /// Parameter path within this feature to a formula; null removes that
+    /// parameter's equation. Paths left out keep their equations.
+    #[serde(default)]
+    pub formulas: BTreeMap<String, Option<String>>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct LocateRef {
+    /// A vertex, reference point, plane or planar face.
+    pub reference: Ref,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct EvaluateFormula {
+    /// A formula such as `width / 2 + 1mm`.
+    pub expression: String,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -329,7 +376,7 @@ pub enum SketchOp {
     },
     /// Toggle construction geometry.
     Construction { ids: Vec<Id>, construction: bool },
-    /// Project model edges into the sketch.
+    /// Project model edges into the sketch; a face converts all of its edge loops.
     Convert {
         #[schemars(length(min = 1))]
         refs: Vec<Ref>,

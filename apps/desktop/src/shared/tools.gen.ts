@@ -2,6 +2,8 @@
 // run `cargo run -p openforge -- generate` instead.
 // Lengths are millimetres and angles radians.
 
+export type Axis3 = 'x' | 'y' | 'z'
+
 /** Boolean operations. */
 export type BoolOp = 'fuse' | 'cut' | 'common'
 
@@ -45,6 +47,120 @@ export type Configuration = {
   /** Variable name to formula, overriding base variables. */
   variables?: Record<string, string>
 }
+
+export type Constraint3 =
+  | {
+    kind: 'coincident'
+    id: number
+    a: number
+    b: number
+    /**
+     * A model reference, as JSON, that sets this relation's location on every
+     * rebuild: a vertex or reference point for `fixed`, a plane or planar face
+     * for `point_on_plane`. The sketch then follows that geometry.
+     */
+    external?: string | null
+  }
+  | {
+    kind: 'fixed'
+    id: number
+    point: number
+    at: [number, number, number]
+    /**
+     * A model reference, as JSON, that sets this relation's location on every
+     * rebuild: a vertex or reference point for `fixed`, a plane or planar face
+     * for `point_on_plane`. The sketch then follows that geometry.
+     */
+    external?: string | null
+  }
+  | {
+    kind: 'distance'
+    id: number
+    a: number
+    b: number
+    value: number
+    /**
+     * A model reference, as JSON, that sets this relation's location on every
+     * rebuild: a vertex or reference point for `fixed`, a plane or planar face
+     * for `point_on_plane`. The sketch then follows that geometry.
+     */
+    external?: string | null
+  }
+  | {
+    kind: 'axis'
+    id: number
+    line: number
+    axis: Axis3
+    /**
+     * A model reference, as JSON, that sets this relation's location on every
+     * rebuild: a vertex or reference point for `fixed`, a plane or planar face
+     * for `point_on_plane`. The sketch then follows that geometry.
+     */
+    external?: string | null
+  }
+  | {
+    kind: 'parallel'
+    id: number
+    a: number
+    b: number
+    /**
+     * A model reference, as JSON, that sets this relation's location on every
+     * rebuild: a vertex or reference point for `fixed`, a plane or planar face
+     * for `point_on_plane`. The sketch then follows that geometry.
+     */
+    external?: string | null
+  }
+  | {
+    kind: 'perpendicular'
+    id: number
+    a: number
+    b: number
+    /**
+     * A model reference, as JSON, that sets this relation's location on every
+     * rebuild: a vertex or reference point for `fixed`, a plane or planar face
+     * for `point_on_plane`. The sketch then follows that geometry.
+     */
+    external?: string | null
+  }
+  | {
+    kind: 'point_on_plane'
+    id: number
+    point: number
+    origin: [number, number, number]
+    normal: [number, number, number]
+    /**
+     * A model reference, as JSON, that sets this relation's location on every
+     * rebuild: a vertex or reference point for `fixed`, a plane or planar face
+     * for `point_on_plane`. The sketch then follows that geometry.
+     */
+    external?: string | null
+  }
+  | {
+    kind: 'tangent'
+    id: number
+    a: number
+    b: number
+    end_a?: boolean
+    end_b?: boolean
+    /**
+     * A model reference, as JSON, that sets this relation's location on every
+     * rebuild: a vertex or reference point for `fixed`, a plane or planar face
+     * for `point_on_plane`. The sketch then follows that geometry.
+     */
+    external?: string | null
+  }
+  | {
+    kind: 'point_on_curve'
+    id: number
+    point: number
+    curve: number
+    /**
+     * A model reference, as JSON, that sets this relation's location on every
+     * rebuild: a vertex or reference point for `fixed`, a plane or planar face
+     * for `point_on_plane`. The sketch then follows that geometry.
+     */
+    external?: string | null
+  }
 
 /**
  * Lengths are in millimetres and angles in radians. Where a dimension
@@ -164,6 +280,22 @@ export type ConstraintKind =
     value: number
   }
 
+/** An explicit complete closed contour. The first traversed entity is its seam. */
+export type ContourSelection = {
+  sketch: number
+  entities: number[]
+  reverse?: boolean
+  /**
+   * Put the seam inside the start entity, this fraction along it in the
+   * traversal direction (0 < seam < 1): by length for lines, arcs and
+   * circles, by curve parameter for Bezier curves. The entity is split
+   * there, except a circle, which just starts there. Not for splines.
+   */
+  seam?: OrderedFloat | null
+  /** Entity at the start/seam; must be a member of the selected contour. */
+  start?: number | null
+}
+
 /** IDs created by the call, in the form the next call accepts. */
 export type Created = {
   /** New sketch entity and relation IDs, from `edit_sketch`. */
@@ -211,6 +343,27 @@ export type EndCondition =
     depth: number
   }
 
+export type Entity3 =
+  | {
+    kind: 'point'
+    id: number
+    at: [number, number, number]
+    construction?: boolean
+  }
+  | {
+    kind: 'line'
+    id: number
+    a: number
+    b: number
+    construction?: boolean
+  }
+  | {
+    kind: 'bezier'
+    id: number
+    points: [number, number, number, number]
+    construction?: boolean
+  }
+
 /** Stable error codes reported to tool clients. Messages may change; codes do not. */
 export type ErrorCode =
   | 'E_INVALID_ARGS'
@@ -234,32 +387,187 @@ export type FaceKind = 'face'
 
 export type Feature =
   | {
-    type: 'split_line'
-    /** A sketch or curve feature. */
-    source: Ref
-    /** A face; required to be a face for a split line. */
-    target: Ref
-    /** Projection direction, XYZ. */
-    direction: [number, number, number]
+    type: 'dome'
+    face: Ref
+    /**
+     * Height in millimetres, positive; a spherical cap's height is at most the
+     * disk radius.
+     */
+    height: number
+    /**
+     * Meet the faces beside the boundary tangentially: half an ellipsoid of
+     * revolution on a disk (its height may exceed the radius), or a surface
+     * tangent to the side faces on a face whose boundary has no corners.
+     */
+    elliptical?: boolean
+    /** Remove an inward cap rather than adding an outward cap. */
+    inward?: boolean
     /** Body IDs this feature acts on; omitted acts on the whole part. */
     scope?: string[] | null
   }
   | {
+    type: 'rib'
+    /** Sketch feature ID with one or more open chains of lines and arcs. */
+    sketch: number
+    /** Web thickness, mm. */
+    thickness: number
+    direction?: RibDirection
+    /**
+     * Taper the rib's thickness faces by this angle (radians) so the web
+     * thickens away from its sketch.
+     */
+    draft?: number | null
+    /**
+     * Grow away from the part instead of toward it. By default material grows
+     * toward the center of the existing part.
+     */
+    flip?: boolean
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+    side?: RibSide
+  }
+  | {
+    type: 'wrap'
+    /** Sketch feature ID with closed profiles (see above for the plane). */
+    sketch: number
+    /** The curved face to wrap onto. */
+    face: Ref
+    /**
+     * Depth in mm for emboss and deboss, along the face normal (away from the
+     * axis for cylinders and cones); ignored for scribe.
+     */
+    depth?: number
+    mode?: WrapMode
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'cosmetic_thread'
+    /**
+     * Persistent cylindrical face reference. The face must be bounded by two
+     * complete coaxial circles; trimmed or interrupted cylinders are rejected.
+     */
+    face: Ref
+    /** Cylinder diameter, mm; must match the selected cylindrical surface. */
+    diameter: number
+    /** Axial distance per turn, mm. */
+    pitch: number
+    /** Axial annotated length, mm; contained within the selected face. */
+    length: number
+    /** True selects an inward-facing hole wall; false selects an external boss. */
+    internal?: boolean
+    left_handed?: boolean
+    /** Start at the opposite rim and advance toward the first rim. */
+    reverse?: boolean
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+    /** Start phase in the cylindrical face's radial frame, radians. */
+    start_angle?: number
+    /** Distance from the selected end rim along the cylinder axis, mm. */
+    start_offset?: number
+  }
+  | {
+    type: 'thread'
+    /** Persistent cylindrical face reference, bounded by two complete coaxial circles. */
+    face: Ref
+    /** Cylinder diameter, mm; must match the selected cylindrical surface. */
+    diameter: number
+    /** Axial distance per turn, mm. */
+    pitch: number
+    /** Axial threaded length, mm; contained within the selected face. */
+    length: number
+    /** True cuts into an inward-facing hole wall; false into an external boss. */
+    internal?: boolean
+    left_handed?: boolean
+    /** Start at the opposite rim and advance toward the first rim. */
+    reverse?: boolean
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+    /** Start phase in the cylindrical face's radial frame, radians. */
+    start_angle?: number
+    /** Distance from the selected end rim along the cylinder axis, mm. */
+    start_offset?: number
+  }
+  | {
+    type: 'sketch3d'
+    /** Monotonically increasing; deleted entity IDs must never be reused. */
+    next_id: number
+    constraints?: Constraint3[]
+    entities?: Entity3[]
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'split_line'
+    /**
+     * A face or body; the first sketch for sketch on sketch. A split line splits
+     * this face.
+     */
+    target: Ref
+    /** Projection direction, XYZ; the pull direction for silhouettes. */
+    direction: [number, number, number]
+    mode?: ProjectionMode
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+    /**
+     * A sketch or curve feature to project; the second sketch for sketch on
+     * sketch; the plane, face or body that cuts the target for an intersection
+     * split line. Unused for silhouettes.
+     */
+    source?: Ref
+  }
+  | {
     type: 'draft'
-    faces: Ref[]
+    /**
+     * The neutral plane; with parting-line edges, only its normal (the pull
+     * direction) is used.
+     */
     neutral_plane: Ref
     /** Signed draft angle, radians. */
     angle: number
     direction?: Ref | null
+    /** Faces to taper about the neutral plane. Leave empty for a parting-line draft. */
+    faces?: Ref[]
+    /** Draft the faces on the side opposite the pull direction instead. */
+    other_side?: boolean
+    /**
+     * Parting-line edges (straight or circular). Each face next to an edge on the
+     * pull side tapers about a plane through that edge.
+     */
+    parting_line?: Ref[]
     /** Body IDs this feature acts on; omitted acts on the whole part. */
     scope?: string[] | null
+    /**
+     * Step draft: each planar face tilts about a line normal to the pull
+     * direction through the parting line's nearest point, and perpendicular step
+     * faces join it to inclined parts of the parting line.
+     */
+    step?: boolean
   }
   | {
     type: 'variable_fillet'
+    /** An edge of the chain to fillet; tangent-continuous neighbours join the chain. */
     edge: Ref
-    /** Ordered stations; include positions 0 and 1. */
+    /**
+     * Ordered stations; include positions 0 and 1. Positions are fractions of
+     * the chain's length, measured in the selected edge's direction.
+     */
     stations: RadiusStation[]
+    /** Measure positions from the other end of the chain. */
     reverse?: boolean
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+    /** Change the radius linearly between stations instead of smoothly. */
+    straight?: boolean
+  }
+  | {
+    type: 'face_fillet'
+    /** Faces in one plane on the first side of the blend. */
+    faces1: Ref[]
+    /** Faces in one plane on the other side; not parallel to the first. */
+    faces2: Ref[]
+    /** Blend radius, mm. */
+    radius: number
     /** Body IDs this feature acts on; omitted acts on the whole part. */
     scope?: string[] | null
   }
@@ -272,11 +580,21 @@ export type Feature =
     /** mm per turn. */
     pitch: number
     turns: number
+    /** Which two of pitch, turns and height define the helix. */
+    defined_by?: HelixInput
+    /** Total height, mm, for the height-based definitions. */
+    height?: number
     left_handed?: boolean
     /** Body IDs this feature acts on; omitted acts on the whole part. */
     scope?: string[] | null
     /** Radians. */
     start_angle?: number
+    /**
+     * Pitch rows for a variable-pitch helix: the first at turn 0, the last at
+     * the total turns. Pitch changes linearly in turn count between rows. When
+     * present it replaces pitch, turns and height.
+     */
+    variable_pitch?: HelixPitch[]
   }
   | {
     type: 'composite_curve'
@@ -287,37 +605,112 @@ export type Feature =
   }
   | {
     type: 'projected_curve'
-    /** A sketch or curve feature. */
-    source: Ref
-    /** A face; required to be a face for a split line. */
+    /**
+     * A face or body; the first sketch for sketch on sketch. A split line splits
+     * this face.
+     */
     target: Ref
-    /** Projection direction, XYZ. */
+    /** Projection direction, XYZ; the pull direction for silhouettes. */
     direction: [number, number, number]
+    mode?: ProjectionMode
     /** Body IDs this feature acts on; omitted acts on the whole part. */
     scope?: string[] | null
+    /**
+     * A sketch or curve feature to project; the second sketch for sketch on
+     * sketch; the plane, face or body that cuts the target for an intersection
+     * split line. Unused for silhouettes.
+     */
+    source?: Ref
   }
   | {
     type: 'sweep'
-    /** Sketch with one closed profile and no holes. */
-    profile: number
     /** One connected sketch, construction curve or edge. */
     path: Ref
+    /**
+     * Sweep a circle of this diameter (mm), centred on the path start and normal
+     * to it, instead of a sketch profile.
+     */
+    circle_diameter?: number | null
     cut?: boolean
+    /**
+     * A curve beside the path that sets the section's rotation (follow path and
+     * guide). Replaces `orientation`. It scales the section only with
+     * `guide_scale`.
+     */
+    guide?: Ref | null
+    /**
+     * A second guide curve. The section turns with the first guide and
+     * stretches so both guides keep their places on it. Needs `guide`.
+     */
+    guide2?: Ref | null
+    /**
+     * With `guide`: also scale the section uniformly so the point where the
+     * guide crosses each plane normal to the path keeps its place on the
+     * section. Needs an open, tangent-continuous path.
+     */
+    guide_scale?: boolean
+    /** Explicit closed holes inside the selected outer contour, from the same sketch. */
+    inner_profiles?: ContourSelection[]
     merge?: boolean
     orientation?: SweepOrientation
+    /**
+     * A whole sketch with one closed profile, or one explicitly selected closed
+     * contour. Omit it to sweep a circle of `circle_diameter`.
+     */
+    profile?: ProfileSelection | null
     reverse_path?: boolean
     /** Body IDs this feature acts on; omitted acts on the whole part. */
     scope?: string[] | null
+    /**
+     * Thicken the profile sketch's single open or closed chain instead of
+     * sweeping a closed region. Requires a whole-sketch profile.
+     */
+    thin?: Thin | null
+    /**
+     * Turn the section by this angle (radians) from the path start to its end,
+     * spread by arc length. Replaces `orientation`.
+     */
+    twist?: number
   }
   | {
     type: 'loft'
-    /** Ordered profile sketch IDs, each one closed profile without holes. */
-    profiles: number[]
+    /** Ordered closed sections; legacy sketch IDs or explicit contour/seam selections. */
+    profiles: ProfileSelection[]
+    /**
+     * A curve crossing every section's plane in order; the sections blend
+     * along it. Not combined with guides, end conditions or `closed`.
+     */
+    centerline?: Ref | null
+    /**
+     * Join the last section back to the first, making a ring without end caps.
+     * Needs at least three sections and no guides.
+     */
+    closed?: boolean
     cut?: boolean
+    /** How the loft arrives at the last section. */
+    end?: LoftEnd
+    /**
+     * Guide curves crossing every section in order; the loft surface passes
+     * through each guide. Use two or more; `ruled` does not apply with guides.
+     */
+    guides?: Ref[]
     merge?: boolean
     /** Profiles whose direction is reversed. */
     reversed?: number[]
     ruled?: boolean
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+    /** How the loft leaves the first section. */
+    start?: LoftEnd
+  }
+  | {
+    type: 'boundary'
+    /** Ordered closed sections. The first and last must be planar; they cap the solid. */
+    sections: ProfileSelection[]
+    /** Curves that cross every section in order (sketch, 3D sketch, edge or curve paths). */
+    curves: Ref[]
+    cut?: boolean
+    merge?: boolean
     /** Body IDs this feature acts on; omitted acts on the whole part. */
     scope?: string[] | null
   }
@@ -345,11 +738,21 @@ export type Feature =
   | {
     type: 'split_body'
     bodies: string[]
-    /** A plane or planar face. */
-    plane: Ref
     keep?: KeepSide
+    /** A plane or planar face. */
+    plane?: Ref
+    /**
+     * Stable piece IDs from an all-pieces preview. None keeps every piece.
+     * Missing or ambiguous IDs fail instead of selecting another piece.
+     */
+    retained_pieces?: string[] | null
     /** Body IDs this feature acts on; omitted acts on the whole part. */
     scope?: string[] | null
+    /**
+     * General split mode: planes, bounded faces or whole tool bodies. Empty
+     * preserves the legacy one-piece-per-plane-side behavior above.
+     */
+    tools?: Ref[]
   }
   | {
     type: 'plane'
@@ -546,6 +949,11 @@ export type Feature =
     cbore_depth_override?: number | null
     /** mm. */
     cbore_diameter_override?: number | null
+    /**
+     * Show a cosmetic thread in each tapped hole: nominal diameter and coarse
+     * pitch from the size table, through the material the hole drills.
+     */
+    cosmetic_thread?: boolean
     /** Included angle, radians. */
     csink_angle_override?: number | null
     /** mm. */
@@ -589,6 +997,15 @@ export type Feature =
     scope?: string[] | null
   }
 
+export type HelixInput = 'pitch_and_turns' | 'height_and_turns' | 'height_and_pitch'
+
+export type HelixPitch = {
+  /** Turn count at which this pitch applies. */
+  turn: number
+  /** mm per turn. */
+  pitch: number
+}
+
 export type HoleEnd =
   | {
     type: 'blind'
@@ -609,6 +1026,26 @@ export type KeepSide = 'both' | 'positive' | 'negative'
 
 /** Kinds of sub-shape. */
 export type Kind = 'face' | 'edge' | 'vertex' | 'solid'
+
+/**
+ * A loft end condition. The surface leaves (or meets) the end section along
+ * the given tangent; `tangent_length` scales it relative to the spacing of the
+ * sections (1 is a natural length; larger values bulge further).
+ */
+export type LoftEnd =
+  | {
+    type: 'none'
+  }
+  | {
+    type: 'normal'
+    tangent_length?: number
+  }
+  | {
+    type: 'direction'
+    direction: Ref
+    flip?: boolean
+    tangent_length?: number
+  }
 
 export type Material = {
   name: string
@@ -635,6 +1072,9 @@ export type Measurements = {
   bbox_mm?: [[number, number, number], [number, number, number]] | null
 }
 
+/** A finite number that compares and hashes by value. */
+export type OrderedFloat = number
+
 export type PatternDirection = {
   /** A straight edge, sketch line, axis, or plane/face (its normal). */
   reference: Ref
@@ -653,6 +1093,11 @@ export type PointArg =
   | {
     at: [number, number]
   }
+
+/** Legacy sketch IDs retain their original whole-sketch behavior. */
+export type ProfileSelection = number | ContourSelection
+
+export type ProjectionMode = 'onto_face' | 'sketch_on_sketch' | 'intersection' | 'silhouette'
 
 export type RadiusStation = {
   /** Fraction along the edge, 0 to 1. */
@@ -707,6 +1152,31 @@ export type Ref =
     sketch: number
     entity: number
   }
+  | {
+    type: 'curve_segment'
+    curve: number
+    segment: string
+  }
+  | {
+    type: 'ordered_sketch_contour'
+    sketch: number
+    entities: number[]
+    reverse?: boolean
+    /**
+     * Put the seam inside the start entity, this fraction along it in the
+     * traversal direction (0 < seam < 1): by length for lines, arcs and
+     * circles, by curve parameter for Bezier curves. The entity is split
+     * there, except a circle, which just starts there. Not for splines.
+     */
+    seam?: OrderedFloat | null
+    /** Entity at the start/seam; must be a member of the selected contour. */
+    start?: number | null
+  }
+  | {
+    type: 'sketch_contour'
+    sketch: number
+    entities: number[]
+  }
 
 export type RevolveAngle =
   | {
@@ -741,6 +1211,19 @@ export type RevolveAngle =
     offset: number
     reverse_offset?: boolean
   }
+
+/** How a rib's material grows from its sketch to the surrounding material. */
+export type RibDirection = 'parallel_to_sketch' | 'normal_to_sketch'
+
+/** Which side of the sketch a rib's thickness grows to. */
+export type RibSide = 'both' | 'first' | 'second'
+
+export type Sketch3D = {
+  /** Monotonically increasing; deleted entity IDs must never be reused. */
+  next_id: number
+  constraints?: Constraint3[]
+  entities?: Entity3[]
+}
 
 /**
  * One sketch edit, tagged by `op`. Coordinates are sketch-plane millimetres.
@@ -895,6 +1378,11 @@ export type SketchPlane =
     name: string
   }
 
+export type SpatialDrag = {
+  point: number
+  to: [number, number, number]
+}
+
 export type SweepOrientation = 'minimum_twist' | 'frenet' | 'fixed'
 
 /** A thin feature: the sketch contour thickened into a wall. */
@@ -928,6 +1416,9 @@ export type Warning = {
 }
 
 export type WarningCode = 'W_SKETCH_UNDER_DEFINED' | 'W_SKETCH_OVER_DEFINED'
+
+/** What a wrapped sketch does to the face it is wrapped onto. */
+export type WrapMode = 'emboss' | 'deboss' | 'scribe'
 
 /** The result of every tool call (MCP `structuredContent`, `draft.apply`). */
 export type Envelope = {
@@ -992,6 +1483,13 @@ export interface ToolArgs {
     /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
     detail?: 'summary' | 'full'
   }
+  /** Solve or drag a supplied spatial sketch without changing the document. Returns sketch and solver DOF/conflict report. Commit the returned sketch with add_feature/update_feature type sketch3d. Failed solves preserve the supplied geometry. */
+  solve_spatial_sketch: {
+    sketch: Sketch3D
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+    drag?: SpatialDrag | null
+  }
   /** Lengths, areas, radii, distances and angles of face, edge or vertex refs in the visible model. Results are mm and radians. */
   measure: {
     /** One to four face, edge or vertex refs. */
@@ -1028,6 +1526,11 @@ export interface ToolArgs {
     feature: Feature
     /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
     detail?: 'summary' | 'full'
+    /**
+     * Parameter path within this feature (such as `end1.depth`) to a formula,
+     * stored as an equation on the new feature; null removes one.
+     */
+    formulas?: Record<string, string | null>
     /** Tree label; omitted uses a default such as `Boss-Extrude2`. */
     name?: string | null
   }
@@ -1038,6 +1541,11 @@ export interface ToolArgs {
     feature: Feature
     /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
     detail?: 'summary' | 'full'
+    /**
+     * Parameter path within this feature to a formula; null removes that
+     * parameter's equation. Paths left out keep their equations.
+     */
+    formulas?: Record<string, string | null>
   }
   /** Delete features and every feature that depends on them. Returns the deleted IDs as `deleted`. Do not delete existing work to fix an error unless the user asked. */
   delete_features: {
@@ -1054,12 +1562,38 @@ export interface ToolArgs {
     /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
     detail?: 'summary' | 'full'
   }
-  /** Replace all base variables and equations. Formulas use + - * /, min, max, abs, sqrt, sin, cos, tan, pi and units mm, cm, m, in, ft, deg, rad; lengths need units. Check part_info `equation_values` and feature errors afterwards. */
+  /** Replace shared base variables and equations, or the selected configuration's overrides. Optional parameters atomically set numeric values; omitted configuration edits the base, and removing variant entries resets them to base. Formulas use + - * /, min, max, abs, sqrt, sin, cos, tan, pi and units mm, cm, m, in, ft, deg, rad; lengths need units. Check part_info `equation_values` and feature errors afterwards. */
   set_equations: {
     /** Every global variable: name to formula, such as `"8mm"` or `"width / 2"`. */
     variables: Record<string, string>
-    /** Every equation: parameter key to formula, such as `"thickness * 2"`. */
-    equations: Record<string, string>
+    /** Parameter key to formula; null disables the inherited equation in a variant. */
+    equations: Record<string, string | null>
+    /**
+     * Omitted edits shared base values; otherwise replaces this configuration's
+     * variable/equation/numeric overrides. Removing an override restores the base.
+     */
+    configuration?: number | null
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+    /**
+     * Numeric parameter values in mm/radians. Base edits update only these keys;
+     * configuration edits replace that configuration's numeric override map.
+     */
+    parameters?: Record<string, number>
+    /** Reject a stale preview or commit if the document changed while editing. */
+    revision?: number | null
+  }
+  /** Where a reference is now: `point` for a vertex or reference point, `plane` (origin and normal) for a plane or planar face. Values are mm. */
+  locate_reference: {
+    /** A vertex, reference point, plane or planar face. */
+    reference: Ref
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+  }
+  /** Evaluate a formula with the part's variables and parameters (active configuration) without changing anything. Returns `value` with its value and unit powers. */
+  evaluate_formula: {
+    /** A formula such as `width / 2 + 1mm`. */
+    expression: string
     /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
     detail?: 'summary' | 'full'
   }
@@ -1077,6 +1611,8 @@ export interface ToolArgs {
     configuration: Configuration
     /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
     detail?: 'summary' | 'full'
+    /** Reject an edit based on an older document revision. */
+    revision?: number | null
   }
   /** Make a configuration active, end any feature edit and rebuild the part with its overrides. */
   activate_configuration: {
@@ -1162,6 +1698,7 @@ export const TOOL_METHODS = {
   get_feature: 'doc.feature',
   topology: 'doc.topology',
   get_sketch: 'sketch.get',
+  solve_spatial_sketch: 'sketch3d.solve',
   measure: 'measure',
   mass_properties: 'mass_properties',
   new_sketch: 'sketch.new',
@@ -1172,6 +1709,8 @@ export const TOOL_METHODS = {
   delete_features: 'feature.delete',
   set_parameter: 'parameter.set',
   set_equations: 'equations.set',
+  locate_reference: 'ref.locate',
+  evaluate_formula: 'equations.evaluate',
   create_configuration: 'configuration.create',
   update_configuration: 'configuration.update',
   activate_configuration: 'configuration.activate',
@@ -1193,6 +1732,7 @@ export const TOOL_EXAMPLES: { [K in ToolName]: ToolArgs[K][] } = {
   get_feature: [{"id":2}],
   topology: [{}],
   get_sketch: [{"id":3}],
+  solve_spatial_sketch: [{"sketch":{"constraints":[],"entities":[],"next_id":1}}],
   measure: [{"refs":[{"name":"2.end","type":"face"}]}, {"refs":[{"name":"2.start","type":"face"},{"name":"2.end","type":"face"}]}],
   mass_properties: [{}],
   new_sketch: [{"plane":{"type":"front_plane"}}, {"plane":{"name":"2.end","type":"face"}}],
@@ -1203,6 +1743,8 @@ export const TOOL_EXAMPLES: { [K in ToolName]: ToolArgs[K][] } = {
   delete_features: [{"ids":[3]}],
   set_parameter: [{"key":"f2.end1.depth","value":8}],
   set_equations: [{"equations":{"f2.end1.depth":"thickness"},"variables":{"thickness":"8mm"}}],
+  locate_reference: [{"reference":{"type":"front_plane"}}],
+  evaluate_formula: [{"expression":"f2.end1.depth * 2"}],
   create_configuration: [{"name":"Thin"}, {"copy_from":2,"name":"Long copy"}],
   update_configuration: [{"configuration":{"id":1,"name":"Default","parameters":{"f2.end1.depth":8}}}, {"configuration":{"id":2,"material":{"mode":"set","value":{"density":1240,"name":"PLA"}},"name":"Long","suppressed":{"3":true}}}],
   activate_configuration: [{"id":2}],

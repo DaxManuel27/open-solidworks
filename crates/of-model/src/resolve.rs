@@ -145,6 +145,19 @@ pub fn resolve(state: &State, r: &Ref) -> RResult<Resolved> {
             }
         }
         Ref::SketchEntity { sketch, entity } => {
+            if let Some((sk, report)) = state.sketches3d.get(sketch) {
+                if report.status == of_sketch::SolveStatus::Failed {
+                    return Err("the referenced 3D sketch cannot be solved".into());
+                }
+                return match sk.entity(*entity)?.geometry {
+                    of_sketch::spatial::Geometry3::Point { at } => Ok(Resolved::Point(at)),
+                    of_sketch::spatial::Geometry3::Line { a, b } => Ok(Resolved::Axis {
+                        origin: sk.point(a)?,
+                        dir: unit(sk.point(b)? - sk.point(a)?),
+                    }),
+                    _ => Err("select a 3D sketch point or straight line".into()),
+                };
+            }
             let (plane, sk) = state
                 .sketches
                 .get(sketch)
@@ -168,6 +181,17 @@ pub fn resolve(state: &State, r: &Ref) -> RResult<Resolved> {
                     return Err("a spline can't be used here".into());
                 }
             }
+        }
+        Ref::CurveSegment { .. } => {
+            return Err("a curve segment is a path, not a datum reference".into());
+        }
+        Ref::OrderedSketchContour(c) => {
+            let (plane, _) = crate::curves::ordered_contour(state, c, false)?;
+            Resolved::Plane(plane)
+        }
+        Ref::SketchContour { sketch, entities } => {
+            let (plane, _) = crate::curves::sketch_contour(state, *sketch, entities)?;
+            Resolved::Plane(plane)
         }
     })
 }

@@ -112,6 +112,8 @@ fn plane_split_conserves_volume_and_piece_identity() {
         bodies: vec![original],
         plane: Ref::Feature { id: plane },
         keep: KeepSide::Both,
+        tools: vec![],
+        retained_pieces: None,
     }));
     m.rebuild();
     check(&m, 3, 2000.0);

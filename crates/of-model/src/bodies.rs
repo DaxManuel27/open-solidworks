@@ -1,6 +1,8 @@
 //! Body identity and multibody operations. Aggregate geometry is a derived cache
 //! for the Phase 1 operations and whole-part measurement/export.
 
+mod split;
+
 use std::collections::{BTreeSet, HashSet};
 
 use of_geom::{BoolOp, DAffine3, DMat3, DVec3, Kind, Shape};
@@ -77,9 +79,22 @@ pub struct SplitBody {
     #[schemars(length(min = 1))]
     pub bodies: Vec<BodyId>,
     /// A plane or planar face.
+    #[serde(default = "default_split_plane")]
     pub plane: Ref,
     #[serde(default)]
     pub keep: KeepSide,
+    /// General split mode: planes, bounded faces or whole tool bodies. Empty
+    /// preserves the legacy one-piece-per-plane-side behavior above.
+    #[serde(default)]
+    pub tools: Vec<Ref>,
+    /// Stable piece IDs from an all-pieces preview. None keeps every piece.
+    /// Missing or ambiguous IDs fail instead of selecting another piece.
+    #[serde(default)]
+    pub retained_pieces: Option<Vec<BodyId>>,
+}
+
+fn default_split_plane() -> Ref {
+    Ref::FrontPlane
 }
 
 fn identity_names(body: &Body) -> BTreeSet<String> {
@@ -282,6 +297,9 @@ pub(crate) fn combine(
         geometry = boolean(&geometry, &tool.geometry, p.operation, fid)?;
     }
     let parts = partition(&geometry)?;
+    if p.operation == BoolOp::Fuse && parts.len() > 1 {
+        return Err("the bodies don't touch; adding them would leave separate bodies".into());
+    }
     state.bodies.retain(|b| !p.bodies.contains(&b.id));
     for geometry in parts {
         state.bodies.push(SolidBody {
@@ -355,6 +373,14 @@ pub(crate) fn split_body(
     prev: &State,
     state: &mut State,
 ) -> Result<(), String> {
+    if !p.tools.is_empty() {
+        return split::general_split(fid, p, prev, state);
+    }
+    if p.retained_pieces.is_some() {
+        return Err(
+            "piece selection requires general splitting tools; use a plane as a tool".into(),
+        );
+    }
     let inputs = selected(prev, &p.bodies, 1)?;
     let plane = resolve(prev, &p.plane)?.plane()?;
     state.bodies.retain(|b| !p.bodies.contains(&b.id));

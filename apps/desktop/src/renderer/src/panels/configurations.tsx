@@ -1,6 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { call } from '../core'
+import type { EquationValue, FeatureView, Scene } from '../protocol'
 import { useStore } from '../store'
-import { AngleField, Check, Choice, LengthField, NumberField, PanelShell, Section } from './fields'
+import { Choice, FormulaField, NumberField, PanelShell, ParameterField, Section } from './fields'
 
 export function ConfigurationsPanel() {
   const snapshot = useStore((s) => s.snapshot)!
@@ -14,6 +16,41 @@ export function ConfigurationsPanel() {
   const [parameter, setParameter] = useState(snapshot.parameters[0]?.key ?? '')
   const [variable, setVariable] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [evaluated, setEvaluated] = useState<{
+    request: string
+    values: Record<string, EquationValue>
+  }>()
+  const request = JSON.stringify({ configuration: config, revision: snapshot.revision })
+  useEffect(() => {
+    let current = true
+    const timer = setTimeout(() => {
+      void call<{
+        values: Record<string, EquationValue>
+        features: FeatureView[]
+        scene: Scene
+        revision: number
+      }>('configuration.preview', JSON.parse(request))
+        .then((result) => {
+          if (!current || result.revision !== useStore.getState().snapshot?.revision) return
+          setEvaluated({ request, values: result.values })
+          setError(
+            Object.values(result.values).find((value) => value.error)?.error ??
+              result.features.find((f) => f.error && !f.suppressed && !f.rolled_back)?.error ??
+              null,
+          )
+          useStore.setState({ previewScene: result.scene, previewError: null })
+        })
+        .catch((e: Error) => {
+          if (current) setError(e.message)
+        })
+    }, 200)
+    return () => {
+      current = false
+      clearTimeout(timer)
+      useStore.setState({ previewScene: null })
+    }
+  }, [request])
+  const values = evaluated?.request === request ? evaluated.values : {}
   const without = <T,>(map: Record<string, T>, key: string) =>
     Object.fromEntries(Object.entries(map).filter(([k]) => k !== key))
   const keys = [...new Set([...Object.keys(config.parameters), ...Object.keys(config.equations)])]
@@ -21,17 +58,21 @@ export function ConfigurationsPanel() {
     <PanelShell
       title="Configuration Overrides"
       error={error}
+      okDisabled={!!error || evaluated?.request !== request}
       onCancel={() => void close()}
       onOk={() =>
-        void run('configuration.update', { configuration: config }).then((saved) => {
+        void run('configuration.update', {
+          configuration: config,
+          revision: snapshot.revision,
+        }).then((saved) => {
           if (saved) void close()
           else setError('Could not save the configuration. Check its name and values.')
         })
       }
     >
       <p>
-        These overrides affect only this variant. Feature panels and the Equations editor change
-        shared base values.
+        Edit scope: active configuration {config.name}. These overrides affect only this variant.
+        Reset to base removes an override. Preview and Cancel keep shared values unchanged.
       </p>
       <label className="field">
         <span>Name</span>
@@ -53,7 +94,10 @@ export function ConfigurationsPanel() {
             const p = snapshot.parameters.find((p) => p.key === parameter)!
             setConfig({
               ...config,
-              parameters: { ...config.parameters, [parameter]: p.value.value },
+              parameters: {
+                ...config.parameters,
+                [parameter]: values[parameter]?.value?.value ?? p.value.value,
+              },
             })
           }}
         >
@@ -61,54 +105,30 @@ export function ConfigurationsPanel() {
         </button>
         {keys.map((key) => {
           const p = snapshot.parameters.find((p) => p.key === key)
-          const Field = p?.integer
-            ? NumberField
-            : p?.value.angle
-              ? AngleField
-              : p?.value.length
-                ? LengthField
-                : NumberField
-          const expression = config.equations[key]
           return (
             <div key={key}>
-              <Check
-                label={`${key} — formula`}
-                value={typeof expression === 'string'}
-                onChange={(on) =>
-                  setConfig({
-                    ...config,
-                    equations: on
-                      ? {
-                          ...config.equations,
-                          [key]: `${config.parameters[key] ?? p?.value.value ?? 0}${p?.value.angle ? 'rad' : p?.value.length ? 'mm' : ''}`,
-                        }
-                      : without(config.equations, key),
-                    parameters: on
-                      ? without(config.parameters, key)
-                      : { ...config.parameters, [key]: p?.value.value ?? 0 },
-                  })
-                }
-              />
-              {typeof expression === 'string' ? (
-                <input
-                  aria-label={`Override equation ${key}`}
-                  value={expression}
-                  onChange={(e) =>
+              {p ? (
+                <ParameterField
+                  parameter={p}
+                  value={config.parameters[key] ?? values[key]?.value?.value ?? p.value.value}
+                  expression={config.equations[key]}
+                  result={values[key]}
+                  onChange={(value) =>
                     setConfig({
                       ...config,
-                      equations: { ...config.equations, [key]: e.target.value },
+                      parameters:
+                        typeof value === 'number'
+                          ? { ...config.parameters, [key]: value }
+                          : without(config.parameters, key),
+                      equations:
+                        typeof value === 'string'
+                          ? { ...config.equations, [key]: value }
+                          : without(config.equations, key),
                     })
                   }
                 />
               ) : (
-                <Field
-                  label={key}
-                  value={config.parameters[key] ?? p?.value.value ?? 0}
-                  min={-Number.MAX_VALUE}
-                  onChange={(value) =>
-                    setConfig({ ...config, parameters: { ...config.parameters, [key]: value } })
-                  }
-                />
+                <p className="panel-error">Parameter {key} no longer exists.</p>
               )}
               <button
                 className="link"
@@ -120,7 +140,7 @@ export function ConfigurationsPanel() {
                   })
                 }
               >
-                Inherit base
+                Reset to base
               </button>
             </div>
           )
@@ -129,18 +149,14 @@ export function ConfigurationsPanel() {
       <Section title="Variables">
         {Object.entries(config.variables).map(([key, value]) => (
           <div key={key}>
-            <label className="field">
-              <span>{key}</span>
-              <input
-                value={value}
-                onChange={(e) =>
-                  setConfig({
-                    ...config,
-                    variables: { ...config.variables, [key]: e.target.value },
-                  })
-                }
-              />
-            </label>
+            <FormulaField
+              label={key}
+              expression={value}
+              result={values[key]}
+              onChange={(value) =>
+                setConfig({ ...config, variables: { ...config.variables, [key]: value } })
+              }
+            />
             <button
               className="link"
               onClick={() => setConfig({ ...config, variables: without(config.variables, key) })}

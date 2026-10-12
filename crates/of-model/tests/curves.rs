@@ -30,7 +30,14 @@ fn sweep_rebuilds_and_preserves_downstream_cap_reference() {
         sketch: path,
     }));
     let sweep = doc.add(FeatureKind::Sweep(Sweep {
-        profile,
+        profile: Some(profile.into()),
+        inner_profiles: vec![],
+        circle_diameter: None,
+        twist: 0.0,
+        guide: None,
+        guide_scale: false,
+        guide2: None,
+        thin: None,
         path: Ref::Feature { id: path },
         reverse_path: false,
         orientation: SweepOrientation::MinimumTwist,
@@ -121,9 +128,14 @@ fn loft_between_sections_has_expected_frustum_volume() {
     }));
     let top = circle(&mut doc, Ref::Feature { id: plane }, 4.0);
     doc.add(FeatureKind::Loft(Loft {
-        profiles: vec![bottom, top],
+        profiles: vec![bottom.into(), top.into()],
         reversed: vec![],
         ruled: true,
+        guides: vec![],
+        closed: false,
+        centerline: None,
+        start: LoftEnd::None,
+        end: LoftEnd::None,
         cut: false,
         merge: true,
     }));
@@ -155,6 +167,9 @@ fn helix_pitch_and_handedness_and_disconnected_composite() {
             turns: 2.25,
             start_angle: 0.0,
             left_handed,
+            defined_by: HelixInput::PitchAndTurns,
+            height: 0.0,
+            variable_pitch: vec![],
         }));
         let m = Model::new(doc);
         assert!(m.status(helix).unwrap().error.is_none());
@@ -190,4 +205,77 @@ fn helix_pitch_and_handedness_and_disconnected_composite() {
     }));
     let m = Model::new(doc);
     assert!(m.status(composite).unwrap().error.is_some());
+}
+
+fn helix_end(spec: Helix) -> (DVec3, f64) {
+    let mut doc = Document::new();
+    let helix = doc.add(FeatureKind::Helix(spec));
+    let m = Model::new(doc);
+    assert!(
+        m.status(helix).unwrap().error.is_none(),
+        "{:?}",
+        m.status(helix)
+    );
+    let info = m.state().curves[&helix].shape.edge_info(0).unwrap();
+    (info.end, info.length)
+}
+
+fn base_helix() -> Helix {
+    Helix {
+        plane: Ref::FrontPlane,
+        radius: 10.0,
+        pitch: 3.0,
+        turns: 2.0,
+        start_angle: 0.0,
+        left_handed: false,
+        defined_by: HelixInput::PitchAndTurns,
+        height: 0.0,
+        variable_pitch: vec![],
+    }
+}
+
+#[test]
+fn helix_height_combinations_and_variable_pitch() {
+    // Height and turns: 2.25 turns over 10 mm ends a quarter turn past whole.
+    let mut spec = base_helix();
+    spec.defined_by = HelixInput::HeightAndTurns;
+    spec.height = 10.0;
+    spec.turns = 2.25;
+    let (end, _) = helix_end(spec);
+    assert!((end - DVec3::new(0.0, 10.0, 10.0)).length() < 1e-6, "{end}");
+
+    // Height and pitch: 12 mm at 4 mm per turn is three whole turns.
+    let mut spec = base_helix();
+    spec.defined_by = HelixInput::HeightAndPitch;
+    spec.height = 12.0;
+    spec.pitch = 4.0;
+    let (end, length) = helix_end(spec);
+    assert!((end - DVec3::new(10.0, 0.0, 12.0)).length() < 1e-6, "{end}");
+    assert!((length - 3.0 * (2.0 * PI * 10.0).hypot(4.0)).abs() < 1e-4);
+
+    // Pitch growing linearly from 2 to 6 over 2 turns rises (2 + 6) / 2 * 2 = 8 mm,
+    // then a constant 6 mm pitch for 1 more turn reaches 14 mm.
+    let mut spec = base_helix();
+    spec.variable_pitch = vec![
+        HelixPitch {
+            turn: 0.0,
+            pitch: 2.0,
+        },
+        HelixPitch {
+            turn: 2.0,
+            pitch: 6.0,
+        },
+        HelixPitch {
+            turn: 3.0,
+            pitch: 6.0,
+        },
+    ];
+    let (end, _) = helix_end(spec.clone());
+    assert!((end - DVec3::new(10.0, 0.0, 14.0)).length() < 1e-6, "{end}");
+
+    // Rows out of order are rejected.
+    spec.variable_pitch.swap(1, 2);
+    let mut doc = Document::new();
+    let helix = doc.add(FeatureKind::Helix(spec));
+    assert!(Model::new(doc).status(helix).unwrap().error.is_some());
 }

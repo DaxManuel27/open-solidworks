@@ -261,6 +261,16 @@ impl Naming {
     }
 }
 
+/// A short stable hash (FNV-1a, 32 bits as hex) identifying content.
+pub(crate) fn content_hash(bytes: &[u8]) -> String {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in bytes {
+        h ^= u64::from(*b);
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{:08x}", (h ^ (h >> 32)) as u32)
+}
+
 /// Append `~k` to names that occur more than once, ordered by `order`.
 fn number_duplicates(names: &mut [String], order: impl Fn(usize) -> (i64, i64, i64)) {
     let mut groups: BTreeMap<String, Vec<usize>> = BTreeMap::new();

@@ -68,6 +68,18 @@ fn ts(node: &Value, indent: &str) -> String {
     if let Some(Value::Array(values)) = o.get("enum") {
         return values.iter().map(literal).collect::<Vec<_>>().join(" | ");
     }
+    // A flattened tagged enum can carry common fields alongside its union.
+    // Preserve these fields (for example spatial entity IDs and construction).
+    if o.contains_key("properties") && (o.contains_key("oneOf") || o.contains_key("anyOf")) {
+        let mut union = o.clone();
+        union.remove("properties");
+        union.remove("required");
+        return format!(
+            "({}) & {}",
+            ts(&Value::Object(union), indent),
+            object(o, indent)
+        );
+    }
     for key in ["oneOf", "anyOf"] {
         if let Some(Value::Array(branches)) = o.get(key) {
             let inner = format!("{indent}  ");

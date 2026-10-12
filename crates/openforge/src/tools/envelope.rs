@@ -137,14 +137,23 @@ fn changes_material(kind: &FeatureKind) -> bool {
     matches!(
         kind,
         Extrude(_)
+            | Dome(_)
+            | Rib(_)
+            | Thread(_)
+            | Wrap(of_model::Wrap {
+                mode: of_model::WrapMode::Emboss | of_model::WrapMode::Deboss,
+                ..
+            })
             | Revolve(_)
             | Sweep(_)
             | Loft(_)
+            | Boundary(_)
             | Hole(_)
             | Shell(_)
             | Fillet(_)
             | Chamfer(_)
             | VariableFillet(_)
+            | FaceFillet(_)
             | Draft(_)
             | LinearPattern(_)
             | CircularPattern(_)
@@ -364,13 +373,24 @@ pub fn call(
         Err(e) => Some(tool_error(e)),
         Ok(_) => {
             if let Some((id, message)) = feature_errors.iter().next() {
-                Some(ToolError {
-                    code: ErrorCode::RebuildFailed,
-                    message: format!("{} failed to rebuild: {message}", name(*id)),
-                    path: None,
-                    allowed: None,
-                    feature: Some(*id),
-                    repair: ErrorCode::RebuildFailed.repair().into(),
+                Some(if message == of_model::CUT_REMOVES_NOTHING {
+                    ToolError {
+                        code: ErrorCode::NoEffect,
+                        message: format!("{} {NO_EFFECT}", name(*id)),
+                        path: None,
+                        allowed: None,
+                        feature: Some(*id),
+                        repair: ErrorCode::NoEffect.repair().into(),
+                    }
+                } else {
+                    ToolError {
+                        code: ErrorCode::RebuildFailed,
+                        message: format!("{} failed to rebuild: {message}", name(*id)),
+                        path: None,
+                        allowed: None,
+                        feature: Some(*id),
+                        repair: ErrorCode::RebuildFailed.repair().into(),
+                    }
                 })
             } else {
                 idle.first().map(|id| ToolError {

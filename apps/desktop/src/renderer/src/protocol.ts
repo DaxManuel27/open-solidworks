@@ -29,6 +29,17 @@ export type Ref =
   | { type: 'vertex'; name: string }
   | { type: 'feature'; id: number }
   | { type: 'sketch_entity'; sketch: number; entity: number }
+  | { type: 'sketch_contour'; sketch: number; entities: number[] }
+  | {
+      type: 'ordered_sketch_contour'
+      sketch: number
+      entities: number[]
+      reverse?: boolean
+      start?: number | null
+      /** Seam inside the start entity, as a fraction along it. */
+      seam?: number | null
+    }
+  | { type: 'curve_segment'; curve: number; segment: string }
 
 export interface PlaneData {
   origin: Vec3
@@ -64,7 +75,28 @@ export interface BodyView {
 }
 
 export interface Scene {
-  curves: { id: number; name: string; polylines: number[][] }[]
+  cosmetic_threads: {
+    id: number
+    name: string
+    body: string | null
+    hidden: boolean
+    polylines: number[][]
+    error: string | null
+    parameters: Record<string, unknown>
+  }[]
+  sketches3d: {
+    id: number
+    name: string
+    polylines: number[][]
+    sketch: import('./viewport/spatial-state').SpatialSketch
+    report: import('./viewport/spatial-state').SpatialReport
+  }[]
+  curves: {
+    id: number
+    name: string
+    polylines: number[][]
+    segments: { reference: Extract<Ref, { type: 'curve_segment' }>; polylines: number[][] }[]
+  }[]
   bodies: BodyView[]
   body: MeshPayload | null
   bbox: { min: Vec3; max: Vec3 } | null
@@ -193,6 +225,11 @@ export interface SketchConstraint {
 }
 
 export interface SketchView {
+  contours: {
+    reference: Extract<Ref, { type: 'sketch_contour' }>
+    closed: boolean
+    ordered_entities: number[]
+  }[]
   revision: number
   id: number
   plane: PlaneData

@@ -24,6 +24,7 @@ const paths = {
   mirror: 'M12 2v20 M3 6l6 3v10l-6-3z M21 6l-6 3v10l6-3z',
   shell: 'm3 8 9-5 9 5v11l-9 3-9-3z M3 8l9 5 9-5 M12 13v9 M7 8l5-3 5 3-5 2z',
   draft: 'M4 20 8 4h8l4 16z M8 4v16 M16 4v16',
+  dome: 'M3 17a9 9 0 0 1 18 0 M3 17h18 M3 17v3h18v-3',
   rib: 'M3 3v18h18v-4H7V3z M7 7l10 10H7z',
   wrap: 'M5 5c0-4 14-4 14 0v14c0 4-14 4-14 0z M5 5c0 4 14 4 14 0 M3 12c4-4 14 4 18 0',
   intersect: 'M3 3h12v12H3z M9 9h12v12H9z M9 9h6v6H9z',

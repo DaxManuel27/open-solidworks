@@ -8,6 +8,10 @@ license.workspace = true
 repository.workspace = true
 links = "occt"
 
+[features]
+# Compiled geometry experiments, excluded from the production bridge by default.
+kernel-probes = []
+
 [dependencies]
 cxx = "1.0"
 

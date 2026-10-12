@@ -48,6 +48,12 @@ Current implementation and remaining work: [Phase 1 status](phase-1-status.md).
 
 Phase 2: [implementation plan](phase-2-plan.md) and [current status](phase-2-status.md).
 
+Current priority, 2026-10-10: finish Phase 2 using the
+[remaining implementation sequence](phase-2-remaining-plan.md). The owner has deferred
+AI assistant development until Phase 2 completion and a separate decision to resume it.
+Keep the existing implementation and offline regressions; new CAD features continue
+to use the shared core and existing tool contracts.
+
 AI direction, revised 2026-10-10: a conversational assistant built into the desktop,
 with ChatGPT subscription, API-key and local-model connections. Setup and current
 implementation limits are documented in [the assistant guide](assistant.md). See the [AI implementation plan](ai-implementation-plan.md)

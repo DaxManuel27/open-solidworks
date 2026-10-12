@@ -45,7 +45,7 @@ export interface SketcherHost {
   status(text: string): void
   /** Ask for a dimension value at a screen position; resolves to mm/rad or null. */
   askValue(x: number, y: number, initial: number, angle: boolean): Promise<number | null>
-  /** Convert a picked model edge (for Convert Entities). */
+  /** Convert a picked model edge, or every loop of a picked face (Convert Entities). */
   convertAt(clientX: number, clientY: number): void
   filletRadius(): number
   polygonSides(): number

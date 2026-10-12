@@ -49,7 +49,7 @@ function hiddenTopology(scene: Scene): Record<Kind, Set<number>> {
 export interface HighlightSet {
   hover: Pick | null
   selected: Pick[]
-  aux: { kind: Kind; index: number }[]
+  aux: Pick[]
 }
 
 const STD_PLANES: { ref: Ref; name: string; plane: PlaneData }[] = [
@@ -96,7 +96,7 @@ export class Engine {
   readonly overlayGroup = new THREE.Group()
   private highlightGroup = new THREE.Group()
   private stdPlaneMeshes: { mesh: THREE.Mesh; ref: Ref }[] = []
-  private datumMeshes: { object: THREE.Object3D; id: number }[] = []
+  private datumMeshes: { object: THREE.Object3D; id: number; ref?: Ref; curve?: boolean }[] = []
   private bounds = new THREE.Box3(new THREE.Vector3(-50, -50, -50), new THREE.Vector3(50, 50, 50))
   private raycaster = new THREE.Raycaster()
   private frame = 0
@@ -227,6 +227,7 @@ export class Engine {
 
   setScene(scene: Scene | null): void {
     this.clearBody()
+    this.disposeThreadLines(this.datumGroup)
     this.datumGroup.clear()
     this.datumMeshes = []
     this.sketchGroup.clear()
@@ -242,17 +243,33 @@ export class Engine {
     if (scene.body)
       this.body = this.uploadBody(scene.body, this.bodyGroup, false, hiddenTopology(scene))
     for (const d of scene.datums) this.addDatum(d.id, d.geometry)
-    for (const curve of scene.curves) {
-      const group = new THREE.Group()
-      for (const polyline of curve.polylines) {
-        const geometry = new THREE.BufferGeometry().setAttribute(
-          'position',
-          new THREE.Float32BufferAttribute(polyline, 3),
-        )
-        group.add(new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: COLORS.sketch })))
+    for (const curve of [
+      ...scene.curves,
+      ...scene.sketches3d.map((s) => ({ ...s, segments: [] })),
+    ]) {
+      const addCurves = (polylines: number[][], ref?: Ref) => {
+        const group = new THREE.Group()
+        for (const polyline of polylines) {
+          const geometry = new THREE.BufferGeometry().setAttribute(
+            'position',
+            new THREE.Float32BufferAttribute(polyline, 3),
+          )
+          group.add(new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: COLORS.sketch })))
+        }
+        this.datumGroup.add(group)
+        this.datumMeshes.push({ object: group, id: curve.id, ref, curve: true })
       }
-      this.datumGroup.add(group)
-      this.datumMeshes.push({ object: group, id: curve.id })
+      const segments = curve.segments ?? []
+      for (const segment of segments) addCurves(segment.polylines, segment.reference)
+      // Preserve display and whole-curve picking for pieces without unique provenance.
+      if (
+        segments.reduce((n, segment) => n + segment.polylines.length, 0) !== curve.polylines.length
+      )
+        addCurves(curve.polylines)
+    }
+    for (const annotation of scene.cosmetic_threads ?? []) {
+      if (annotation.hidden) continue
+      this.addThreadLines(annotation.polylines, this.datumGroup)
     }
     for (const s of scene.sketches) {
       const m = new THREE.LineBasicMaterial({ color: COLORS.sketch })
@@ -269,9 +286,13 @@ export class Engine {
   }
 
   setPreview(scene: Scene | null): void {
+    this.disposeThreadLines(this.previewGroup)
     this.previewGroup.traverse((o) => (o as THREE.Mesh).geometry?.dispose())
     this.previewGroup.clear()
     if (scene?.body) this.uploadBody(scene.body, this.previewGroup, true, hiddenTopology(scene))
+    for (const annotation of scene?.cosmetic_threads ?? []) {
+      if (!annotation.hidden) this.addThreadLines(annotation.polylines, this.previewGroup)
+    }
     // Dim the real body so the preview reads clearly.
     if (this.body) {
       const m = this.body.materials[0] as THREE.MeshStandardMaterial
@@ -287,6 +308,30 @@ export class Engine {
     this.showStdPlanes = v
     this.planeGroup.visible = v
     this.requestRender()
+  }
+
+  private disposeThreadLines(group: THREE.Group): void {
+    group.traverse((object) => {
+      if (object.userData.cosmeticThread && object instanceof THREE.Line) {
+        object.geometry.dispose()
+        const materials = Array.isArray(object.material) ? object.material : [object.material]
+        for (const material of materials) material.dispose()
+      }
+    })
+  }
+
+  private addThreadLines(polylines: number[][], group: THREE.Group): void {
+    for (const polyline of polylines) {
+      const geometry = new THREE.BufferGeometry().setAttribute(
+        'position',
+        new THREE.Float32BufferAttribute(polyline, 3),
+      )
+      const material = new THREE.LineBasicMaterial({ color: 0xc78d36, depthTest: false })
+      const line = new THREE.Line(geometry, material)
+      line.renderOrder = 4
+      line.userData.cosmeticThread = true
+      group.add(line)
+    }
   }
 
   private clearBody(): void {
@@ -468,6 +513,31 @@ export class Engine {
       ;(o as THREE.Mesh).geometry?.dispose()
       this.highlightGroup.remove(o)
     }
+    // Datum/curve highlighting also works when the document has no solid body.
+    const sel = [
+      ...this.highlights.selected,
+      ...this.highlights.aux,
+      ...(this.highlights.hover ? [this.highlights.hover] : []),
+    ]
+    for (const { object, id, ref, curve } of this.datumMeshes) {
+      const on = sel.some(
+        (p) =>
+          p.kind === 'datum' &&
+          p.id === id &&
+          (!p.ref || JSON.stringify(p.ref) === JSON.stringify(ref)),
+      )
+      if (curve)
+        object.traverse((child) => {
+          const material = (child as THREE.Line).material
+          if (material instanceof THREE.LineBasicMaterial)
+            material.color.set(on ? COLORS.hover : COLORS.sketch)
+        })
+      else setOpacity(object, on ? 0.35 : 0.12)
+    }
+    for (const { mesh, ref } of this.stdPlaneMeshes) {
+      const on = sel.some((p) => p.kind === 'std_plane' && p.ref.type === ref.type)
+      setOpacity(mesh, on ? 0.35 : 0.12)
+    }
     const b = this.body
     if (!b) {
       this.requestRender()
@@ -536,19 +606,6 @@ export class Engine {
       )
       pm.renderOrder = 11
       this.highlightGroup.add(pm)
-    }
-    // Datum and standard plane highlights.
-    const sel = [
-      ...this.highlights.selected,
-      ...(this.highlights.hover ? [this.highlights.hover] : []),
-    ]
-    for (const { object, id } of this.datumMeshes) {
-      const on = sel.some((p) => p.kind === 'datum' && p.id === id)
-      setOpacity(object, on ? 0.35 : 0.12)
-    }
-    for (const { mesh, ref } of this.stdPlaneMeshes) {
-      const on = sel.some((p) => p.kind === 'std_plane' && p.ref.type === ref.type)
-      setOpacity(mesh, on ? 0.35 : 0.12)
     }
     this.requestRender()
   }
@@ -671,7 +728,7 @@ export class Engine {
         const d = this.datumMeshes.find(
           (x) => x.object === hit.object || x.object.children.includes(hit.object),
         )
-        if (d) return { kind: 'datum', id: d.id }
+        if (d) return { kind: 'datum', id: d.id, ...(d.ref ? { ref: d.ref } : {}) }
       }
     }
     if (kinds.includes('std_plane') && this.planeGroup.visible) {

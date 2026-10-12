@@ -1,6 +1,11 @@
 # Built-in AI assistant implementation plan
 
-Status: first implementation in progress, 2026-10-10. See [setup and implementation status](assistant.md) for delivered behavior, verification and remaining validation.
+Status: deferred by owner decision, 2026-10-10, while completing
+[Phase 2 CAD](phase-2-remaining-plan.md). Preserve the initial implementation and
+offline regressions; live-model validation and connection debugging remain unresolved.
+Resume feature/provider work only when the owner reactivates this track. The plan
+below is retained for that future work. See [setup and implementation status](assistant.md)
+for delivered behavior, verification and remaining validation.
 
 Owner decisions: users talk to an assistant inside OpenForge while modeling.
 Users can connect with an API key, use a local model, or authorize an eligible ChatGPT subscription (added by owner request). External MCP clients are

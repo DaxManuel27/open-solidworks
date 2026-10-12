@@ -9,13 +9,15 @@ const temporary = mkdtempSync(join(tmpdir(), 'openforge-assistant-tests-'))
 const desktop = createRequire(resolve('apps/desktop/package.json'))
 const joseURL = pathToFileURL(desktop.resolve('jose')).href
 const { SignJWT, generateKeyPair, exportJWK, createLocalJWKSet } = await import(joseURL)
-function compile(name) {
+function compile(name, imports = {}) {
   const source = readFileSync(`apps/desktop/src/main/assistant/${name}.ts`, 'utf8')
-  const code = ts
+  let code = ts
     .transpileModule(source, {
       compilerOptions: { target: ts.ScriptTarget.ES2023, module: ts.ModuleKind.ESNext },
     })
     .outputText.replace("from 'jose'", `from ${JSON.stringify(joseURL)}`)
+  for (const [from, to] of Object.entries(imports))
+    code = code.replace(`from '${from}'`, `from ${JSON.stringify(to)}`)
   const path = join(temporary, `${name}.mjs`)
   writeFileSync(path, code)
   return import(pathToFileURL(path).href)
@@ -107,6 +109,10 @@ try {
   assert.equal(result.calls[0].name, 'part_info')
   assert.equal(sent.store, false)
   assert.equal(sent.stream, true)
+  assert.ok(
+    !('tool_choice' in sent),
+    'ordinary requests must still allow plain-text answers and clarification',
+  )
   assert.equal(sent.tools[0].type, 'namespace')
   assert.ok(!('max_output_tokens' in sent))
   await model(
@@ -124,6 +130,82 @@ try {
     /before completion/,
   )
   await assert.rejects(model('chatgpt', sse([{ type: 'response.failed' }])), /did not complete/)
+  // Exercise the actual coordinator check, including the outgoing Responses request.
+  // Supply fixture credentials in memory; no user settings or subscription is accessed.
+  const fixtureSettings = join(temporary, 'fixture-settings.mjs')
+  writeFileSync(
+    fixtureSettings,
+    `export const connection=()=>({settings:{provider:'chatgpt',model:'gpt-6.1-sol',endpoint:'http://127.0.0.1:11434',rememberKey:false},key:'fixture'}); export const connectionKey=async()=> 'fixture';`,
+  )
+  const { AssistantCoordinator } = await compile('coordinator', {
+    './provider': pathToFileURL(join(temporary, 'provider.mjs')).href,
+    './settings': pathToFileURL(fixtureSettings).href,
+  })
+  let probeMode = 'correct',
+    probes = 0
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, 'https://api.openai.com/v1/responses')
+    const body = JSON.parse(options.body)
+    probes++
+    assert.equal(body.model, 'gpt-6.1-sol')
+    assert.equal(
+      body.tool_choice,
+      'required',
+      'the connection check must require an actual tool call',
+    )
+    assert.equal(body.store, false)
+    assert.equal(body.stream, true)
+    assert.equal(body.tools.length, 1)
+    assert.equal(body.tools[0].type, 'namespace')
+    assert.equal(body.tools[0].tools.length, 1)
+    assert.equal(body.tools[0].tools[0].name, 'connection_check')
+    const nonce = body.input[0].content.split('nonce: ')[1]
+    assert.match(nonce, /^[a-f0-9-]{36}$/)
+    if (probeMode === 'http') return new Response(null, { status: 401 })
+    const output =
+      probeMode === 'text'
+        ? []
+        : [
+            {
+              type: 'function_call',
+              call_id: 'probe',
+              namespace: 'cad',
+              name: probeMode === 'wrong-name' ? 'part_info' : 'connection_check',
+              arguments: JSON.stringify({
+                nonce: probeMode === 'wrong-value' ? 'incorrect' : nonce,
+              }),
+            },
+          ]
+    return new Response(
+      sse([{ type: 'response.completed', response: { status: 'completed', output } }]),
+    )
+  }
+  const coordinator = new AssistantCoordinator(
+    async () => {
+      throw new Error('Connection check must not call the CAD core')
+    },
+    () => {},
+  )
+  assert.equal(await coordinator.test(), 'Connected. Tool calling works.')
+  for (const mode of ['text', 'wrong-name', 'wrong-value']) {
+    probeMode = mode
+    await assert.rejects(coordinator.test(), (error) => {
+      assert.match(error.message, /gpt-6.1-sol/)
+      assert.match(error.message, mode === 'text' ? /without calling/ : /did not match/)
+      assert.ok(!error.message.includes('Select a model with tool support'))
+      return true
+    })
+    coordinator.assertIdle()
+  }
+  probeMode = 'http'
+  await assert.rejects(coordinator.test(), /Reconnect your account/)
+  assert.equal(
+    probes,
+    5,
+    'do not automatically repeat requests that consume subscription allowance',
+  )
+  probeMode = 'correct'
+  assert.equal(await coordinator.test(), 'Connected. Tool calling works.')
   const { ChatGPTAuth, verifyIdentity } = await compile('chatgpt-auth')
   const { publicKey, privateKey } = await generateKeyPair('RS256')
   const keys = createLocalJWKSet({ keys: [await exportJWK(publicKey)] })

@@ -118,17 +118,25 @@ run `cargo run -p openforge -- generate` instead. -->
 
 | `type` | Fields | Notes |
 | --- | --- | --- |
-| `split_line` | `source`, `target`, `direction`, `scope?` | Split a face along a curve projected onto it. |
-| `draft` | `faces`, `neutral_plane`, `angle`, `direction?`, `scope?` | Taper faces by `angle` about a neutral plane. |
-| `variable_fillet` | `edge`, `stations`, `reverse?`, `scope?` | Fillet one edge with radii varying between stations. |
-| `helix` | `plane`, `radius`, `pitch`, `turns`, `left_handed?`, `scope?`, `start_angle?` | A helical construction curve, usable as a sweep path. |
+| `dome` | `face`, `height`, `elliptical?`, `inward?`, `scope?` | Replace a planar circular disk face with an exact spherical cap. |
+| `rib` | `sketch`, `thickness`, `direction?`, `draft?`, `flip?`, `scope?`, `side?` | A thin web from an open sketch, extended until it meets material. |
+| `wrap` | `sketch`, `face`, `depth?`, `mode?`, `scope?` | Wrap closed sketch regions onto a cylindrical face: emboss, deboss or scribe. |
+| `cosmetic_thread` | `face`, `diameter`, `pitch`, `length`, `internal?`, `left_handed?`, `reverse?`, `scope?`, `start_angle?`, `start_offset?` | Persistent thread annotation on a cylindrical face; does not change geometry. |
+| `thread` | `face`, `diameter`, `pitch`, `length`, `internal?`, `left_handed?`, `reverse?`, `scope?`, `start_angle?`, `start_offset?` | A modeled ISO-profile thread cut into a cylindrical face. |
+| `sketch3d` | `next_id`, `constraints?`, `entities?`, `scope?` | A constrained spatial sketch, with independent XYZ points and curves. |
+| `split_line` | `target`, `direction`, `mode?`, `scope?`, `source?` | Split a face along a curve projected onto it. |
+| `draft` | `neutral_plane`, `angle`, `direction?`, `faces?`, `other_side?`, `parting_line?`, `scope?`, `step?` | Taper faces by `angle` about a neutral plane. |
+| `variable_fillet` | `edge`, `stations`, `reverse?`, `scope?`, `straight?` | Fillet one edge with radii varying between stations. |
+| `face_fillet` | `faces1`, `faces2`, `radius`, `scope?` | Blend two sets of planar faces with a rolling-ball radius. |
+| `helix` | `plane`, `radius`, `pitch`, `turns`, `defined_by?`, `height?`, `left_handed?`, `scope?`, `start_angle?`, `variable_pitch?` | A helical construction curve, usable as a sweep path. |
 | `composite_curve` | `segments`, `scope?` | Join connected curves into one path. |
-| `projected_curve` | `source`, `target`, `direction`, `scope?` | Project a sketch or curve onto a face along `direction`. |
-| `sweep` | `profile`, `path`, `cut?`, `merge?`, `orientation?`, `reverse_path?`, `scope?` | Sweep a closed profile along a path; `cut` removes material. |
-| `loft` | `profiles`, `cut?`, `merge?`, `reversed?`, `ruled?`, `scope?` | Loft through two or more closed profiles in order. |
+| `projected_curve` | `target`, `direction`, `mode?`, `scope?`, `source?` | Project a sketch or curve onto a face along `direction`. |
+| `sweep` | `path`, `circle_diameter?`, `cut?`, `guide?`, `guide2?`, `guide_scale?`, `inner_profiles?`, `merge?`, `orientation?`, `profile?`, `reverse_path?`, `scope?`, `thin?`, `twist?` | Sweep a closed profile along a path; `cut` removes material. |
+| `loft` | `profiles`, `centerline?`, `closed?`, `cut?`, `end?`, `guides?`, `merge?`, `reversed?`, `ruled?`, `scope?`, `start?` | Loft through two or more closed profiles in order. |
+| `boundary` | `sections`, `curves`, `cut?`, `merge?`, `scope?` | A solid bounded by sections in one direction and crossing curves in the other. |
 | `combine` | `bodies`, `operation`, `scope?` | Boolean of bodies: fuse, cut (from the first) or common. |
 | `move_body` | `bodies`, `copy?`, `origin?`, `rotation?`, `scope?`, `translation?` | Move, rotate or copy bodies. |
-| `split_body` | `bodies`, `plane`, `keep?`, `scope?` | Split bodies with a plane. |
+| `split_body` | `bodies`, `keep?`, `plane?`, `retained_pieces?`, `scope?`, `tools?` | Split bodies with a plane. |
 | `plane` | `mode`, `reference`, `distance`, `flip?`, `scope?` | Parallel to a plane or planar face, `distance` along its normal. |
 | `plane` | `mode`, `reference`, `axis`, `angle`, `scope?` | Through a line, at `angle` to a plane. |
 | `plane` | `mode`, `points`, `scope?` | Through three points. |
@@ -148,7 +156,7 @@ run `cargo run -p openforge -- generate` instead. -->
 | `fillet` | `radius`, `edges?`, `faces?`, `scope?` | Round edges, or every edge of the given faces, with a constant radius. |
 | `chamfer` | `mode`, `edges?`, `faces?`, `flip?`, `scope?` | Bevel edges, or every edge of the given faces. |
 | `shell` | `thickness`, `faces?`, `outward?`, `scope?` | Hollow the part to `thickness`, removing the given faces. |
-| `hole` | `sketch`, `kind`, `standard`, `size`, `end`, `cbore_depth_override?`, `cbore_diameter_override?`, `csink_angle_override?`, `csink_diameter_override?`, `diameter_override?`, `fit?`, `reverse?`, `scope?` | Standard holes at each standalone point of a sketch. |
+| `hole` | `sketch`, `kind`, `standard`, `size`, `end`, `cbore_depth_override?`, `cbore_diameter_override?`, `cosmetic_thread?`, `csink_angle_override?`, `csink_diameter_override?`, `diameter_override?`, `fit?`, `reverse?`, `scope?` | Standard holes at each standalone point of a sketch. |
 | `linear_pattern` | `features`, `direction1`, `direction2?`, `scope?` | Repeat features along one or two directions. |
 | `circular_pattern` | `features`, `axis`, `count`, `angle`, `equal_spacing?`, `reverse?`, `scope?` | Repeat features around an axis. |
 | `mirror` | `plane`, `features?`, `scope?` | Mirror features, or the whole body, about a plane. |
@@ -236,18 +244,21 @@ run `cargo run -p openforge -- generate` instead. -->
 | `get_feature` | `doc.feature` | read | `id`, `detail?` |
 | `topology` | `doc.topology` | read | `detail?` |
 | `get_sketch` | `sketch.get` | read | `id`, `detail?` |
+| `solve_spatial_sketch` | `sketch3d.solve` | read | `sketch`, `detail?`, `drag?` |
 | `measure` | `measure` | read | `refs`, `detail?` |
 | `mass_properties` | `mass_properties` | read | `detail?` |
 | `new_sketch` | `sketch.new` | edit (draft) | `plane`, `detail?` |
 | `edit_sketch` | `sketch.edit` | edit (draft) | `id`, `op`, `detail?` |
 | `close_sketch` | `sketch.close` | edit (draft) | `detail?` |
-| `add_feature` | `feature.add` | edit (draft) | `feature`, `detail?`, `name?` |
-| `update_feature` | `feature.update` | edit (draft) | `id`, `feature`, `detail?` |
+| `add_feature` | `feature.add` | edit (draft) | `feature`, `detail?`, `formulas?`, `name?` |
+| `update_feature` | `feature.update` | edit (draft) | `id`, `feature`, `detail?`, `formulas?` |
 | `delete_features` | `feature.delete` | edit (draft) | `ids`, `detail?` |
 | `set_parameter` | `parameter.set` | edit (draft) | `key`, `value`, `detail?` |
-| `set_equations` | `equations.set` | edit (draft) | `variables`, `equations`, `detail?` |
+| `set_equations` | `equations.set` | edit (draft) | `variables`, `equations`, `configuration?`, `detail?`, `parameters?`, `revision?` |
+| `locate_reference` | `ref.locate` | read | `reference`, `detail?` |
+| `evaluate_formula` | `equations.evaluate` | read | `expression`, `detail?` |
 | `create_configuration` | `configuration.create` | edit (draft) | `name`, `copy_from?`, `detail?` |
-| `update_configuration` | `configuration.update` | edit (draft) | `configuration`, `detail?` |
+| `update_configuration` | `configuration.update` | edit (draft) | `configuration`, `detail?`, `revision?` |
 | `activate_configuration` | `configuration.activate` | edit (draft) | `id`, `detail?` |
 | `delete_configuration` | `configuration.delete` | edit (draft) | `id`, `detail?` |
 | `body_display` | `body.display` | edit (draft) | `id`, `detail?`, `hidden?`, `name?` |
@@ -285,7 +296,7 @@ run `cargo run -p openforge -- generate` instead. -->
 | `mirror` | `ids`, `about` | Mirror entities about line `about`. |
 | `fillet` | `point`, `radius` | Round the corner at `point` where two lines meet. |
 | `construction` | `ids`, `construction` | Toggle construction geometry. |
-| `convert` | `refs` | Project model edges into the sketch. |
+| `convert` | `refs` | Project model edges into the sketch; a face converts all of its edge loops. |
 
 #### Sketch relations and dimensions (`constraint`)
 
@@ -329,6 +340,9 @@ run `cargo run -p openforge -- generate` instead. -->
 | `vertex` | `name` | A vertex by stable name, from `doc.topology`. |
 | `feature` | `id` | A reference plane, axis, point, coordinate system or sketch. |
 | `sketch_entity` | `sketch`, `entity` | A point or line in a sketch. |
+| `curve_segment` | `curve`, `segment` | A generated segment with an unambiguous source-derived identity from the scene. |
+| `ordered_sketch_contour` | `sketch`, `entities`, `reverse?`, `seam?`, `start?` | A complete contour with explicit direction and start/seam entity. |
+| `sketch_contour` | `sketch`, `entities` | One complete sketch loop or open chain, identified by its member entity IDs rather than a contour array index. Order does not affect identity. |
 
 <!-- /generated:tools -->
 

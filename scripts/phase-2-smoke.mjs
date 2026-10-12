@@ -1,9 +1,29 @@
+import { advancedFeatureSmoke } from './phase-2-advanced-smoke.mjs'
 import assert from 'node:assert/strict'
+import { domeSmoke } from './phase-2-dome-smoke.mjs'
+import { phase2CosmeticThreadSmoke } from './phase-2-cosmetic-thread-smoke.mjs'
+import { phase2EquationSmoke } from './phase-2-equation-smoke.mjs'
+import { phase2SpatialSmoke } from './phase-2-spatial-smoke.mjs'
 import { copyFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { generalSplitSmoke } from './phase-2-split-smoke.mjs'
 
 /** Exercises actual React controls and the preload/core boundary. */
-export async function phase2Smoke({ js, call, click, wait, enabled, root, part }) {
+export async function phase2Smoke(context) {
+  const { js } = context
+  // These scenarios change documents through core calls, which the renderer's
+  // dirty flag doesn't see, then reopen saved files. A real confirm() would block
+  // the renderer, so accept discard prompts until they finish.
+  await js(`window.__phase2Confirm = window.confirm; window.confirm = () => true; void 0`)
+  try {
+    await phase2Scenarios(context)
+  } finally {
+    await js(`window.confirm = window.__phase2Confirm; void 0`)
+  }
+}
+
+async function phase2Scenarios({ js, call, click, wait, enabled, root, part, sendInput }) {
+  console.log('Phase 2 smoke: bodies, curves and contours')
   const input = async (selector, value) => {
     await js(`(() => {
       const element = document.querySelector(${JSON.stringify(selector)});
@@ -144,4 +164,132 @@ export async function phase2Smoke({ js, call, click, wait, enabled, root, part }
     originalIds,
   )
   assert.deepEqual(await js('window.__smokeErrors'), [], 'renderer errors after phase 2')
+
+  // Use a saved fixture so the real Open workflow refreshes the renderer before
+  // exercising the contour picker. All paths remain inside the smoke temp dir.
+  await call('doc.new')
+  const profile = (await call('sketch.new', { plane: { type: 'front_plane' } })).id
+  await call('sketch.edit', {
+    id: profile,
+    op: { op: 'add_circle', center: { at: [0, 0] }, radius: 2 },
+  })
+  await call('sketch.edit', {
+    id: profile,
+    op: { op: 'add_circle', center: { at: [0, 0] }, radius: 1 },
+  })
+  await call('sketch.close')
+  const path = (await call('sketch.new', { plane: { type: 'top_plane' } })).id
+  await call('sketch.edit', {
+    id: path,
+    op: { op: 'add_line', a: { at: [20, 0] }, b: { at: [20, -5] } },
+  })
+  const selected = await call('sketch.edit', {
+    id: path,
+    op: { op: 'add_line', a: { at: [0, 0] }, b: { at: [0, -10] } },
+  })
+  const selectedContour = selected.contours.find((c) =>
+    c.reference.entities.includes(selected.created[0]),
+  )
+  const reference = {
+    ...selectedContour.reference,
+    type: 'ordered_sketch_contour',
+    start: selectedContour.ordered_entities[0],
+    reverse: false,
+  }
+  const profileContours = (await call('sketch.get', { id: profile })).contours
+  const profileContour = profileContours[0]
+  const hole = {
+    sketch: profile,
+    entities: profileContours[1].reference.entities,
+    start: profileContours[1].ordered_entities[0],
+    reverse: false,
+  }
+  const selectedProfile = {
+    sketch: profile,
+    entities: profileContour.reference.entities,
+    start: profileContour.ordered_entities[0],
+    reverse: false,
+  }
+  await call('sketch.close')
+  await call('doc.save', { path: part })
+  await click('Open')
+  await wait(
+    () => js(`document.querySelectorAll('.tree-item[draggable="true"]').length === 2`),
+    'contour fixture opened',
+  )
+  await click('Features')
+  await enabled('sweep')
+  await click('Swept Boss/Base')
+  await choose('Profile sketch', String(profile))
+  await wait(
+    () =>
+      js(
+        `[...document.querySelectorAll('.panel option')].some(o => o.textContent.includes('Closed loop 1'))`,
+      ),
+    'profile contours loaded',
+  )
+  await choose('Closed profile contour', selectedProfile.entities.join(','))
+  await wait(
+    () =>
+      js(
+        `[...document.querySelectorAll('.panel label')].some(l => l.textContent.trim() === 'Inner contour 1')`,
+      ),
+    'profile holes available',
+  )
+  await js(
+    `(() => { const label = [...document.querySelectorAll('.panel label')].find(l => l.textContent.trim() === 'Inner contour 1'); label.querySelector('input').click(); })()`,
+  )
+  await choose('Sketch or curve', String(path))
+  await wait(
+    () =>
+      js(
+        `[...document.querySelectorAll('.panel option')].some(o => o.textContent.includes('Open chain 2'))`,
+      ),
+    'path contours loaded',
+  )
+  await choose('Path contour', reference.entities.join(','))
+  await accept()
+  const checkContour = async () => {
+    const snapshot = await call('doc.info')
+    const sweep = snapshot.features.find((f) => f.type === 'sweep')
+    assert.deepEqual(sweep.params.path, reference)
+    assert.deepEqual(sweep.params.profile, selectedProfile)
+    assert.deepEqual(sweep.params.inner_profiles, [hole])
+    assert.equal(sweep.error, null)
+    assert.ok(Math.abs((await mass()).volume - 30 * Math.PI) < 1e-5)
+  }
+  await checkContour()
+  await click('Undo')
+  await wait(
+    async () => !(await call('doc.info')).features.some((f) => f.type === 'sweep'),
+    'contour sweep undone',
+  )
+  await click('Redo')
+  await wait(
+    async () => (await call('doc.info')).features.some((f) => f.type === 'sweep'),
+    'contour sweep redone',
+  )
+  await checkContour()
+  await click('Save')
+  await wait(async () => !(await call('doc.info')).dirty, 'contour sweep saved')
+  const contourRevision = (await call('doc.info')).revision
+  await click('Open')
+  await wait(async () => {
+    const snapshot = await call('doc.info')
+    return !snapshot.dirty && snapshot.revision > contourRevision
+  }, 'contour sweep reopened')
+  await checkContour()
+  assert.deepEqual(await js('window.__smokeErrors'), [], 'renderer errors after contour selection')
+  console.log('Phase 2 smoke: generalSplitSmoke')
+  await generalSplitSmoke({ js, call, click, wait, enabled, part })
+  console.log('Phase 2 smoke: phase2EquationSmoke')
+  await phase2EquationSmoke({ js, call, click, wait, enabled, root, part })
+  console.log('Phase 2 smoke: phase2SpatialSmoke')
+  await phase2SpatialSmoke({ js, call, click, wait, enabled, part, sendInput })
+  console.log('Phase 2 smoke: domeSmoke')
+  await domeSmoke({ js, call, click, wait, enabled, part })
+  console.log('Phase 2 smoke: phase2CosmeticThreadSmoke')
+  await phase2CosmeticThreadSmoke({ js, call, click, wait, enabled, root, part })
+  console.log('Phase 2 smoke: advancedFeatureSmoke')
+  await advancedFeatureSmoke({ js, call, click, wait, enabled, part })
 }

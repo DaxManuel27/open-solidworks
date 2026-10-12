@@ -4,6 +4,8 @@ import { type PanelType, useStore } from './store'
 
 const ICONS: Record<string, string> = {
   sketch: '✎',
+  sketch3d: '✎',
+  cosmetic_thread: '〰',
   plane: '▱',
   axis: '┆',
   point: '•',
@@ -38,7 +40,16 @@ export function panelFor(f: FeatureView): PanelType | null {
       return f.params['cut'] ? 'sweep_cut' : 'sweep'
     case 'loft':
       return f.params['cut'] ? 'loft_cut' : 'loft'
+    case 'boundary':
+      return f.params['cut'] ? 'boundary_cut' : 'boundary'
+    case 'cosmetic_thread':
+    case 'sketch3d':
     case 'draft':
+    case 'dome':
+    case 'rib':
+    case 'thread':
+    case 'face_fillet':
+    case 'wrap':
     case 'variable_fillet':
     case 'helix':
     case 'composite_curve':

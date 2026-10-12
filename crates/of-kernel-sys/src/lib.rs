@@ -5,6 +5,9 @@
 //! their 0-based index in the shape's indexed map, which is stable for a given
 //! shape and shared by every function here.
 
+#[cfg(feature = "kernel-probes")]
+pub mod probes;
+
 #[cxx::bridge(namespace = "ofk")]
 pub mod ffi {
     #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -153,6 +156,17 @@ pub mod ffi {
             start: f64,
             left: bool,
         ) -> Result<UniquePtr<Shape>>;
+        /// A helix whose pitch varies linearly in turn count between rows.
+        fn make_helix_law(
+            frame: &Frame,
+            radius: f64,
+            turns: &[f64],
+            pitches: &[f64],
+            start: f64,
+            left: bool,
+        ) -> Result<UniquePtr<Shape>>;
+        /// The edges where two shapes meet, as a compound.
+        fn section(a: &Shape, b: &Shape) -> Result<UniquePtr<Shape>>;
         fn project_wire(wire: &Shape, target: &Shape, direction: &Vec3)
         -> Result<UniquePtr<Shape>>;
         fn split_face(
@@ -171,6 +185,7 @@ pub mod ffi {
         fn loft(
             profiles: &Shape,
             ruled: bool,
+            preserve_correspondence: bool,
             hist: &mut Vec<HistoryEntry>,
         ) -> Result<UniquePtr<Shape>>;
         fn half_space(face: &Shape, inside: &Vec3) -> Result<UniquePtr<Shape>>;
@@ -187,6 +202,104 @@ pub mod ffi {
         fn split_plane(
             s: &Shape,
             plane: &Frame,
+            hist: &mut Vec<HistoryEntry>,
+        ) -> Result<UniquePtr<Shape>>;
+        fn plane_face(plane: &Frame) -> Result<UniquePtr<Shape>>;
+        fn split_tools(
+            s: &Shape,
+            tools: &Shape,
+            hist: &mut Vec<HistoryEntry>,
+        ) -> Result<UniquePtr<Shape>>;
+        fn face_orientation(s: &Shape, face: u32) -> Result<i8>;
+        /// Closed sketch regions mapped by arc length onto a cylindrical face.
+        fn wrap_faces(
+            body: &Shape,
+            face: u32,
+            frame: &Frame,
+            curves: &[Curve],
+            loop_sizes: &[u32],
+            face_loops: &[u32],
+        ) -> Result<UniquePtr<Shape>>;
+        /// A solid through closed sections (compound of wires, in order) and
+        /// direction-2 curves crossing them, patched cell by cell.
+        fn boundary(
+            sections: &Shape,
+            guides: &Shape,
+            hist: &mut Vec<HistoryEntry>,
+        ) -> Result<UniquePtr<Shape>>;
+        /// A solid skinned through closed sections (compound of wires, in order)
+        /// with optional end tangents: mode 0 free, 1 normal to the end section
+        /// (pointing into the loft), 2 along `dir`; `weight` scales the tangent.
+        /// Without `preserve`, edges are matched and aligned first.
+        #[allow(clippy::too_many_arguments)]
+        fn skin(
+            sections: &Shape,
+            preserve: bool,
+            start_mode: u8,
+            start_dir: &Vec3,
+            start_weight: f64,
+            end_mode: u8,
+            end_dir: &Vec3,
+            end_weight: f64,
+            hist: &mut Vec<HistoryEntry>,
+        ) -> Result<UniquePtr<Shape>>;
+        /// Sweep a closed profile along a tangent-continuous open path so the
+        /// points where guide curves cross each plane normal to the path keep
+        /// their place on the section: one guide rotates it (and with `scale`
+        /// scales it uniformly), two guides stretch it. `guide2` may be null.
+        fn sweep_scaled(
+            profile: &Shape,
+            path: &Shape,
+            guide1: &Shape,
+            guide2: &Shape,
+            scale: bool,
+            hist: &mut Vec<HistoryEntry>,
+        ) -> Result<UniquePtr<Shape>>;
+        /// A loft whose sections blend along a centerline (a connected wire)
+        /// crossing each section's plane in order.
+        fn loft_centerline(
+            sections: &Shape,
+            centerline: &Shape,
+            hist: &mut Vec<HistoryEntry>,
+        ) -> Result<UniquePtr<Shape>>;
+        /// The material an ISO-profile thread removes from a cylinder of `radius`.
+        /// The frame's origin is the thread start on the axis, its normal the
+        /// direction of advance and its x direction the start phase.
+        fn thread_tool(
+            frame: &Frame,
+            radius: f64,
+            pitch: f64,
+            length: f64,
+            left: bool,
+            internal: bool,
+        ) -> Result<UniquePtr<Shape>>;
+        /// The start point, start tangent (as `normal`) and a perpendicular of a path.
+        fn wire_start(path: &Shape) -> Result<Frame>;
+        /// Sweep with the section's rotation set by an auxiliary curve: `guide`
+        /// when it is not null, otherwise a synthesized curve turning `twist`
+        /// radians about the path relative to a rotation-minimizing frame.
+        fn sweep_aux(
+            profile: &Shape,
+            path: &Shape,
+            guide: &Shape,
+            twist: f64,
+            hist: &mut Vec<HistoryEntry>,
+        ) -> Result<UniquePtr<Shape>>;
+        /// Wrapped faces thickened radially outward (emboss) or inward (deboss).
+        fn wrap_solid(faces: &Shape, depth: f64, outward: bool) -> Result<UniquePtr<Shape>>;
+        /// Half an ellipsoid of revolution on a circular disk, tangent to the disk normal at the rim.
+        fn dome_elliptical(
+            s: &Shape,
+            face: u32,
+            height: f64,
+            inward: bool,
+            hist: &mut Vec<HistoryEntry>,
+        ) -> Result<UniquePtr<Shape>>;
+        fn dome(
+            s: &Shape,
+            face: u32,
+            height: f64,
+            inward: bool,
             hist: &mut Vec<HistoryEntry>,
         ) -> Result<UniquePtr<Shape>>;
         fn revol(
@@ -213,6 +326,15 @@ pub mod ffi {
             s: &Shape,
             edge: u32,
             stations: &[f64],
+            straight: bool,
+            hist: &mut Vec<HistoryEntry>,
+        ) -> Result<UniquePtr<Shape>>;
+        fn draft_planes(
+            s: &Shape,
+            faces: &[u32],
+            planes: &[Frame],
+            direction: &Vec3,
+            angle: f64,
             hist: &mut Vec<HistoryEntry>,
         ) -> Result<UniquePtr<Shape>>;
         fn draft(

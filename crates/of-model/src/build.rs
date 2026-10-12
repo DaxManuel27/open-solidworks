@@ -49,6 +49,10 @@ pub(crate) struct Tool {
 /// The model after some prefix of the feature tree.
 #[derive(Debug, Clone, Default)]
 pub struct State {
+    pub cosmetic_threads: HashMap<FeatureId, crate::CosmeticThread>,
+    /// Cosmetic threads of tapped holes, per hole feature.
+    pub hole_threads: HashMap<FeatureId, Vec<crate::cosmetic_thread::HoleThread>>,
+    pub sketches3d: HashMap<FeatureId, (of_sketch::spatial::Sketch3D, SolveReport)>,
     pub curves: HashMap<FeatureId, crate::curves::CurveBody>,
     pub bodies: Vec<crate::SolidBody>,
     /// Derived aggregate cache for legacy feature operations and whole-part I/O.
@@ -80,6 +84,12 @@ pub struct Model {
     states: Vec<State>,
     statuses: Vec<FeatureStatus>,
     empty: State,
+    /// The effective definition (after equations and the active configuration)
+    /// and any equation error that `states[i]` was built from. A state is reused
+    /// only while its input and every earlier input are unchanged.
+    inputs: Vec<(Feature, Option<String>)>,
+    /// Features built since the model was created, for cache diagnostics.
+    builds: usize,
 }
 
 impl Model {
@@ -89,24 +99,60 @@ impl Model {
             states: Vec::new(),
             statuses: Vec::new(),
             empty: State::default(),
+            inputs: Vec::new(),
+            builds: 0,
         };
         m.rebuild();
         m
     }
 
-    /// Forget cached results from feature `index` on.
+    /// Forget cached results from feature `index` on. Rebuilding also discards
+    /// any earlier state whose effective definition changed, such as a feature
+    /// driven by an equation on the edited one.
     pub fn invalidate_from(&mut self, index: usize) {
-        // A changed authored parameter may drive an earlier feature. Until a
-        // reverse dependency cache is available, rebuild every equation consumer.
-        let index = if self.doc.equations.is_empty()
-            && self.doc.configurations == crate::configurations::Configurations::default()
-        {
-            index
-        } else {
-            0
-        };
         self.states.truncate(index);
         self.statuses.truncate(index);
+        self.inputs.truncate(index);
+    }
+
+    /// How many features have been built since this model was created.
+    pub fn build_count(&self) -> usize {
+        self.builds
+    }
+
+    /// Drop cached states from the first one whose effective input changed.
+    fn sync_cache(&mut self, evaluation: &crate::equations::Evaluation) {
+        let features = &evaluation.document.features;
+        let changed = self
+            .inputs
+            .iter()
+            .enumerate()
+            .find(|(i, (feature, error))| {
+                features.get(*i).is_none_or(|current| {
+                    current != feature || evaluation.errors.get(&current.id) != error.as_ref()
+                })
+            })
+            .map(|(i, _)| i);
+        if let Some(i) = changed {
+            self.invalidate_from(i);
+        }
+    }
+
+    /// Build feature `i` on top of the cached states and cache the result.
+    fn build_next(&mut self, evaluation: &mut crate::equations::Evaluation) {
+        let i = self.states.len();
+        let prev = if i == 0 {
+            State::default()
+        } else {
+            self.states[i - 1].clone()
+        };
+        let input = evaluation.document.features[i].clone();
+        let error = evaluation.errors.get(&input.id).cloned();
+        let (state, status) = evaluated_feature(evaluation, i, prev);
+        self.builds += 1;
+        self.states.push(state);
+        self.statuses.push(status);
+        self.inputs.push((input, error));
     }
 
     /// Forget cached results from a feature on.
@@ -128,21 +174,33 @@ impl Model {
     pub fn rebuild(&mut self) {
         let end = self.active_len();
         let mut evaluation = crate::equations::effective(&self.doc);
+        self.sync_cache(&evaluation);
         while self.states.len() < end {
             let i = self.states.len();
-            let prev = if i == 0 {
-                State::default()
-            } else {
-                self.states[i - 1].clone()
-            };
-            let (state, status) = evaluated_feature(&mut evaluation, i, prev);
+            self.build_next(&mut evaluation);
             if self.doc.equations.is_empty()
                 && self.doc.configurations == crate::configurations::Configurations::default()
             {
                 self.doc.features[i].kind = evaluation.document.features[i].kind.clone();
             }
-            self.states.push(state);
-            self.statuses.push(status);
+        }
+        // An annotation follows its referenced cylinder through later body
+        // operations. Surface removal or trimming must not leave a stale glyph.
+        let annotation_errors: Vec<_> = self
+            .state()
+            .cosmetic_threads
+            .iter()
+            .map(|(id, thread)| {
+                (
+                    *id,
+                    crate::cosmetic_thread::annotation(thread, self.state()).err(),
+                )
+            })
+            .collect();
+        for (id, error) in annotation_errors {
+            if let Some(status) = self.statuses.iter_mut().find(|status| status.id == id) {
+                status.error = error;
+            }
         }
     }
 
@@ -168,16 +226,9 @@ impl Model {
             return &self.empty;
         };
         let mut evaluation = crate::equations::effective(&self.doc);
+        self.sync_cache(&evaluation);
         while self.states.len() < i {
-            let k = self.states.len();
-            let prev = if k == 0 {
-                State::default()
-            } else {
-                self.states[k - 1].clone()
-            };
-            let (state, status) = evaluated_feature(&mut evaluation, k, prev);
-            self.states.push(state);
-            self.statuses.push(status);
+            self.build_next(&mut evaluation);
         }
         if i == 0 {
             &self.empty
@@ -232,7 +283,9 @@ impl Model {
             None => self.state().clone(),
         };
         let mut state = prev.clone();
-        let id = editing.unwrap_or(FeatureId::MAX);
+        // A preview must expose the same persistent body/piece/curve identities
+        // as its eventual commit. No ID is consumed; callers guard stale revisions.
+        let id = editing.unwrap_or(self.doc.next_id);
         build_scoped(id, kind, scope, &prev, &mut state)?;
         Ok(state)
     }
@@ -304,6 +357,20 @@ fn build_feature(doc: &mut Document, index: usize, prev: State) -> (State, Featu
     }
     let mut state = prev.clone();
     let result: RResult<()> = match &f.kind {
+        FeatureKind::Sketch3d(s) => match build_spatial(&prev, s) {
+            Ok((sketch, report)) => {
+                let failed = report.status == of_sketch::SolveStatus::Failed;
+                status.sketch = Some(report.clone());
+                state.sketches3d.insert(f.id, (sketch.clone(), report));
+                if failed {
+                    Err("the 3D sketch can't be solved; check its conflicting relations".into())
+                } else {
+                    doc.features[index].kind = FeatureKind::Sketch3d(sketch);
+                    Ok(())
+                }
+            }
+            Err(e) => Err(e),
+        },
         FeatureKind::Sketch(s) => match build_sketch(&prev, s) {
             Ok((plane, sketch, report)) => {
                 // Keep the solved geometry in the document.
@@ -326,7 +393,7 @@ fn build_feature(doc: &mut Document, index: usize, prev: State) -> (State, Featu
     if let Err(e) = result {
         status.error = Some(e);
         // A failed sketch still shows (and can be fixed); other features are skipped.
-        if !matches!(f.kind, FeatureKind::Sketch(_)) {
+        if !matches!(f.kind, FeatureKind::Sketch(_) | FeatureKind::Sketch3d(_)) {
             state = prev;
         }
     }
@@ -346,10 +413,16 @@ fn build_scoped(
     if !matches!(
         kind,
         FeatureKind::Extrude(_)
+            | FeatureKind::Dome(_)
+            | FeatureKind::Rib(_)
+            | FeatureKind::Thread(_)
+            | FeatureKind::Wrap(_)
             | FeatureKind::Draft(_)
             | FeatureKind::VariableFillet(_)
+            | FeatureKind::FaceFillet(_)
             | FeatureKind::Sweep(_)
             | FeatureKind::Loft(_)
+            | FeatureKind::Boundary(_)
             | FeatureKind::Revolve(_)
             | FeatureKind::Fillet(_)
             | FeatureKind::Chamfer(_)
@@ -385,21 +458,30 @@ fn build_scoped(
 
 /// Build any feature except a sketch onto `state`.
 fn build_kind(id: FeatureId, kind: &FeatureKind, prev: &State, state: &mut State) -> RResult<()> {
-    let curve = match kind {
-        FeatureKind::Helix(p) => Some(crate::curves::helix(p, prev)?),
-        FeatureKind::CompositeCurve(p) => Some(crate::curves::composite(p, prev)?),
-        FeatureKind::ProjectedCurve(p) => Some(crate::curves::projected(p, prev)?),
-        _ => None,
-    };
-    if let Some(shape) = curve {
-        state.curves.insert(id, crate::curves::CurveBody { shape });
+    if let Some(curve) = crate::curves::generated(kind, prev)? {
+        state.curves.insert(id, curve);
         return Ok(());
     }
     let datum = match kind {
+        FeatureKind::CosmeticThread(thread) => {
+            crate::cosmetic_thread::annotation(thread, prev)?;
+            state.cosmetic_threads.insert(id, thread.clone());
+            return Ok(());
+        }
         FeatureKind::Plane(p) => build_plane(prev, p)?,
         FeatureKind::Axis(a) => build_axis(prev, a)?,
         FeatureKind::Point(p) => build_point(prev, p)?,
         FeatureKind::CoordSys(c) => build_coord_sys(prev, c)?,
+        FeatureKind::Sketch3d(s) => {
+            let (sketch, report) = build_spatial(prev, s)?;
+            if report.status == of_sketch::SolveStatus::Failed {
+                return Err(
+                    "the 3D sketch can't be solved; check its conflicting relations".into(),
+                );
+            }
+            state.sketches3d.insert(id, (sketch, report));
+            return Ok(());
+        }
         FeatureKind::Sketch(s) => {
             let (plane, sketch, _) = build_sketch(prev, s)?;
             state.sketches.insert(id, (plane, sketch));
@@ -414,6 +496,59 @@ fn build_kind(id: FeatureId, kind: &FeatureKind, prev: &State, state: &mut State
         }
     };
     state.datums.insert(id, datum);
+    Ok(())
+}
+
+fn build_spatial(
+    prev: &State,
+    s: &of_sketch::spatial::Sketch3D,
+) -> RResult<(of_sketch::spatial::Sketch3D, SolveReport)> {
+    let mut sketch = s.clone();
+    update_spatial_external(prev, &mut sketch)?;
+    let report = sketch.solve(None)?;
+    Ok((sketch, report))
+}
+
+/// Move associative fixed points and workplanes to their model references.
+fn update_spatial_external(prev: &State, sketch: &mut of_sketch::spatial::Sketch3D) -> RResult<()> {
+    use of_sketch::spatial::Relation3;
+    for constraint in &mut sketch.constraints {
+        let Some(text) = &constraint.external else {
+            continue;
+        };
+        let reference: Ref = serde_json::from_str(text)
+            .map_err(|_| format!("relation {} has an invalid model reference", constraint.id))?;
+        let missing = |_| {
+            format!(
+                "the model geometry that relation {} follows no longer exists",
+                constraint.id
+            )
+        };
+        let resolved = resolve(prev, &reference).map_err(missing)?;
+        match &mut constraint.relation {
+            Relation3::Fixed { at, .. } => {
+                *at = resolved.point().map_err(|_| {
+                    format!("relation {} must follow a vertex or point", constraint.id)
+                })?;
+            }
+            Relation3::PointOnPlane { origin, normal, .. } => {
+                let plane = resolved.plane().map_err(|_| {
+                    format!(
+                        "relation {} must follow a plane or planar face",
+                        constraint.id
+                    )
+                })?;
+                *origin = plane.origin;
+                *normal = plane.normal;
+            }
+            _ => {
+                return Err(format!(
+                    "only fixed and point-on-plane relations can follow model geometry (relation {})",
+                    constraint.id
+                ));
+            }
+        }
+    }
     Ok(())
 }
 

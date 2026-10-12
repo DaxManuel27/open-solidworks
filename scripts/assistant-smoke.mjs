@@ -31,6 +31,7 @@ export async function assistantSmoke({ js, call, click, wait }) {
         }) + '\n',
       )
     } catch (e) {
+      console.error('Fixture rejected model request:', e)
       res.writeHead(500).end(String(e))
     }
   })
@@ -139,6 +140,64 @@ export async function assistantSmoke({ js, call, click, wait }) {
       async () => Math.abs((await call('mass_properties')).volume - 12000) < 0.01,
       'dimension edit undone',
     )
+    // A through-hole built on an inspected face remains editable.
+    let top, holeSketch
+    steps = [
+      tool('topology', {}),
+      (body) => {
+        top = last(body).faces.find((f) => f.normal[2] > 0.99)
+        assert.ok(top)
+        return [['new_sketch', { plane: top.ref }]]
+      },
+      (body) => {
+        const result = last(body)
+        holeSketch = result.id
+        const p = result.sketch.plane,
+          d = top.centroid.map((v, i) => v - p.origin[i]),
+          x = p.x_dir,
+          n = p.normal
+        const y = [n[1] * x[2] - n[2] * x[1], n[2] * x[0] - n[0] * x[2], n[0] * x[1] - n[1] * x[0]]
+        const at = [
+          d.reduce((sum, v, i) => sum + v * x[i], 0),
+          d.reduce((sum, v, i) => sum + v * y[i], 0),
+        ]
+        return [
+          ['edit_sketch', { id: holeSketch, op: { op: 'add_circle', center: { at }, radius: 5 } }],
+        ]
+      },
+      tool('close_sketch', {}),
+      () => [
+        [
+          'add_feature',
+          {
+            feature: {
+              type: 'extrude',
+              sketch: holeSketch,
+              cut: true,
+              reverse: true,
+              end1: { type: 'through_all' },
+            },
+          },
+        ],
+      ],
+      tool('mass_properties', {}),
+      (body) => {
+        assert.ok(Math.abs(last(body).volume - (12000 - Math.PI * 25 * 5)) < 0.01)
+        return [
+          ['finish_task', { summary: 'Added a centered 10 mm through-hole.', preview_only: false }],
+        ]
+      },
+    ]
+    await send('Add a centered 10 mm through-hole on the top face.')
+    await done()
+    assert.equal(steps.length, 0)
+    assert.equal((await call('doc.info')).features.length, 4)
+    await send('Undo the last change')
+    await done()
+    await wait(
+      async () => Math.abs((await call('mass_properties')).volume - 12000) < 0.01,
+      'prompt undo restored plate',
+    )
     // Stop while a model request is waiting: no changes or history entries.
     paused = true
     arrived = false
@@ -171,9 +230,19 @@ export async function assistantSmoke({ js, call, click, wait }) {
       ),
       'ask mode excludes mutations',
     )
+    const savedGeneration = (await call('doc.info')).generation
+    await click('Save')
+    await wait(async () => !(await call('doc.info')).dirty, 'assistant part saved')
+    await click('Open')
+    await wait(
+      async () => (await call('doc.info')).generation !== savedGeneration,
+      'assistant part reopened',
+    )
+    assert.equal((await call('doc.info')).features.length, 2)
+    assert.ok(Math.abs((await call('mass_properties')).volume - 12000) < 0.01)
     assert.deepEqual(await js('window.__smokeErrors'), [])
     console.log(
-      'Assistant desktop smoke passed: ChatGPT UI, plate, parameter edit, preview/discard/apply, grouped undo, read-only tools, cancellation and stale-task protection.',
+      'Assistant desktop smoke passed: ChatGPT UI, plate, face hole, parameter edit, save/reopen, preview/discard/apply, grouped undo, read-only tools, cancellation and stale-task protection.',
     )
   } finally {
     server.closeAllConnections()

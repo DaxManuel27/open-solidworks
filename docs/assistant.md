@@ -1,5 +1,11 @@
 # Built-in assistant
 
+Development is deferred by owner decision on 2026-10-10 while
+[Phase 2 CAD is completed](phase-2-remaining-plan.md). The existing implementation
+remains available, but the reported ChatGPT tool-check failure has not been verified
+as resolved. Setup instructions below describe the current implementation, not a
+completed live-provider qualification.
+
 Open **AI Assistant → Settings** in the desktop. Choose one connection:
 
 - **ChatGPT subscription**: choose **Continue with ChatGPT**, authorize OpenForge in
@@ -42,6 +48,9 @@ features rebuild; it cannot establish that a model interpreted every instruction
 correctly. Check dimensions and the resulting part.
 
 ## Verification
+
+The Rust suite, Clippy, formatting, ESLint, TypeScript, desktop build, OAuth/provider
+fixtures and complete native desktop smoke passed on 2026-10-10.
 
 - `cargo test`: core draft isolation, guarded/idempotent commits, invalid geometry,
   document generations and one-step undo, alongside the CAD regression suite.
