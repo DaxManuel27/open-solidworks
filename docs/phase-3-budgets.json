@@ -1,0 +1,41 @@
+{
+  "recorded_at_utc": "2026-10-12T18:30:13.714Z",
+  "machine": "Apple M3 Max, darwin arm64",
+  "build_profile": "debug",
+  "fixture": "60 stacked blocks, 176 mates, top block sliding",
+  "rule": "Each budget is three times the slowest of three runs (at least 50 ms). Scale with OPENFORGE_BUDGET_SCALE on slower machines.",
+  "budgets": {
+    "open_ms": 369,
+    "full_solve_ms": 117,
+    "drag_step_ms": 93,
+    "collision_drag_step_ms": 387,
+    "interference_ms": 316,
+    "bom_ms": 50
+  },
+  "observed": [
+    {
+      "open_ms": 112.3627919999999,
+      "full_solve_ms": 34.685459000000264,
+      "drag_step_ms": 30.83454200000051,
+      "collision_drag_step_ms": 120.44783400000233,
+      "interference_ms": 105.30879199999981,
+      "bom_ms": 2.5243330000012065
+    },
+    {
+      "open_ms": 122.95533300000534,
+      "full_solve_ms": 38.9230830000015,
+      "drag_step_ms": 30.364166999999725,
+      "collision_drag_step_ms": 128.96179100000154,
+      "interference_ms": 102.03320800000074,
+      "bom_ms": 2.5814580000005662
+    },
+    {
+      "open_ms": 113.42462499999965,
+      "full_solve_ms": 36.7635830000072,
+      "drag_step_ms": 29.020000000004075,
+      "collision_drag_step_ms": 124.92320799999288,
+      "interference_ms": 103.65029200000572,
+      "bom_ms": 2.2269999999989523
+    }
+  ]
+}

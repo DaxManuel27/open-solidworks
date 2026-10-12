@@ -403,18 +403,18 @@ A complete inventory of SOLIDWORKS functionality, grouped by area, to scope Open
 
 | Feature | What it does | OpenForge |
 | --- | --- | --- |
-| Insert components | Adds parts and subassemblies | |
-| Create assembly from part | New assembly from the open part | |
-| Move / rotate components (free drag, along entity, by delta, to XYZ) | Positions parts | |
-| Collision detection, physical dynamics, dynamic clearance | Contact-aware moving | |
-| Fix / float | Locks a component in place | |
-| Replace components | Swaps a part for another | |
-| Mirror components and opposite-hand versions | Mirrored instances | |
-| Component patterns: linear, circular, pattern driven, sketch driven, curve driven, chain | Repeats components | |
+| Insert components | Adds parts and subassemblies | ✅ Parts and subassemblies, configuration choice |
+| Create assembly from part | New assembly from the open part | ◐ New assembly, then insert the part |
+| Move / rotate components (free drag, along entity, by delta, to XYZ) | Positions parts | ✅ Including triad |
+| Collision detection, physical dynamics, dynamic clearance | Contact-aware moving | ◐ Collision detection; no physical dynamics or dynamic clearance |
+| Fix / float | Locks a component in place | ✅ |
+| Replace components | Swaps a part for another | ◐ Keeps mates that still resolve; lists the rest |
+| Mirror components and opposite-hand versions | Mirrored instances | ✅ |
+| Component patterns: linear, circular, pattern driven, sketch driven, curve driven, chain | Repeats components | ◐ All but chain |
 | Copy with mates | Duplicates with mates reapplied | |
 | Selection tools: volume select, select by size, select identical, advanced select, isolate | Finding components | |
-| Component properties and references | Per-instance settings | |
-| Subassemblies: form, dissolve, flexible, reorganize | Assembly structure | |
+| Component properties and references | Per-instance settings | ◐ Name, configuration, fixed, hidden, suppressed, BOM, flexible |
+| Subassemblies: form, dissolve, flexible, reorganize | Assembly structure | ◐ Insert rigid or flexible subassemblies |
 | Virtual components | Parts saved inside the assembly | |
 | Smart components | Components that bring features and parts with them | |
 | Envelopes | Reference-only components | |
@@ -425,28 +425,28 @@ A complete inventory of SOLIDWORKS functionality, grouped by area, to scope Open
 
 | Feature | What it does | OpenForge |
 | --- | --- | --- |
-| Standard mates: coincident, parallel, perpendicular, tangent, concentric, lock, distance, angle | Basic positioning constraints | |
-| Advanced mates: profile center, symmetric, width, path, linear/linear coupler, distance and angle limits | Advanced constraints | |
-| Mechanical mates: cam, slot, hinge, gear, rack and pinion, screw, universal joint | Motion relationships | |
+| Standard mates: coincident, parallel, perpendicular, tangent, concentric, lock, distance, angle | Basic positioning constraints | ✅ |
+| Advanced mates: profile center, symmetric, width, path, linear/linear coupler, distance and angle limits | Advanced constraints | ✅ |
+| Mechanical mates: cam, slot, hinge, gear, rack and pinion, screw, universal joint | Motion relationships | ✅ |
 | SmartMates (peg-in-hole, flange, Alt-drag) and AI fastener recognition | Automatic mates by dragging | |
-| Quick mates context toolbar | Fast mate creation | |
+| Quick mates context toolbar | Fast mate creation | ◐ Mate panel filters types to the selection |
 | Mate controller | Saved positions and animations | |
-| Mate folders, mate errors, MateXpert, replace mate entities | Managing and fixing mates | |
+| Mate folders, mate errors, MateXpert, replace mate entities | Managing and fixing mates | ◐ Mates folder, errors, conflicting set |
 | Magnetic mates and connection points | Fast layout of equipment | |
 
 ### Assembly tools
 
 | Feature | What it does | OpenForge |
 | --- | --- | --- |
-| Interference detection | Finds overlaps between parts | |
-| Clearance verification | Checks minimum gaps | |
+| Interference detection | Finds overlaps between parts | ✅ |
+| Clearance verification | Checks minimum gaps | ✅ |
 | Hole alignment | Finds misaligned holes | |
-| Exploded views (regular, radial, smart explode lines) | Exploded layouts | |
+| Exploded views (regular, radial, smart explode lines) | Exploded layouts | ◐ Regular and radial; straight explode lines |
 | Assembly features (cuts, holes, fillets, weld beads) | Features applied at assembly level | |
 | Smart fasteners | Auto-adds bolts to holes | |
 | Top-down design: in-context parts, layout sketches, external references | Designing parts inside the assembly | |
 | Assembly visualization | Sorts and colors components by property | |
-| Bill of materials in the assembly | BOM without a drawing | |
+| Bill of materials in the assembly | BOM without a drawing | ✅ Top-level, parts-only, indented; CSV |
 | Save assembly as part | Exports a single part | |
 | Large assembly mode, lightweight, SpeedPak, Large Design Review, defeature | Performance tools | |
 | Display states | Per-state visibility and appearance | |
@@ -746,7 +746,7 @@ SOLIDWORKS 2026 also adds AI-assisted features across design, PDM, simulation an
 | Part features | ◐ Extrude, cut, revolve, fillet, chamfer, shell (basic options) |
 | Patterns | ◐ Linear and circular inside a feature |
 | Surfaces, sheet metal, weldments, mold | Not started |
-| Assemblies | Not started |
+| Assemblies | ◐ Phase 3: components, all mate types, motion, patterns, mirror, interference, explode, BOM |
 | Configurations and equations | Not started |
 | Drawings | Not started |
 | Evaluate | ◐ Basic mass properties and materials |

@@ -4,7 +4,7 @@ Detailed specs for [catalog section 13](../solidworks-feature-catalog.md#13-asse
 
 An assembly (`.sldasm`) places instances of parts and subassemblies (components) and positions them with mates. Each component references its file and a configuration, and has its own transform, state and properties.
 
-**OpenForge today:** no assemblies. Everything in this section is missing. Phase plans put assemblies after Phase 2.
+**OpenForge today:** Phase 3 delivers components, subassemblies (rigid and flexible), every standard, advanced and mechanical mate listed here, move/rotate with collision detection, component patterns (all but chain), mirror components with opposite hands, interference and clearance checks, exploded views, an assembly BOM and a standard hardware library. Supported modes and limits are in [Phase 3 status](../phase-3-status.md); SmartMates, top-down design, smart components, envelopes and the large-assembly tools are deferred.
 
 ## Components
 

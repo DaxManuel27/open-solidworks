@@ -13,7 +13,9 @@
     "bench": "node scripts/bench.mjs replay reference",
     "conformance": "node scripts/catalog-conformance.mjs",
     "perf": "node scripts/phase-2-performance.mjs",
-    "perf:check": "node scripts/phase-2-performance.mjs --check"
+    "perf:check": "node scripts/phase-2-performance.mjs --check",
+    "perf:asm": "node scripts/phase-3-performance.mjs",
+    "perf:asm:check": "node scripts/phase-3-performance.mjs --check"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -48,10 +48,11 @@ Current implementation and remaining work: [Phase 1 status](phase-1-status.md).
 
 Phase 2: [implementation plan](phase-2-plan.md) and [current status](phase-2-status.md).
 
-Phase 3: [implementation plan](phase-3-plan.md).
+Phase 3: [implementation plan](phase-3-plan.md) and [current status](phase-3-status.md).
 
-Current priority, 2026-10-12: Phase 2 is merged; build Phase 3 (assemblies) on the
-`phase-3` branch following its [implementation plan](phase-3-plan.md). AI assistant
+Current priority, 2026-10-12: Phase 3 (assemblies) is implemented on `phase-3`
+([status](phase-3-status.md)); it merges into `main` once hosted CI passes and the
+owner confirms. AI assistant
 development stays deferred until a separate decision to resume it.
 Keep the existing implementation and offline regressions; new CAD features continue
 to use the shared core and existing tool contracts.

@@ -1,7 +1,8 @@
 # Phase 3 implementation plan
 
-Status: approved, 2026-10-12. Not started. Built on `phase-3`, created from `main`
-after the Phase 2 merge (see [Phase 2 status](phase-2-status.md)). The mate solver
+Status: implemented, 2026-10-12; see [Phase 3 status](phase-3-status.md) for what was
+delivered, how it was verified and the recorded limits. Built on `phase-3`, created
+from `main` after the Phase 2 merge (see [Phase 2 status](phase-2-status.md)). The mate solver
 is native Rust (`of-mate`), by owner decision on 2026-10-12.
 
 ## Goal and starting point
