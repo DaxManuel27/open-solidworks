@@ -1,7 +1,7 @@
 # Phase 2 completion plan
 
 Prepared 2026-10-10 against `phase-2` at `aaaa94d` and the current working tree.
-Status: implementation started. The [first measured checkpoint](phase-2-kernel-feasibility.md)
+Status: complete, 2026-10-12; see [Phase 2 status](phase-2-status.md). The [first measured checkpoint](phase-2-kernel-feasibility.md)
 delivers initial R0 experiments and the R1 sketch-contour path slice. The milestones
 below are not completion claims; remaining acceptance criteria still apply.
 The owner has prioritized finishing advanced part modeling and deferred the AI

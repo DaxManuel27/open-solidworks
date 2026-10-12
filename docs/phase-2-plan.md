@@ -1,9 +1,9 @@
 # Phase 2 implementation plan
 
-Status: implementation in progress on `phase-2`, based on merged `origin/main`
-commit `8fff08d`. Prepared and started 2026-10-10. See
+Status: complete, 2026-10-12. Built on `phase-2`, based on merged `origin/main`
+commit `8fff08d`; prepared and started 2026-10-10. See
 [Phase 2 status](phase-2-status.md) for delivered checkpoints, verification and
-remaining scope. This plan's acceptance criteria have not all been met.
+the extensions left out of scope.
 
 Execution update, 2026-10-10: follow the [completion plan](phase-2-remaining-plan.md)
 for the remaining implementation sequence, dependencies and release gates. The owner
