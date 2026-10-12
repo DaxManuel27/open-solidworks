@@ -1,3 +1,80 @@
+# Handoff: Phase 3 assemblies (2026-10-12, session 5)
+
+Read this first. Earlier sections below are history.
+
+## State
+
+- Branch `phase-3`, created from `origin/main` after the Phase 2 merge (PR #3), with the
+  leftover Phase 2 docs commit `ff0bc10` merged in. No upstream is set; nothing is pushed.
+- Everything is committed (`git log main..phase-3`). The only untracked file is
+  `docs/soliworks-ui.jpeg`, which predates this work and must not be committed (clean-room
+  rule: no SolidWorks screenshots).
+- All Phase 3 milestones (P3.0–P3.8) in `docs/phase-3-plan.md` are implemented. What was
+  delivered, how it was verified and the recorded limits are in `docs/phase-3-status.md`.
+- Owner decisions: native Rust mate solver (`of-mate`) instead of OndselSolver
+  (2026-10-12); `main` only moves when a phase is complete (merge after hosted CI and the
+  owner's confirmation).
+
+## Verified locally (macOS, this tree)
+
+`cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test --workspace`
+(48 suites), `openforge generate --check`, `pnpm lint`, `format:check`, `typecheck`,
+`build`, `bench`, `test:assistant`, `conformance` (76/76), `perf:check`, `perf:asm:check`,
+and the native desktop smoke including the new assembly scenario.
+
+Hosted three-platform CI has **not** run for `phase-3`.
+
+## Next steps
+
+1. Push `phase-3` (owner's call) and run hosted CI on macOS, Windows and Linux. Things most
+   likely to need attention on other platforms:
+   - Linking the XCAF libraries added in `crates/of-kernel-sys/build.rs`
+     (`TKCDF`, `TKLCAF`, `TKCAF`, `TKXCAF`; legacy installs also `TKXDESTEP`).
+   - `assembly.cpp` uses a pimpl for `StepAssembly`/`StepRead`; MSVC should be fine.
+   - The desktop smoke now opens windows per document; Linux runs it under Xvfb.
+   - `pnpm perf:asm:check` budgets were recorded on an M3 Max (debug); CI scales by 4.
+2. Record the CI run in `docs/phase-3-status.md` (section "Hosted CI").
+3. With the owner's confirmation, merge `phase-3` into `main` and push; then branch `phase-4`
+   (Drawings) from `main`.
+
+## Where things live
+
+| Area              | Files                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Mate solver       | `crates/of-mate/src/{lib,eval,solve,sparse}.rs`, tests in `crates/of-mate/tests/solve.rs`                                                                                                                                                                                                                                                                                                                                                            |
+| Assembly model    | `crates/of-assembly/src/`: `document.rs` (`.ofa` types), `file.rs`, `cache.rs` (part loading, hashes), `assembly.rs` (instances, bodies, `CompRef` resolution, solve, insert/delete), `mates.rs` (mate kinds → solver terms, captured values), `patterns.rs` (patterns, mirrors, opposite hands), `analysis.rs` (interference, clearance, collision drag, mass), `explode.rs`, `bom.rs`, `hardware.rs`, `exchange.rs` (STEP structure export/import) |
+| Kernel            | `crates/of-kernel-sys/cpp/assembly.cpp` (located shapes, common volume, XCAF writer/reader), wrappers in `crates/of-geom/src/assembly.rs`                                                                                                                                                                                                                                                                                                            |
+| Part model        | `crates/of-model/src/properties.rs` (custom properties, part file v4); `MirrorDef.keep_original` in `features.rs`/`ops.rs`                                                                                                                                                                                                                                                                                                                           |
+| Core              | `crates/openforge/src/asm.rs` (`asm.*` methods, scene, tree); routing in `session.rs` (`Session::handle`, `asm.new`, `.ofa` open, `asm.import_step`); params in `tools/asm_params.rs`; MCP tools in `tools/mod.rs`; CLI in `main.rs`                                                                                                                                                                                                                 |
+| Desktop           | `src/main/index.ts` (window + core per document, `window:open`, `doc:saved`), `preload/`, `renderer/src/store.ts` (assembly state, `asmPick`, `asmMove`, `adoptAssembly`), `AssemblyTree.tsx`, `viewport/assembly-view.ts` (instancing, picking, triad), `viewport/move-state.ts`, `panels/{mates,assembly,asm-common}.tsx`, ribbon in `toolbars/{commands,layout}.ts`                                                                               |
+| Tests and tooling | `crates/of-assembly/tests/{assembly,mechanisms,tools,hardware}.rs`, `crates/openforge/tests/assembly.rs`, `scripts/assembly-smoke.mjs`, `scripts/phase-3-performance.mjs` (+ `docs/phase-3-budgets.json`), area 13 checks in `scripts/catalog-conformance.mjs`                                                                                                                                                                                       |
+
+## How it fits together
+
+- An assembly component is a solver body; flexible subassembly children are bodies too
+  (fixed children are locked to their subassembly). Rigid subassemblies are one body.
+- Mates store values captured when they are made (`Captured`: alignment sign, side,
+  lock relative pose, reference vectors, coupler phase and unwrapped motions) so later
+  solves never flip or jump. `Assembly::add_mate` refuses a mate that can't be satisfied
+  and names the conflicting mates.
+- Pattern and mirror instances have keys like `2@p5.1` / `2@m6`; mates may reference them
+  (treated as fixed during a solve, solved twice).
+- The desktop gets one mesh per part (`parts`, keyed by path#hash#configuration) and
+  instance transforms; `asm.move` with `phase: "move"` returns transforms only.
+- `window.__openforgeStore` exposes the renderer store for the smoke test and DevTools.
+
+## Gotchas
+
+- `pnpm` is not on PATH here; use `corepack enable --install-directory <scratch>/tools` and
+  prepend that directory to PATH (nested `pnpm -r` scripts need it).
+- Protocol and scene version are 4; the desktop refuses other cores.
+- Empty maps/lists in assembly JSON are omitted (`skip_serializing_if`); renderer types
+  mark them optional (a missing `explode` crashed the tree once).
+- Data exchange in OCCT prints to stdout, which carries JSON-RPC: every reader/writer must
+  remove the console printers first (`quiet()` in `ofk.cpp`, `quiet_step()` in `assembly.cpp`).
+- Collision detection samples the drag path; budgets for `collision_drag_step_ms` assume
+  the 60-component fixture.
+
 # Handoff: Phase 2 continuation (2026-10-12, session 4)
 
 Branch `phase-2`, nothing committed. Earlier sections below are history.

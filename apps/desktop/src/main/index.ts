@@ -6,6 +6,7 @@ import {
   dialog,
   ipcMain,
   type MenuItemConstructorOptions,
+  type WebContents,
 } from 'electron'
 import { CoreError, CoreProcess, findCore } from './core'
 import { chatGPT, chatGPTState, openChatGPTUsage, cancelChatGPTSignIn } from './assistant/chatgpt'
@@ -13,39 +14,50 @@ import { AssistantCoordinator } from './assistant/coordinator'
 import { loadSettings, publicSettings, saveSettings } from './assistant/settings'
 import type { AssistantRequest, AssistantSettings } from '../shared/assistant'
 
-let win: BrowserWindow | null = null
-let core: CoreProcess | null = null
-let dirty = false
-let closing = false
-const assistant = new AssistantCoordinator(
-  (method, params) => {
-    if (!core) return Promise.reject(new Error('The core is not running.'))
-    return core.call(method, params)
-  },
-  (event) => {
-    if (event.type === 'committed') dirty = true
-    win?.webContents.send('assistant:event', event)
-  },
-)
+/** One open document: its window and the core process that owns it. */
+interface Doc {
+  win: BrowserWindow
+  core: CoreProcess | null
+  dirty: boolean
+  closing: boolean
+  assistant: AssistantCoordinator
+  /** The document's file, once saved or opened. */
+  path: string | null
+}
+
+const docs = new Map<number, Doc>()
+let quitting = false
 
 const PART_FILTER = { name: 'OpenForge Part', extensions: ['ofp'] }
+const ASSEMBLY_FILTER = { name: 'OpenForge Assembly', extensions: ['ofa'] }
+const DOCUMENT_FILTER = { name: 'OpenForge Document', extensions: ['ofp', 'ofa'] }
 
-function startCore(): void {
+function docOf(sender: WebContents): Doc | undefined {
+  return docs.get(sender.id)
+}
+
+function startCore(doc: Doc): void {
   const path = findCore(app.getAppPath(), process.resourcesPath)
-  core = new CoreProcess(path)
+  const core = new CoreProcess(path)
+  doc.core = core
   core.onExit = (code) => {
-    if (closing) return
-    assistant.stop()
-    void assistant.discard()
-    win?.webContents.send('core:crashed', code)
+    if (doc.closing || quitting) return
+    doc.assistant.stop()
+    void doc.assistant.discard()
+    doc.win.webContents.send('core:crashed', code)
     // Restart so the user can keep working (unsaved changes are lost).
-    setTimeout(startCore, 500)
+    setTimeout(() => startCore(doc), 500)
   }
   core.start()
 }
 
+/** The window menu commands go to. */
+function target(): BrowserWindow | null {
+  return BrowserWindow.getFocusedWindow() ?? [...docs.values()][0]?.win ?? null
+}
+
 function send(command: string): void {
-  win?.webContents.send('menu', command)
+  target()?.webContents.send('menu', command)
 }
 
 function buildMenu(): void {
@@ -64,12 +76,18 @@ function buildMenu(): void {
     {
       label: 'File',
       submenu: [
-        item('New', 'new', 'CmdOrCtrl+N'),
+        item('New Part', 'new', 'CmdOrCtrl+N'),
+        item('New Assembly', 'new-assembly', 'CmdOrCtrl+Shift+N'),
+        {
+          label: 'New Window',
+          click: () => createWindow({}),
+        },
         item('Open…', 'open', 'CmdOrCtrl+O'),
         item('Save', 'save', 'CmdOrCtrl+S'),
         item('Save As…', 'save-as', 'CmdOrCtrl+Shift+S'),
         { type: 'separator' },
         item('Import STEP/IGES…', 'import'),
+        item('Import STEP as Assembly…', 'import-assembly'),
         item('Export…', 'export'),
         { type: 'separator' },
         mac ? { role: 'close' } : { role: 'quit' },
@@ -113,12 +131,14 @@ function buildMenu(): void {
         item('Mass Properties', 'mass'),
       ],
     },
+    { role: 'windowMenu' },
   ]
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
 
-function createWindow(): void {
-  win = new BrowserWindow({
+/** Open a window for a document: a file, a new assembly, or a new part. */
+function createWindow(options: { open?: string; kind?: 'part' | 'assembly' }): BrowserWindow {
+  const win = new BrowserWindow({
     width: 1440,
     height: 900,
     minWidth: 900,
@@ -132,110 +152,189 @@ function createWindow(): void {
       nodeIntegration: false,
     },
   })
+  const id = win.webContents.id
+  const doc: Doc = {
+    win,
+    core: null,
+    dirty: false,
+    closing: false,
+    path: options.open ?? null,
+    assistant: new AssistantCoordinator(
+      (method, params) => {
+        if (!doc.core) return Promise.reject(new Error('The core is not running.'))
+        return doc.core.call(method, params)
+      },
+      (event) => {
+        if (event.type === 'committed') doc.dirty = true
+        win.webContents.send('assistant:event', event)
+      },
+    ),
+  }
+  docs.set(id, doc)
+  startCore(doc)
 
   win.on('close', (event) => {
-    if (!dirty || closing) return
+    if (!doc.dirty || doc.closing || quitting) return
     event.preventDefault()
-    const choice = dialog.showMessageBoxSync(win!, {
+    const choice = dialog.showMessageBoxSync(win, {
       type: 'question',
       buttons: ['Save', "Don't Save", 'Cancel'],
       defaultId: 0,
       cancelId: 2,
-      message: 'Save changes to this part before closing?',
+      message: 'Save changes to this document before closing?',
     })
-    if (choice === 0) send('save-and-close')
+    if (choice === 0) win.webContents.send('menu', 'save-and-close')
     if (choice === 1) {
-      closing = true
-      win?.close()
+      doc.closing = true
+      win.close()
     }
   })
+  win.on('closed', () => {
+    doc.closing = true
+    doc.assistant.stop()
+    doc.core?.stop()
+    docs.delete(id)
+  })
 
+  const query: Record<string, string> = {}
+  if (options.open) query['open'] = options.open
+  if (options.kind) query['kind'] = options.kind
   const devUrl = process.env['ELECTRON_RENDERER_URL']
   if (!app.isPackaged && devUrl) {
-    void win.loadURL(devUrl)
+    const url = new URL(devUrl)
+    for (const [k, v] of Object.entries(query)) url.searchParams.set(k, v)
+    void win.loadURL(url.toString())
   } else {
-    void win.loadFile(join(__dirname, '../renderer/index.html'))
+    void win.loadFile(join(__dirname, '../renderer/index.html'), { query })
   }
+  return win
 }
 
-ipcMain.handle('core:call', async (_e, method: string, params: unknown) => {
-  if (!core) throw new Error('The core is not running.')
+ipcMain.handle('core:call', async (e, method: string, params: unknown) => {
+  const doc = docOf(e.sender)
+  if (!doc?.core) throw new Error('The core is not running.')
   try {
-    const value = await core.call(method, params)
-    assistant.changed(value as Parameters<typeof assistant.changed>[0])
+    const value = await doc.core.call(method, params)
+    doc.assistant.changed(value as Parameters<typeof doc.assistant.changed>[0])
     return { ok: true, value }
-  } catch (e) {
+  } catch (err) {
     // Errors cross the IPC boundary as values so the message survives intact.
-    const err = e as CoreError
-    return { ok: false, error: err.message, code: err.code ?? -1 }
+    const error = err as CoreError
+    return { ok: false, error: error.message, code: error.code ?? -1 }
   }
 })
 
+const assistantOf = (sender: WebContents) => {
+  const doc = docOf(sender)
+  if (!doc) throw new Error('This window has no document.')
+  return doc.assistant
+}
+
 ipcMain.handle('assistant:settings', () => publicSettings())
-ipcMain.handle('assistant:save-settings', (_e, settings: AssistantSettings, key?: string) => {
-  assistant.assertIdle()
+ipcMain.handle('assistant:save-settings', (e, settings: AssistantSettings, key?: string) => {
+  assistantOf(e.sender).assertIdle()
   return saveSettings(settings, key)
 })
-ipcMain.handle('assistant:test', () => assistant.test())
-ipcMain.handle('assistant:run', (_e, request: AssistantRequest) => assistant.run(request))
-ipcMain.handle('assistant:accept', (_e, id: string) => assistant.accept(id))
-ipcMain.handle('assistant:discard', () => assistant.discard())
+ipcMain.handle('assistant:test', (e) => assistantOf(e.sender).test())
+ipcMain.handle('assistant:run', (e, request: AssistantRequest) =>
+  assistantOf(e.sender).run(request),
+)
+ipcMain.handle('assistant:accept', (e, id: string) => assistantOf(e.sender).accept(id))
+ipcMain.handle('assistant:discard', (e) => assistantOf(e.sender).discard())
 ipcMain.handle('chatgpt:state', () => chatGPTState())
 ipcMain.handle('chatgpt:models', () => chatGPT().models())
-ipcMain.handle('chatgpt:sign-in', async (_e, id?: string) => {
-  assistant.assertIdle()
+ipcMain.handle('chatgpt:sign-in', async (e, id?: string) => {
+  assistantOf(e.sender).assertIdle()
   await chatGPT().signIn(id)
   return chatGPTState()
 })
-ipcMain.handle('chatgpt:select', (_e, id: string) => {
-  assistant.assertIdle()
+ipcMain.handle('chatgpt:select', (e, id: string) => {
+  assistantOf(e.sender).assertIdle()
   chatGPT().select(id)
   return chatGPTState()
 })
-ipcMain.handle('chatgpt:sign-out', (_e, id: string) => {
-  assistant.assertIdle()
+ipcMain.handle('chatgpt:sign-out', (e, id: string) => {
+  assistantOf(e.sender).assertIdle()
   return chatGPT().signOut(id)
 })
 ipcMain.handle('chatgpt:usage', () => openChatGPTUsage())
 ipcMain.on('chatgpt:cancel', () => chatGPT().cancel())
-ipcMain.on('assistant:stop', () => assistant.stop())
+ipcMain.on('assistant:stop', (e) => assistantOf(e.sender).stop())
 
-ipcMain.handle('dialog:open', async (_e, kind: 'part' | 'import') => {
+type OpenKind = 'part' | 'document' | 'component' | 'import' | 'step'
+ipcMain.handle('dialog:open', async (e, kind: OpenKind) => {
   const filters =
     kind === 'part'
-      ? [PART_FILTER]
-      : [{ name: 'STEP or IGES', extensions: ['step', 'stp', 'iges', 'igs'] }]
+      ? [DOCUMENT_FILTER, PART_FILTER, ASSEMBLY_FILTER]
+      : kind === 'document' || kind === 'component'
+        ? [DOCUMENT_FILTER, PART_FILTER, ASSEMBLY_FILTER]
+        : kind === 'step'
+          ? [{ name: 'STEP', extensions: ['step', 'stp'] }]
+          : [{ name: 'STEP or IGES', extensions: ['step', 'stp', 'iges', 'igs'] }]
+  const win = BrowserWindow.fromWebContents(e.sender) ?? undefined
   const r = await dialog.showOpenDialog(win!, { properties: ['openFile'], filters })
   return r.canceled ? null : (r.filePaths[0] ?? null)
 })
 
-ipcMain.handle('dialog:save', async (_e, kind: 'part' | 'export', defaultName: string) => {
+type SaveKind = 'part' | 'assembly' | 'export' | 'csv'
+ipcMain.handle('dialog:save', async (e, kind: SaveKind, defaultName: string) => {
   const filters =
     kind === 'part'
       ? [PART_FILTER]
-      : [
-          { name: 'STEP', extensions: ['step'] },
-          { name: 'STL', extensions: ['stl'] },
-          { name: 'IGES', extensions: ['iges'] },
-        ]
+      : kind === 'assembly'
+        ? [ASSEMBLY_FILTER]
+        : kind === 'csv'
+          ? [{ name: 'CSV', extensions: ['csv'] }]
+          : [
+              { name: 'STEP', extensions: ['step'] },
+              { name: 'STL', extensions: ['stl'] },
+              { name: 'IGES', extensions: ['iges'] },
+            ]
+  const win = BrowserWindow.fromWebContents(e.sender) ?? undefined
   const r = await dialog.showSaveDialog(win!, { defaultPath: defaultName, filters })
   return r.canceled ? null : (r.filePath ?? null)
 })
 
-ipcMain.on('doc:state', (_e, title: string, isDirty: boolean) => {
-  dirty = isDirty
-  win?.setTitle(title)
-  win?.setDocumentEdited(isDirty)
+ipcMain.on('doc:state', (e, title: string, isDirty: boolean, path?: string | null) => {
+  const doc = docOf(e.sender)
+  if (!doc) return
+  doc.dirty = isDirty
+  if (path !== undefined) doc.path = path
+  doc.win.setTitle(title)
+  doc.win.setDocumentEdited(isDirty)
 })
 
-ipcMain.on('window:close', () => {
-  closing = true
-  win?.close()
+// A saved file may be a part other windows' assemblies use.
+ipcMain.on('doc:saved', (e, path: string) => {
+  for (const [id, doc] of docs) {
+    if (id !== e.sender.id) doc.win.webContents.send('file:saved', path)
+  }
+})
+
+ipcMain.on('window:open', (_e, path: string) => {
+  // Bring an existing window for this file forward instead of opening it twice.
+  const same = (a: string, b: string) =>
+    process.platform === 'linux' ? a === b : a.toLowerCase() === b.toLowerCase()
+  const open = [...docs.values()].find((d) => d.path && same(d.path, path))
+  if (open) {
+    open.win.show()
+    open.win.focus()
+    return
+  }
+  createWindow({ open: path })
+})
+
+ipcMain.on('window:close', (e) => {
+  const doc = docOf(e.sender)
+  if (!doc) return
+  doc.closing = true
+  doc.win.close()
 })
 
 const primaryInstance = app.requestSingleInstanceLock()
 if (!primaryInstance) app.quit()
 app.on('second-instance', () => {
+  const win = target()
   win?.show()
   win?.focus()
 })
@@ -243,24 +342,26 @@ void app.whenReady().then(() => {
   if (!primaryInstance) return
   try {
     loadSettings()
-    startCore()
+    findCore(app.getAppPath(), process.resourcesPath)
   } catch (e) {
     dialog.showErrorBox('OpenForge', (e as Error).message)
     app.quit()
     return
   }
   buildMenu()
-  createWindow()
+  createWindow({})
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    if (BrowserWindow.getAllWindows().length === 0) createWindow({})
   })
 })
 
 app.on('before-quit', () => {
-  closing = true
+  quitting = true
   cancelChatGPTSignIn()
-  assistant.stop()
-  core?.stop()
+  for (const doc of docs.values()) {
+    doc.assistant.stop()
+    doc.core?.stop()
+  }
 })
 
 app.on('window-all-closed', () => {

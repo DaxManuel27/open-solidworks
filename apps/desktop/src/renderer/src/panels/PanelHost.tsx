@@ -22,11 +22,59 @@ import {
 } from './features'
 import { AxisPanel, CoordSysPanel, PlanePanel, PointPanel } from './reference'
 import { ExportPanel, MassPanel, MaterialPanel, MeasurePanel, UnitsPanel } from './tools'
+import {
+  AsmConfigurationsPanel,
+  AsmMassPanel,
+  AsmMeasurePanel,
+  AsmReferencePanel,
+  BomPanel,
+  ClearancePanel,
+  ComponentPatternPanel,
+  ComponentPropertiesPanel,
+  ExplodePanel,
+  HardwarePanel,
+  InsertComponentsPanel,
+  InterferencePanel,
+  MirrorComponentsPanel,
+  MovePanel,
+} from './assembly'
+import { MatePanel } from './mates'
 
 /** The PropertyManager for the open panel. Keyed so each opening starts fresh. */
 export function PanelHost({ panel }: { panel: Panel }) {
-  const key = `${panel.type}:${panel.editing ?? 'new'}:${panel.sketch ?? ''}`
+  const key = `${panel.type}:${panel.editing ?? 'new'}:${panel.sketch ?? ''}:${panel.variant ?? ''}`
   switch (panel.type) {
+    case 'asm_insert':
+      return <InsertComponentsPanel key={key} />
+    case 'hardware':
+      return <HardwarePanel key={key} />
+    case 'mate':
+      return <MatePanel key={key} panel={panel} />
+    case 'move_component':
+    case 'rotate_component':
+      return <MovePanel key={key} panel={panel} />
+    case 'component_pattern':
+      return <ComponentPatternPanel key={key} panel={panel} />
+    case 'mirror_components':
+      return <MirrorComponentsPanel key={key} panel={panel} />
+    case 'explode':
+      return <ExplodePanel key={key} />
+    case 'interference':
+      return <InterferencePanel key={key} />
+    case 'clearance':
+      return <ClearancePanel key={key} />
+    case 'bom':
+      return <BomPanel key={key} />
+    case 'component_properties':
+      return <ComponentPropertiesPanel key={key} panel={panel} />
+    case 'asm_configurations':
+      return <AsmConfigurationsPanel key={key} />
+    case 'asm_reference':
+      return <AsmReferencePanel key={key} panel={panel} />
+    case 'asm_measure':
+      return <AsmMeasurePanel key={key} />
+    case 'asm_mass':
+      return <AsmMassPanel key={key} />
     case 'dome':
       return <DomePanel key={key} panel={panel} />
     case 'thread':

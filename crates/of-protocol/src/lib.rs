@@ -8,8 +8,8 @@ use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-pub const PROTOCOL_VERSION: u32 = 3;
-pub const SCENE_VERSION: u32 = 3;
+pub const PROTOCOL_VERSION: u32 = 4;
+pub const SCENE_VERSION: u32 = 4;
 
 /// Capabilities describe implemented behavior, never planned features.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -17,6 +17,8 @@ pub struct CoreInfo {
     pub protocol_version: u32,
     pub scene_version: u32,
     pub part_file_version: u32,
+    #[serde(default)]
+    pub assembly_file_version: u32,
     pub capabilities: Vec<String>,
 }
 

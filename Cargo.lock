@@ -664,6 +664,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "of-assembly"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "of-mate",
+ "of-model",
+ "schemars",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "of-geom"
 version = "0.1.0"
 dependencies = [
@@ -690,6 +702,14 @@ version = "0.1.0"
 dependencies = [
  "cxx",
  "cxx-build",
+]
+
+[[package]]
+name = "of-mate"
+version = "0.1.0"
+dependencies = [
+ "glam 0.34.1",
+ "nalgebra",
 ]
 
 [[package]]
@@ -746,6 +766,7 @@ dependencies = [
  "anyhow",
  "clap",
  "jsonschema",
+ "of-assembly",
  "of-io",
  "of-model",
  "of-protocol",

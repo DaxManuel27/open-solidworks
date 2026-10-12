@@ -1,4 +1,4 @@
-// Checks Phase 1 and Phase 2 behaviour against the feature specs in docs/features,
+// Checks Phase 1, 2 and 3 behaviour against the feature specs in docs/features,
 // driving `openforge serve` over JSON-RPC the way the desktop and MCP clients do.
 //
 //   cargo build && pnpm conformance [filter]
@@ -1430,6 +1430,264 @@ check('20 Units', 'inch documents keep core values in millimetres', async () => 
   })
   expect(snap.units.length === 'in', 'units changed')
   near(await volume(), 8000, 1e-9, 'volume still mm3')
+})
+
+// ---- 13 Assemblies ----
+
+/** Save a part made of one sketch extruded by `depth`; returns its path. */
+async function savePart(name, ops, depth) {
+  await fresh()
+  const s = await sketch(front, ops)
+  await ok(blind(s.id, depth))
+  const path = join(tmp, `${name}.ofp`)
+  await call('doc.save', { path })
+  return path
+}
+const place = (x, y, z) => ({ translation: [x, y, z], rotation: [0, 0, 0, 1] })
+async function insert(path, at) {
+  return (await call('asm.insert', { path, ...(at ? { transform: place(...at) } : {}) })).key
+}
+/** A component face by geometry, as a component reference. */
+async function asmFace(key, pred) {
+  const f = (await call('asm.topology', { component: [key] })).faces.find(pred)
+  expect(f, `face on ${key}`)
+  return f.ref
+}
+const cyl = (r) => (f) => f.surface === 'cylinder' && Math.abs(f.radius - r) < 1e-9
+const flat = (n, at) => (f) =>
+  f.surface === 'plane' &&
+  f.normal.every((v, i) => Math.abs(v - n[i]) < 1e-9) &&
+  Math.abs(dot(f.centroid, n) - at) < 1e-6
+const translation = (snap, key) => {
+  const i = snap.scene.instances.find((x) => x.key.length === 1 && x.key[0] === key)
+  return i.transform.slice(12, 15)
+}
+const component = (snap, key) => snap.components.find((c) => c.key[0] === key)
+let plateFile, pinFile, cubeFile
+async function asmParts() {
+  plateFile ??= await savePart('c13-plate', [rect([0, 0], [100, 60]), circle([30, 30], 5)], 10)
+  pinFile ??= await savePart('c13-pin', [circle([0, 0], 5)], 40)
+  cubeFile ??= await savePart('c13-cube', [rect([0, 0], [10, 10])], 10)
+}
+/** Plate fixed at the origin with a pin seated in its hole. */
+async function pinned() {
+  await asmParts()
+  await call('asm.new')
+  const p = await insert(plateFile)
+  const s = await insert(pinFile, [70, -20, 30])
+  await call('asm.mate.add', {
+    mate: { type: 'concentric', a: await asmFace(p, cyl(5)), b: await asmFace(s, cyl(5)) },
+  })
+  await call('asm.mate.add', {
+    mate: {
+      type: 'coincident',
+      a: await asmFace(p, flat([0, 0, 1], 10)),
+      b: await asmFace(s, facing([0, 0, -1])),
+    },
+  })
+  return { p, s }
+}
+
+check(
+  '13 Insert components',
+  'the first component is fixed; files load relative to the assembly',
+  async () => {
+    await asmParts()
+    await call('asm.new')
+    const p = await insert(plateFile)
+    const c = await insert(cubeFile, [200, 0, 0])
+    let snap = await call('asm.info')
+    expect(component(snap, p).fixed && !component(snap, c).fixed, 'first fixed, second floating')
+    const file = join(tmp, 'c13-insert.ofa')
+    await call('doc.save', { path: file })
+    snap = await call('doc.open', { path: file })
+    expect(snap.kind === 'assembly' && snap.components.length === 2, 'reopened')
+    expect(
+      /itself/.test(await fails('asm.insert', { path: file })),
+      'an assembly cannot contain itself',
+    )
+  },
+)
+check(
+  '13 Standard mates',
+  'concentric then coincident leaves only rotation; conflicts are refused',
+  async () => {
+    const { p, s } = await pinned()
+    const snap = await call('asm.info')
+    expect(component(snap, s).dof === 1, `pin DOF ${component(snap, s).dof}`)
+    const t = translation(snap, s)
+    near(t[0], 30, 1e-6, 'x')
+    near(t[1], 30, 1e-6, 'y')
+    near(t[2], 10, 1e-6, 'z')
+    const error = await fails('asm.mate.add', {
+      mate: {
+        type: 'distance',
+        a: await asmFace(p, flat([0, 0, 1], 10)),
+        b: await asmFace(s, facing([0, 0, -1])),
+        distance: 5,
+      },
+    })
+    expect(/Coincident1/.test(error ?? ''), `conflict names the mate: ${error}`)
+    expect((await call('asm.info')).mates.length === 2, 'refused mate not added')
+  },
+)
+check('13 Advanced mates', 'a distance limit holds while dragging', async () => {
+  await asmParts()
+  await call('asm.new')
+  const p = await insert(plateFile)
+  const c = await insert(cubeFile, [60, 0, 12])
+  const top = await asmFace(p, flat([0, 0, 1], 10))
+  await call('asm.mate.add', {
+    mate: { type: 'coincident', a: top, b: await asmFace(c, facing([0, 0, -1])) },
+  })
+  await call('asm.mate.add', {
+    mate: {
+      type: 'distance',
+      a: await asmFace(p, flat([-1, 0, 0], 0)),
+      b: await asmFace(c, facing([-1, 0, 0])),
+      distance: 0,
+      limit: { min: 40, max: 70 },
+    },
+  })
+  const snap = await call('asm.move', {
+    component: [c],
+    motion: { mode: 'delta', translation: [100, 0, 0] },
+  })
+  near(translation(snap, c)[0], 70, 1e-4, 'stopped at the limit')
+})
+check('13 Mechanical mates', 'a gear mate turns the driven shaft by the ratio', async () => {
+  await asmParts()
+  const twin = await savePart(
+    'c13-twin',
+    [rect([0, 0], [100, 60]), circle([30, 30], 5), circle([70, 30], 5)],
+    10,
+  )
+  await call('asm.new')
+  const p = await insert(twin)
+  const a = await insert(pinFile, [30, 30, 10])
+  const b = await insert(pinFile, [70, 30, 10])
+  const holes = (await call('asm.topology', { component: [p] })).faces.filter(cyl(5))
+  const hole = (x) => holes.find((f) => Math.abs(f.centroid[0] - x) < 1e-6).ref
+  for (const [k, x] of [
+    [a, 30],
+    [b, 70],
+  ]) {
+    await call('asm.mate.add', {
+      mate: { type: 'concentric', a: hole(x), b: await asmFace(k, cyl(5)) },
+    })
+    await call('asm.mate.add', {
+      mate: {
+        type: 'coincident',
+        a: await asmFace(p, flat([0, 0, 1], 10)),
+        b: await asmFace(k, facing([0, 0, -1])),
+      },
+    })
+  }
+  await call('asm.mate.add', {
+    mate: {
+      type: 'gear',
+      a: await asmFace(a, cyl(5)),
+      b: await asmFace(b, cyl(5)),
+      ratio_a: 20,
+      ratio_b: 40,
+    },
+  })
+  for (let i = 0; i < 8; i++)
+    await call('asm.move', { component: [a], motion: { mode: 'rotate', angles: [0, 0, PI / 4] } })
+  const snap = await call('asm.info')
+  expect(snap.diagnostics.solved, 'solved after a full turn')
+  // B's X axis: after A's full turn, B has turned half a turn (ratio 20:40).
+  const tb = snap.scene.instances.find((i) => i.key[0] === b).transform
+  near(Math.abs(Math.atan2(tb[1], tb[0])), PI, 1e-3, 'driven shaft half turn')
+})
+check('13 Move component', 'collision detection stops a drag at contact', async () => {
+  const { p, s } = await pinned()
+  const c = await insert(cubeFile, [0, 25, 10])
+  await call('asm.mate.add', {
+    mate: {
+      type: 'coincident',
+      a: await asmFace(p, flat([0, 0, 1], 10)),
+      b: await asmFace(c, facing([0, 0, -1])),
+    },
+  })
+  const snap = await call('asm.move', {
+    component: [c],
+    motion: { mode: 'delta', translation: [60, 0, 0] },
+    collision: {},
+  })
+  const x = translation(snap, c)[0]
+  expect(x + 10 <= 25 + 1e-6 && x + 10 > 24, `stopped at the pin: ${x}`)
+  expect(snap.collision.components?.flat().includes(s), 'collision names the pin')
+})
+check('13 Component patterns', 'linear pattern instances follow their seed', async () => {
+  const { s } = await pinned()
+  const snap = await call('asm.pattern.add', {
+    pattern: {
+      type: 'linear',
+      direction1: { reference: { component: [], entity: right }, spacing: 25, count: 3 },
+    },
+    seeds: [s],
+  })
+  const xs = snap.scene.instances.filter((i) => i.derived !== null).map((i) => i.transform[12])
+  expect(JSON.stringify(xs.sort()) === JSON.stringify([55, 80]), `instances at ${xs}`)
+})
+check('13 Mirror components', 'a mirrored copy lands on the other side of the plane', async () => {
+  await asmParts()
+  await call('asm.new')
+  await insert(plateFile)
+  const c = await insert(cubeFile, [120, 0, 0])
+  const snap = await call('asm.mirror.add', {
+    plane: { component: [], entity: right },
+    components: [{ component: c }],
+    position: 'bounding_box',
+  })
+  const copy = snap.scene.instances.find((i) => i.derived !== null)
+  // Bounding-box center 125 mirrors to −125; the copy's box is −130..−120.
+  near(copy.transform[12], -130, 1e-6, 'mirrored corner')
+})
+check(
+  '13 Interference detection',
+  'overlap volume is reported; touching only on request',
+  async () => {
+    const { p } = await pinned()
+    const c = await insert(cubeFile, [80, 20, 5])
+    void p
+    const r = await call('asm.interference', {})
+    expect(r.interferences.length === 1, `${r.interferences.length} interferences`)
+    near(r.interferences[0].volume, 10 * 10 * 5, 1e-6, 'overlap volume')
+    const touching = await call('asm.interference', { treat_coincidence: true })
+    expect(touching.interferences.length === 2, 'the seated pin touches the plate')
+    void c
+  },
+)
+check('13 Exploded views', 'explode steps move the display, not the solved positions', async () => {
+  const { s } = await pinned()
+  const snap = await call('asm.explode.add', {
+    components: [[s]],
+    motion: { type: 'translate', direction: [0, 0, 1], distance: 50 },
+  })
+  near(translation(snap, s)[2], 60, 1e-9, 'exploded display')
+  expect(snap.scene.explode_lines.length === 1, 'explode line')
+  const back = await call('asm.explode.show', { steps: null })
+  near(translation(back, s)[2], 10, 1e-9, 'collapsed')
+  const info = await call('asm.info')
+  expect(info.diagnostics.solved && component(info, s).dof === 1, 'mates untouched')
+})
+check('13 BOM', 'rows group instances of the same file', async () => {
+  const { s } = await pinned()
+  void s
+  await insert(pinFile, [80, 40, 10])
+  const rows = (await call('asm.bom', { type: 'top_level' })).rows
+  expect(rows.length === 2, `${rows.length} rows`)
+  expect(rows.find((r) => r.part_number === 'c13-pin').quantity === 2, 'two pins')
+})
+check('19 STEP', 'assembly export keeps the product structure; import rebuilds it', async () => {
+  await pinned()
+  const step = join(tmp, 'c13.step')
+  await call('export', { path: step })
+  expect(existsSync(step) && statSync(step).size > 0, 'written')
+  const imported = await call('asm.import_step', { path: step, folder: join(tmp, 'c13-imported') })
+  expect(imported.components.length === 2, `${imported.components.length} components`)
 })
 
 // ---- run ----

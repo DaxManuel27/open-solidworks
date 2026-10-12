@@ -1,6 +1,7 @@
 //! `openforge`: the core process. The desktop app runs it as `openforge serve`;
 //! scripts and AI assistants use its CLI and MCP subcommands.
 
+mod asm;
 mod bench;
 mod mcp;
 mod session;
@@ -31,9 +32,10 @@ enum Command {
         /// Part to open at start.
         part: Option<PathBuf>,
     },
-    /// Rebuild a part and print its features, errors and mass properties.
+    /// Rebuild a part (or solve an assembly) and print its features or
+    /// components, errors and mass properties.
     Info { part: PathBuf },
-    /// Rebuild a part and export it to STEP, IGES or STL (chosen by extension).
+    /// Rebuild a part or assembly and export it to STEP, IGES or STL (chosen by extension).
     Export {
         part: PathBuf,
         output: PathBuf,
@@ -144,6 +146,37 @@ fn serve() -> anyhow::Result<()> {
 
 fn info(part: PathBuf) -> anyhow::Result<()> {
     let mut s = Session::open(part).map_err(anyhow::Error::msg)?;
+    if let Some(a) = s.assembly() {
+        let doc = a.doc();
+        let d = &a.asm.diagnostics;
+        for c in &doc.components {
+            let status = d
+                .component_errors
+                .get(&c.id.to_string())
+                .map(|e| format!("ERROR: {e}"))
+                .unwrap_or_else(|| match d.dof.get(&c.id.to_string()) {
+                    _ if c.fixed => "fixed".into(),
+                    Some(0) => "fully defined".into(),
+                    Some(n) => format!("{n} DOF"),
+                    None => "suppressed".into(),
+                });
+            println!("{:>4}  {:<24} {:<32} {status}", c.id, c.name, c.path);
+        }
+        for m in &doc.mates {
+            let status = d
+                .mate_errors
+                .get(&m.id)
+                .cloned()
+                .unwrap_or_else(|| "ok".into());
+            println!("{:>4}  {:<24} {status}", m.id, m.name);
+        }
+        if let Ok(mp) = s.handle("mass_properties", serde_json::Value::Null) {
+            println!();
+            println!("Mass    {:.4} kg", mp["mass"].as_f64().unwrap_or(0.0));
+            println!("Volume  {:.3} mm³", mp["volume"].as_f64().unwrap_or(0.0));
+        }
+        return Ok(());
+    }
     let model = s.model();
     for (f, st) in model.doc.features.iter().zip(model.statuses()) {
         let state = if st.suppressed {

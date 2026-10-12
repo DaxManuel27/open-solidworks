@@ -13,7 +13,24 @@ interface Definition {
   active?: (s: State) => boolean
   view?: boolean
 }
-const body = (s: State) => (!s.scene?.body ? 'Requires a solid body' : undefined)
+const body = (s: State) =>
+  s.assembly ? 'Open a part to use this' : !s.scene?.body ? 'Requires a solid body' : undefined
+const assemblyOnly = (s: State) =>
+  !s.assembly ? 'Requires an assembly' : s.panel ? 'Finish or cancel the current panel' : undefined
+const components = (s: State) =>
+  assemblyOnly(s) ?? (!s.assembly?.components.length ? 'Insert components first' : undefined)
+const asm = (
+  type: PanelType,
+  label: string,
+  icon: IconId,
+  needsComponents = true,
+  variant?: string,
+): Definition => ({
+  label,
+  icon,
+  run: (s) => s.openPanel({ type, variant }),
+  unavailable: needsComponents ? components : assemblyOnly,
+})
 const idlePanel = (s: State) => (s.panel ? 'Finish or cancel the current panel' : undefined)
 const part = (s: State) => idlePanel(s) ?? (s.sketch ? 'Exit the sketch first' : undefined)
 const feature = (
@@ -57,6 +74,70 @@ const placeholder = (label: string, icon: IconId): Definition => ({ label, icon 
 
 export const commands = {
   new: { label: 'New', icon: 'new', shortcut: 'Ctrl/Cmd+N', run: (s) => s.newDoc() },
+  newAssembly: {
+    label: 'New Assembly',
+    icon: 'new',
+    shortcut: 'Ctrl/Cmd+Shift+N',
+    run: (s) => s.newAssembly(),
+  },
+  importAssembly: {
+    label: 'Import STEP as Assembly',
+    icon: 'open',
+    run: (s) => s.importAssembly(),
+    unavailable: idlePanel,
+  },
+  insertComponents: asm('asm_insert', 'Insert Components', 'open', false),
+  hardware: asm('hardware', 'Hardware Library', 'hole', false),
+  mate: asm('mate', 'Mate', 'mate'),
+  advancedMate: asm('mate', 'Advanced Mates', 'mate', true, 'width'),
+  mechanicalMate: asm('mate', 'Mechanical Mates', 'mate', true, 'gear'),
+  moveComponent: asm('move_component', 'Move Component', 'move'),
+  rotateComponent: asm('rotate_component', 'Rotate Component', 'revolve'),
+  linearComponentPattern: asm(
+    'component_pattern',
+    'Linear Component Pattern',
+    'pattern',
+    true,
+    'linear',
+  ),
+  circularComponentPattern: asm(
+    'component_pattern',
+    'Circular Component Pattern',
+    'circular',
+    true,
+    'circular',
+  ),
+  patternDrivenPattern: asm(
+    'component_pattern',
+    'Pattern Driven Component Pattern',
+    'pattern',
+    true,
+    'pattern_driven',
+  ),
+  sketchDrivenPattern: asm(
+    'component_pattern',
+    'Sketch Driven Component Pattern',
+    'pattern',
+    true,
+    'sketch_driven',
+  ),
+  curveDrivenPattern: asm(
+    'component_pattern',
+    'Curve Driven Component Pattern',
+    'curve',
+    true,
+    'curve_driven',
+  ),
+  mirrorComponents: asm('mirror_components', 'Mirror Components', 'mirror'),
+  explodedView: asm('explode', 'Exploded View', 'section'),
+  interference: asm('interference', 'Interference Detection', 'intersect'),
+  clearance: asm('clearance', 'Clearance Verification', 'measure'),
+  bom: asm('bom', 'Bill of Materials', 'properties'),
+  asmPlane: asm('asm_reference', 'Plane', 'plane', false, 'plane'),
+  asmAxis: asm('asm_reference', 'Axis', 'axis', false, 'axis'),
+  asmMeasure: asm('asm_measure', 'Measure', 'measure'),
+  asmMass: asm('asm_mass', 'Mass Properties', 'mass'),
+  asmConfigurations: asm('asm_configurations', 'Configurations', 'properties', false),
   open: { label: 'Open', icon: 'open', shortcut: 'Ctrl/Cmd+O', run: (s) => s.open() },
   save: { label: 'Save', icon: 'save', shortcut: 'Ctrl/Cmd+S', run: (s) => s.save() },
   saveAs: {
@@ -65,8 +146,23 @@ export const commands = {
     shortcut: 'Ctrl/Cmd+Shift+S',
     run: (s) => s.save(true),
   },
-  import: { label: 'Import', icon: 'open', run: (s) => s.importFile(), unavailable: part },
-  export: panel('export', 'Export', 'export', true),
+  import: {
+    label: 'Import',
+    icon: 'open',
+    run: (s) => s.importFile(),
+    unavailable: (s) => (s.assembly ? 'Use Import STEP as Assembly' : part(s)),
+  },
+  export: {
+    label: 'Export',
+    icon: 'export',
+    run: (s) => s.openPanel({ type: 'export' }),
+    unavailable: (s) =>
+      s.assembly
+        ? s.assembly.components.length
+          ? idlePanel(s)
+          : 'Insert components first'
+        : (part(s) ?? body(s)),
+  },
   undo: {
     label: 'Undo',
     icon: 'undo',

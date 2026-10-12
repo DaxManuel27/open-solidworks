@@ -648,10 +648,27 @@ fn hole_wizard_and_mirror() {
     m.doc.add(FeatureKind::Mirror(MirrorDef {
         features: vec![],
         plane: Ref::RightPlane,
+        keep_original: true,
     }));
     m.rebuild();
     no_errors(&m);
     assert_close(volume(&m), 2.0 * (8000.0 - 2.0 * one), 0.1);
+
+    // Replacing the body with its mirror image keeps the volume and moves
+    // the material to the other side.
+    let before = m.state().body.as_ref().unwrap().shape.bbox().unwrap();
+    let id = m.doc.add(FeatureKind::Mirror(MirrorDef {
+        features: vec![],
+        plane: Ref::FrontPlane,
+        keep_original: false,
+    }));
+    m.rebuild();
+    no_errors(&m);
+    assert_close(volume(&m), 2.0 * (8000.0 - 2.0 * one), 0.1);
+    let after = m.state().body.as_ref().unwrap().shape.bbox().unwrap();
+    assert!((after.max.z + before.min.z).abs() < 1e-6);
+    assert!((after.min.z + before.max.z).abs() < 1e-6);
+    m.doc.delete(&[id]);
 }
 
 #[test]
@@ -996,6 +1013,7 @@ fn dressups_repeat_with_their_base_features() {
         m.doc.add(FeatureKind::Mirror(MirrorDef {
             features: vec![dressup, base],
             plane: Ref::RightPlane,
+            keep_original: true,
         }));
         m.rebuild();
         no_errors(&m);

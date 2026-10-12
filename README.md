@@ -2,8 +2,9 @@
 
 Free, open-source parametric CAD for designing real parts.
 
-> **Status: Phase 1 source alpha.** Core part modeling is implemented and locally tested.
-> See [Phase 1 status](docs/phase-1-status.md) for coverage and release validation.
+> **Status: source alpha.** Part modeling (Phases 1 and 2) and assemblies (Phase 3) are
+> implemented. See the [Phase 1](docs/phase-1-status.md), [Phase 2](docs/phase-2-status.md) and
+> [Phase 3](docs/phase-3-status.md) status pages for coverage and validation.
 > OpenForge is a working name.
 
 OpenForge is a desktop app with a Rust CAD core on top of [OpenCASCADE](https://dev.opencascade.org/),
@@ -78,7 +79,13 @@ the app finds the packaged binary or a local Cargo build.
 To make a first part, double-click **Front Plane**, draw a **Corner Rectangle**, then
 choose **Features → Extruded Boss/Base**. Enter a depth and press the green check.
 Use **File → Save** for an editable `.ofp` document and **File → Export** for STEP,
-IGES or STL. The CLI is also available with `cargo run -- --help`.
+IGES or STL.
+
+To build an assembly, choose **File → New Assembly**, then **Assembly → Insert Components**
+for each saved part (the first one is fixed at the origin). **Mate** positions components
+against each other; **Alt-drag** a component, or use its triad, to move it within its mates.
+Assemblies save as `.ofa` and export to STEP with their product structure; **File → Import
+STEP as Assembly** turns a multi-part STEP file into an assembly. The CLI is also available with `cargo run -- --help`.
 
 Validation:
 

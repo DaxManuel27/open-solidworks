@@ -28,6 +28,7 @@ pub mod materials;
 pub mod measure;
 pub mod naming;
 mod ops;
+pub mod properties;
 mod resolve;
 pub mod units;
 
@@ -375,6 +376,9 @@ pub struct Document {
     pub equations: std::collections::BTreeMap<String, String>,
     #[serde(default)]
     pub body_display: std::collections::BTreeMap<BodyId, BodyDisplay>,
+    /// Custom properties for BOMs and title blocks.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub properties: std::collections::BTreeMap<String, properties::Property>,
     pub units: Units,
     /// Material name from [`materials::LIBRARY`], or a custom density.
     #[serde(default)]
@@ -393,6 +397,7 @@ impl Default for Document {
             variables: Default::default(),
             equations: Default::default(),
             body_display: Default::default(),
+            properties: Default::default(),
             units: Units::default(),
             material: None,
             features: Vec::new(),
@@ -414,6 +419,14 @@ impl Document {
     /// Validate persistent identity before any geometry is rebuilt.
     pub fn validate(&self) -> Result<(), String> {
         self.configurations.validate()?;
+        for (name, p) in self.properties.iter().chain(
+            self.configurations
+                .items
+                .iter()
+                .flat_map(|c| c.properties.iter()),
+        ) {
+            p.validate(name)?;
+        }
         if self
             .variables
             .keys()

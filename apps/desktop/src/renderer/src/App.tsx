@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { Assistant } from './assistant/Assistant'
+import { AssemblyTree } from './AssemblyTree'
 import { CommandManager, SKETCH_KEYS, beginSketch } from './CommandManager'
 import { HeadsUpToolbar } from './toolbars/HeadsUpToolbar'
 import { FeatureTree } from './FeatureTree'
@@ -27,6 +28,10 @@ async function onMenu(command: string): Promise<void> {
   switch (command) {
     case 'new':
       return s.newDoc()
+    case 'new-assembly':
+      return s.newAssembly()
+    case 'import-assembly':
+      return s.importAssembly()
     case 'open':
       return s.open()
     case 'save':
@@ -37,7 +42,7 @@ async function onMenu(command: string): Promise<void> {
       if (await s.save()) window.openforge.closeWindow()
       return
     case 'import':
-      return s.importFile()
+      return s.assembly ? s.importAssembly() : s.importFile()
     case 'export':
       return s.exportFile()
     case 'undo':
@@ -47,9 +52,10 @@ async function onMenu(command: string): Promise<void> {
     case 'units':
       return s.openPanel({ type: 'units' })
     case 'material':
+      if (s.assembly) return s.toast('Materials belong to parts; open a part to set one', 'info')
       return s.openPanel({ type: 'material' })
     case 'mass':
-      return s.openPanel({ type: 'mass' })
+      return s.openPanel({ type: s.assembly ? 'asm_mass' : 'mass' })
   }
 }
 
@@ -66,10 +72,17 @@ export function App() {
   const status = useStore((s) => s.status)
   const busy = useStore((s) => s.busy)
   const selection = useStore((s) => s.selection)
+  const assembly = useStore((s) => s.assembly)
+  const asmComponents = useStore((s) => s.asmComponents)
 
   useEffect(() => {
     void useStore.getState().init()
     const offMenu = window.openforge.onMenu((c) => void onMenu(c))
+    // A part saved in another window may be used here.
+    const offSaved = window.openforge.onFileSaved(() => {
+      const s = useStore.getState()
+      if (s.assembly && !s.panel) void s.run('asm.reload')
+    })
     const offCrash = window.openforge.onCoreCrashed(() => {
       useStore.setState({
         sketch: null,
@@ -87,6 +100,7 @@ export function App() {
     })
     return () => {
       offMenu()
+      offSaved()
       offCrash()
     }
   }, [])
@@ -98,7 +112,7 @@ export function App() {
       const k = e.key.toLowerCase()
       if (k === 'f') s.setView('fit')
       else if (s.sketch && SKETCH_KEYS[k]) s.setSketchTool(SKETCH_KEYS[k])
-      else if (!s.sketch && !s.panel && k === 's') beginSketch()
+      else if (!s.sketch && !s.panel && !s.assembly && k === 's') beginSketch()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -116,16 +130,30 @@ export function App() {
     status ||
     (sketch
       ? `Editing ${editing?.name ?? 'sketch'}`
-      : selection.length
-        ? `${selection.length} selected`
-        : 'Ready')
+      : assembly
+        ? asmComponents.length
+          ? `${asmComponents.length} component(s) selected — Alt+drag moves a component`
+          : assembly.diagnostics.solved
+            ? 'Ready'
+            : 'Some mates cannot be satisfied'
+        : selection.length
+          ? `${selection.length} selected`
+          : 'Ready')
 
   return (
     <div className="app">
       <CommandManager />
       <div className="main">
         <aside className="sidebar">
-          {sketch ? <SketchPanel /> : panel ? <PanelHost panel={panel} /> : <FeatureTree />}
+          {sketch ? (
+            <SketchPanel />
+          ) : panel ? (
+            <PanelHost panel={panel} />
+          ) : assembly ? (
+            <AssemblyTree />
+          ) : (
+            <FeatureTree />
+          )}
         </aside>
         <div className="of-viewport">
           <Viewport />

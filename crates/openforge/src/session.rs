@@ -1,6 +1,6 @@
 //! One open part and the methods clients call on it.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use of_model::geom::{DVec2, DVec3, Kind};
 use of_model::sketch::{self as sk, Geometry, Id, Sketch, tools};
@@ -32,6 +32,8 @@ pub struct Session {
     redo: Vec<Document>,
     /// Feature being edited: the model is shown as it was just before it.
     editing: Option<FeatureId>,
+    /// The open assembly, when the document is an assembly rather than a part.
+    assembly: Option<Box<crate::asm::AsmSession>>,
 }
 
 type R = Result<Value, RpcError>;
@@ -89,10 +91,16 @@ impl Session {
             undo: Vec::new(),
             redo: Vec::new(),
             editing: None,
+            assembly: None,
         }
     }
 
     pub fn open(path: PathBuf) -> Result<Session, String> {
+        if of_assembly::file::is_assembly(&path) {
+            let mut s = Session::new();
+            s.assembly = Some(Box::new(crate::asm::AsmSession::open(&path)?));
+            return Ok(s);
+        }
         let doc = file::load(&path)?;
         let mut s = Session::new();
         s.model = Model::new(doc);
@@ -202,8 +210,126 @@ impl Session {
         Ok(views::sketch(id, &plane, sketch, &report))
     }
 
+    /// The open assembly, if the document is one.
+    pub fn assembly(&self) -> Option<&crate::asm::AsmSession> {
+        self.assembly.as_deref()
+    }
+
+    /// Methods an open assembly answers; the rest stay with parts.
+    fn for_assembly(method: &str) -> bool {
+        method.starts_with("asm.")
+            || matches!(
+                method,
+                "doc.info"
+                    | "doc.save"
+                    | "doc.undo"
+                    | "doc.redo"
+                    | "doc.set_units"
+                    | "export"
+                    | "measure"
+                    | "mass_properties"
+            )
+    }
+
+    /// Methods that work the same whatever the document is.
+    fn for_any(method: &str) -> bool {
+        matches!(
+            method,
+            "core.info"
+                | "materials.list"
+                | "units.parse"
+                | "hole.sizes"
+                | "hole.dims"
+                | "assistant.tools"
+        )
+    }
+
+    /// Open an assembly file, or start a new assembly.
+    fn begin_assembly(&mut self, path: Option<PathBuf>) -> R {
+        let a = match path {
+            Some(p) => crate::asm::AsmSession::open(&p).map_err(fail)?,
+            None => crate::asm::AsmSession::new(),
+        };
+        *self = Session::new();
+        self.assembly = Some(Box::new(a));
+        self.assembly.as_mut().unwrap().full()
+    }
+
     /// Handle one method call.
     pub fn handle(&mut self, method: &str, params: Value) -> R {
+        // Assemblies: new and open switch document kind; the open assembly
+        // answers its methods with its own revision counter.
+        let opens_assembly = method == "doc.open"
+            && params
+                .get("path")
+                .and_then(Value::as_str)
+                .is_some_and(|p| of_assembly::file::is_assembly(Path::new(p)));
+        if method == "asm.import_step" {
+            let p: crate::tools::asm_params::ImportStep = args(params)?;
+            let folder = p.folder.unwrap_or_else(|| {
+                let stem = p
+                    .path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("import")
+                    .to_string();
+                p.path.with_file_name(format!("{stem} parts"))
+            });
+            let asm = of_assembly::exchange::import_step(&p.path, &folder).map_err(fail)?;
+            *self = Session::new();
+            self.assembly = Some(Box::new(crate::asm::AsmSession::from_assembly(asm)));
+            let mut v = self.assembly.as_mut().unwrap().full()?;
+            v["folder"] = json!(folder);
+            v["revision"] = json!(self.revision);
+            v["generation"] = json!(self.generation);
+            return Ok(v);
+        }
+        if method == "asm.new" || opens_assembly {
+            let path = if opens_assembly {
+                params
+                    .get("path")
+                    .and_then(Value::as_str)
+                    .map(PathBuf::from)
+            } else {
+                None
+            };
+            let revision = self.revision;
+            let mut result = self.begin_assembly(path);
+            self.revision = revision + 1;
+            if let Ok(Value::Object(o)) = &mut result {
+                o.insert("revision".into(), json!(self.revision));
+                o.insert("generation".into(), json!(self.generation));
+            }
+            return result;
+        }
+        if let Some(a) = self.assembly.as_mut()
+            && !Self::for_any(method)
+        {
+            if method == "doc.new" || method == "doc.open" {
+                self.assembly = None;
+            } else if Self::for_assembly(method) {
+                let before = a.revision();
+                let mut result = a.handle(method, params);
+                if a.revision() != before {
+                    self.revision += 1;
+                }
+                if let Ok(Value::Object(o)) = &mut result {
+                    o.insert("revision".into(), json!(self.revision));
+                    o.insert("generation".into(), json!(self.generation));
+                }
+                return result;
+            } else {
+                return Err(RpcError::coded(
+                    ErrorCode::NotAllowed,
+                    format!("{method} needs a part; open the part from the assembly to edit it"),
+                ));
+            }
+        } else if method.starts_with("asm.") {
+            return Err(RpcError::coded(
+                ErrorCode::NotAllowed,
+                format!("{method} needs an assembly; start one with asm.new or open an .ofa file"),
+            ));
+        }
         let before = self.model.doc.clone();
         let editing = self.editing;
         let revision = self.revision;
@@ -498,6 +624,7 @@ impl Session {
                 protocol_version: of_protocol::PROTOCOL_VERSION,
                 scene_version: of_protocol::SCENE_VERSION,
                 part_file_version: file::VERSION,
+                assembly_file_version: of_assembly::file::VERSION,
                 capabilities: vec![
                     "revisioned_preview".into(),
                     "assistant_drafts".into(),
@@ -533,6 +660,19 @@ impl Session {
                     "variable_fillet".into(),
                     "planar_face_fillet".into(),
                     "split_line".into(),
+                    "assemblies".into(),
+                    "standard_mates".into(),
+                    "advanced_mates".into(),
+                    "mechanical_mates".into(),
+                    "collision_detection".into(),
+                    "component_patterns".into(),
+                    "mirror_components".into(),
+                    "interference_detection".into(),
+                    "exploded_views".into(),
+                    "assembly_bom".into(),
+                    "hardware_library".into(),
+                    "step_assembly_structure".into(),
+                    "part_v4_read".into(),
                 ],
             })),
             "body.display" => {

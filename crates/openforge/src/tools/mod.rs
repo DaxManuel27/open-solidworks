@@ -2,6 +2,7 @@
 //! schemas are generated from the Rust argument types in [`params`]; examples
 //! are validated against them and replayed on the core by the tests.
 
+pub mod asm_params;
 pub mod envelope;
 pub mod generate;
 pub mod params;
@@ -13,6 +14,7 @@ use schemars::generate::SchemaSettings;
 use schemars::{JsonSchema, SchemaGenerator};
 use serde_json::{Map, Value, json};
 
+use asm_params::*;
 use params::*;
 
 /// One catalog entry.
@@ -171,6 +173,66 @@ pub const TOOLS: &[Tool] = &[
     tool!("undo", "doc.undo", Empty, read_only: false, draft: false,
         "Undo the last change.",
         [{}]),
+    tool!("new_assembly", "asm.new", Empty, read_only: false, draft: false,
+        "Replace the open document with an empty assembly. Insert parts with insert_component; the first one is fixed at the origin.",
+        [{}]),
+    tool!("assembly_info", "asm.info", Empty, read_only: true, draft: false,
+        "The open assembly: components (keys, files, fixed, remaining DOF, errors, children), mates (IDs, types, errors), patterns, mirrors, configurations, explode steps and solve diagnostics.",
+        [{}]),
+    tool!("component_topology", "asm.topology", ComponentPath, read_only: true, draft: false,
+        "Faces and edges of one component in assembly coordinates, each with the component `ref` that add_mate and measure take.",
+        [{"component": ["2"]}]),
+    tool!("insert_component", "asm.insert", InsertComponent, read_only: false, draft: false,
+        "Insert an .ofp part or .ofa subassembly. Returns its key as `key`. Transform rotation is a unit quaternion [x, y, z, w].",
+        [{"path": "part.ofp", "transform": {"translation": [0, 0, 40], "rotation": [0, 0, 0, 1]}}]),
+    tool!("hardware_catalog", "asm.hardware_catalog", Empty, read_only: true, draft: false,
+        "Standard hardware kinds with their sizes and preferred lengths (mm).",
+        [{}]),
+    tool!("insert_hardware", "asm.insert_hardware", InsertHardware, read_only: false, draft: false,
+        "Generate (or reuse) a standard screw, bolt, nut, washer or pin from hardware_catalog and insert it. Its axis is Z, its bearing face on Z = 0, the head toward +Z.",
+        [{"hardware": {"kind": "hex_nut", "size": "M6"}},
+         {"hardware": {"kind": "socket_head_cap_screw", "size": "M5", "length": 16}, "transform": {"translation": [30, 20, 5], "rotation": [0, 0, 0, 1]}}]),
+    tool!("update_component", "asm.component.update", UpdateComponent, read_only: false, draft: false,
+        "Rename, fix or float, hide, suppress, exclude from BOM, make a subassembly flexible, pick a part configuration or set the transform of a top-level component.",
+        [{"key": "2", "name": "Lid"}, {"key": "2", "fixed": true}]),
+    tool!("delete_components", "asm.component.delete", ComponentKeys, read_only: false, draft: false,
+        "Delete components and every mate that uses them. Returns `deleted_mates`.",
+        [{"keys": ["2"]}]),
+    tool!("add_mate", "asm.mate.add", AddMate, read_only: false, draft: false,
+        "Add a mate between component references from component_topology and solve. Fails without changing anything if the mate can't be satisfied, naming the mates it conflicts with. Lengths mm, angles radians.",
+        [{"mate": {"type": "coincident", "a": {"component": ["1"], "entity": {"type": "face", "name": "2.end"}}, "b": {"component": ["2"], "entity": {"type": "face", "name": "2.start"}}}},
+         {"mate": {"type": "distance", "a": {"component": [], "entity": {"type": "right_plane"}}, "b": {"component": ["2"], "entity": {"type": "right_plane"}}, "distance": 10}, "name": "Offset"}]),
+    tool!("update_mate", "asm.mate.update", UpdateMate, read_only: false, draft: false,
+        "Change a mate's definition, name or suppression by ID.",
+        [{"id": 3, "name": "Seat"}, {"id": 3, "suppressed": true}]),
+    tool!("delete_mates", "asm.mate.delete", ItemIds, read_only: false, draft: false,
+        "Delete mates by ID.",
+        [{"ids": [3]}]),
+    tool!("move_component", "asm.move", MoveComponent, read_only: false, draft: false,
+        "Move or rotate a floating component within its mates: by a delta, to a point, along or about a reference. With `collision` it stops before parts overlap.",
+        [{"component": ["2"], "motion": {"mode": "delta", "translation": [10, 0, 0]}},
+         {"component": ["2"], "motion": {"mode": "rotate", "angles": [0, 0, 0.5]}, "collision": {}}]),
+    tool!("add_component_pattern", "asm.pattern.add", AddPattern, read_only: false, draft: false,
+        "Pattern components: linear, circular, following a part's pattern feature, at sketch points or along a curve. Instances get keys like `2@p5.1`.",
+        [{"pattern": {"type": "linear", "direction1": {"reference": {"component": [], "entity": {"type": "right_plane"}}, "spacing": 70, "count": 3}}, "seeds": ["2"]}]),
+    tool!("mirror_components", "asm.mirror.add", AddMirror, read_only: false, draft: false,
+        "Mirror components about a plane: reoriented copies, or opposite-hand part files written next to the assembly.",
+        [{"plane": {"component": [], "entity": {"type": "right_plane"}}, "components": [{"component": "2"}]}]),
+    tool!("add_explode_step", "asm.explode.add", AddExplodeStep, read_only: false, draft: false,
+        "Add an explode step to the active configuration and show the exploded view. Explode steps move only the display, never mates.",
+        [{"components": [["2"]], "motion": {"type": "translate", "direction": [0, 0, 1], "distance": 30}}]),
+    tool!("interference", "asm.interference", Interference, read_only: true, draft: false,
+        "Find components whose solids overlap, with each overlap's volume (mm³).",
+        [{}, {"treat_coincidence": true}]),
+    tool!("clearance", "asm.clearance", Clearance, read_only: true, draft: false,
+        "List gaps between components smaller than `minimum` mm, smallest first.",
+        [{"minimum": 50}]),
+    tool!("bill_of_materials", "asm.bom", Bom, read_only: true, draft: false,
+        "The bill of materials: top-level, parts-only or indented rows with quantities and part properties. `csv` also writes it to a file.",
+        [{"type": "parts_only"}]),
+    tool!("import_step_assembly", "asm.import_step", ImportStep, read_only: false, draft: false,
+        "Read a STEP file with several parts into a new assembly: one .ofp per distinct part in `folder`, each instance placed and fixed where the file had it.",
+        [{"path": "assembly.step"}]),
 ];
 
 /// Inline `{"$ref", "properties"}` pairs (serde's internally tagged newtype
@@ -616,6 +678,44 @@ mod tests {
         s
     }
 
+    /// The assembly assembly examples run on: the example part saved as
+    /// `part.ofp`, inserted fixed (key 1) and again 20 mm above (key 2), with
+    /// mate 3 seating the second's bottom face on the first's top face.
+    pub(crate) fn example_assembly(dir: &std::path::Path) -> Session {
+        let mut s = example_part();
+        let part = dir.join("part.ofp");
+        s.handle("doc.save", json!({ "path": part })).unwrap();
+        s.handle("export", json!({ "path": dir.join("assembly.step") }))
+            .unwrap();
+        let mut ok = |method: &str, params: Value| {
+            s.handle(method, params)
+                .unwrap_or_else(|e| panic!("{method}: {}", e.message))
+        };
+        ok("asm.new", json!({}));
+        ok("asm.insert", json!({ "path": part }));
+        let up = json!({ "translation": [0, 0, 20], "rotation": [0, 0, 0, 1] });
+        ok("asm.insert", json!({ "path": part, "transform": up }));
+        let face =
+            |c: &str, n: &str| json!({ "component": [c], "entity": { "type": "face", "name": n } });
+        let seat =
+            json!({ "type": "coincident", "a": face("1", "2.end"), "b": face("2", "2.start") });
+        ok("asm.mate.add", json!({ "mate": seat }));
+        s
+    }
+
+    #[test]
+    fn example_assembly_matches_its_description() {
+        let dir =
+            std::env::temp_dir().join(format!("openforge-asm-example-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut s = example_assembly(&dir);
+        let info = s.handle("asm.info", json!({})).unwrap();
+        assert_eq!(info["mates"][0]["id"], 3);
+        assert_eq!(info["components"][1]["key"], json!(["2"]));
+        assert!(info["diagnostics"]["solved"].as_bool().unwrap());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
     fn errors(s: &mut Session) -> Vec<(u64, String)> {
         let info = s.handle("doc.info", json!({})).unwrap();
         info["features"]
@@ -659,7 +759,15 @@ mod tests {
                 if let Some(path) = example.get_mut("path") {
                     *path = json!(dir.join(path.as_str().unwrap()));
                 }
-                let mut s = example_part();
+                if let Some(folder) = example.get_mut("folder") {
+                    *folder = json!(dir.join("hardware"));
+                }
+                let method = entry.tool.method;
+                let mut s = if method.starts_with("asm.") && method != "asm.new" {
+                    example_assembly(&dir)
+                } else {
+                    example_part()
+                };
                 let volume = |s: &mut Session| {
                     s.handle("mass_properties", json!({})).unwrap()["volume"]
                         .as_f64()
@@ -670,6 +778,7 @@ mod tests {
                 match entry.tool.method {
                     "import" => drop(s.handle("export", example.clone()).unwrap()),
                     "doc.open" => drop(s.handle("doc.save", example.clone()).unwrap()),
+                    // The assembly fixture already wrote part.ofp and assembly.step.
                     _ => {}
                 }
                 let result = s.handle(entry.tool.method, example.clone());

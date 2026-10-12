@@ -115,6 +115,94 @@ export const evaluateGroups: CommandGroup[] = [
   },
   { label: 'Exchange', columns: [[{ command: 'export', variant: 'large' }]] },
 ]
+export const assemblyGroups: CommandGroup[] = [
+  {
+    label: 'Components',
+    columns: [
+      [{ command: 'insertComponents', variant: 'large' }],
+      [{ command: 'hardware', variant: 'large' }],
+    ],
+  },
+  {
+    label: 'Mates',
+    columns: [
+      [{ command: 'mate', variant: 'large', menu: ['mate', 'advancedMate', 'mechanicalMate'] }],
+    ],
+  },
+  {
+    label: 'Move',
+    columns: [
+      [{ command: 'moveComponent', variant: 'large' }],
+      [{ command: 'rotateComponent', variant: 'large' }],
+    ],
+  },
+  {
+    label: 'Patterns',
+    columns: [
+      [
+        {
+          command: 'linearComponentPattern',
+          variant: 'large',
+          menu: [
+            'linearComponentPattern',
+            'circularComponentPattern',
+            'patternDrivenPattern',
+            'sketchDrivenPattern',
+            'curveDrivenPattern',
+          ],
+        },
+      ],
+      [{ command: 'mirrorComponents', variant: 'large' }],
+    ],
+  },
+  {
+    label: 'Tools',
+    columns: [
+      [{ command: 'explodedView', variant: 'large' }],
+      [{ command: 'interference' }, { command: 'clearance' }, { command: 'bom' }],
+      [
+        {
+          label: 'Reference Geometry',
+          icon: 'plane',
+          variant: 'large',
+          menu: ['asmPlane', 'asmAxis'],
+        },
+      ],
+    ],
+  },
+]
+export const assemblyEvaluateGroups: CommandGroup[] = [
+  {
+    label: 'Analysis',
+    columns: [
+      [{ command: 'interference', variant: 'large' }],
+      [{ command: 'clearance', variant: 'large' }],
+      [{ command: 'asmMeasure', variant: 'large' }],
+      [{ command: 'asmMass', variant: 'large' }],
+    ],
+  },
+  {
+    label: 'Document',
+    columns: [
+      [{ command: 'bom', variant: 'large' }],
+      [{ command: 'asmConfigurations', variant: 'large' }],
+      [{ command: 'units', variant: 'large' }],
+    ],
+  },
+  { label: 'Exchange', columns: [[{ command: 'export', variant: 'large' }]] },
+]
+export const assemblyTabs: { id: Tab; label: string }[] = [
+  { id: 'assembly', label: 'Assembly' },
+  { id: 'evaluate', label: 'Evaluate' },
+]
+export const assemblyTabOrder = [
+  'Assembly',
+  'Layout',
+  'Sketch',
+  'Evaluate',
+  'Annotations',
+  'Add-ins',
+]
 // Placeholder tabs never enter the store's selectable Tab union.
 export const availableTabs: { id: Tab; label: string }[] = [
   { id: 'features', label: 'Features' },
@@ -122,6 +210,7 @@ export const availableTabs: { id: Tab; label: string }[] = [
   { id: 'evaluate', label: 'Evaluate' },
 ]
 export const unavailableTabs = [
+  'Layout',
   'Surfaces',
   'Sheet Metal',
   'Direct Editing',

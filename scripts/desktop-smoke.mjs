@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import assert from 'node:assert/strict'
 import { assistantSmoke } from './assistant-smoke.mjs'
 import { phase2Smoke } from './phase-2-smoke.mjs'
+import { assemblySmoke } from './assembly-smoke.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 process.env.OPENFORGE_CORE = join(
@@ -24,8 +25,16 @@ let openDialogs = 0
 let releaseOpenDialog = null
 let holdOpenDialog = false
 let exportExtension = 'step'
+// Scenarios can choose the next dialog result.
+let nextOpen = null
+let nextSave = null
 dialog.showSaveDialog = async (_win, options) => {
   saveDialogs++
+  if (nextSave) {
+    const filePath = nextSave
+    nextSave = null
+    return { canceled: false, filePath }
+  }
   return {
     canceled: false,
     filePath: options.filters[0].extensions.includes('ofp')
@@ -35,6 +44,11 @@ dialog.showSaveDialog = async (_win, options) => {
 }
 dialog.showOpenDialog = async (_win, options) => {
   openDialogs++
+  if (nextOpen) {
+    const path = nextOpen
+    nextOpen = null
+    return { canceled: false, filePaths: [path] }
+  }
   if (holdOpenDialog)
     await new Promise((resolve) => {
       releaseOpenDialog = resolve
@@ -249,6 +263,9 @@ async function run(win) {
   assert.equal(await js(`document.activeElement.id`), 'tab-evaluate')
   await key('Home')
   await js(`document.querySelector('[data-command="new"]').focus()`)
+  await key('ArrowRight')
+  // New has a menu (part or assembly), so its trigger comes before Open.
+  assert.equal(await js(`document.activeElement.getAttribute('aria-label')`), 'New menu')
   await key('ArrowRight')
   assert.equal(await js(`document.activeElement.getAttribute('data-command')`), 'open')
   await key('End')
@@ -609,11 +626,27 @@ async function run(win) {
     sendInput: (event) => win.webContents.sendInputEvent(event),
   })
   await assistantSmoke({ js, call, click, wait })
+  await assemblySmoke({
+    js,
+    call,
+    click,
+    wait,
+    menu,
+    temp,
+    dialogs: {
+      open: (path) => {
+        nextOpen = path
+      },
+      save: (path) => {
+        nextSave = path
+      },
+    },
+  })
   const screenshot = await win.capturePage()
   const artifact = process.env.OPENFORGE_SMOKE_SCREENSHOT
   if (artifact) writeFileSync(artifact, screenshot.toPNG())
   console.log(
-    'Desktop smoke passed: toolbar layout/themes, keyboard/menu isolation, sketch tools, dropdown panels, views, draw/extrude/revolve, body visibility/copy/split retention, scoped formulas, configurations, spatial sketches, hollow sweeps, domes, cosmetic threads, ribs with formula entry, modeled threads, boundaries, tangent lofts, undo/redo, save/reopen/import/export',
+    'Desktop smoke passed: toolbar layout/themes, keyboard/menu isolation, sketch tools, dropdown panels, views, draw/extrude/revolve, body visibility/copy/split retention, scoped formulas, configurations, spatial sketches, hollow sweeps, domes, cosmetic threads, ribs with formula entry, modeled threads, boundaries, tangent lofts, undo/redo, save/reopen/import/export, assemblies (insert, mates, collision drag, patterns, interference, explode, BOM, save/reopen)',
   )
 }
 
