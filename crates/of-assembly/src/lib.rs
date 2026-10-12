@@ -12,6 +12,7 @@ pub mod exchange;
 pub mod explode;
 pub mod file;
 pub mod geometry;
+pub mod hardware;
 pub mod mates;
 pub mod patterns;
 
