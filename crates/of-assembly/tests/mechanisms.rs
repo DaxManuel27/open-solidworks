@@ -845,3 +845,54 @@ fn path_and_cam_mates() {
     let t = pose_of(&a, &f).translation;
     assert!((t.x - 45.0).abs() < 1e-5, "{t}");
 }
+
+#[test]
+fn collision_detection_catches_a_part_passing_through_another() {
+    let dir = Scratch::new("sweep");
+    let base = block_doc(100.0, 40.0, 10.0);
+    let post = shaft_doc(5.0, 30.0);
+    let slider = block_doc(10.0, 10.0, 10.0);
+    let bf = save(&base, &dir.path("base.ofp"));
+    let pf = save(&post, &dir.path("post.ofp"));
+    let sf = save(&slider, &dir.path("slider.ofp"));
+    let mut a = Assembly::default();
+    let b = a.insert(&bf, None, None).unwrap();
+    let p = a
+        .insert(
+            &pf,
+            Some(Pose::from_translation(DVec3::new(50.0, 20.0, 10.0))),
+            None,
+        )
+        .unwrap();
+    a.doc.component_mut(&p).unwrap().fixed = true;
+    let s = a
+        .insert(
+            &sf,
+            Some(Pose::from_translation(DVec3::new(10.0, 15.0, 10.0))),
+            None,
+        )
+        .unwrap();
+    a.add_mate(
+        None,
+        MateKind::Coincident {
+            a: r(&b, plane_face(&base, DVec3::Z, 10.0)),
+            b: r(&s, plane_face(&slider, -DVec3::Z, 0.0)),
+            alignment: Alignment::Closest,
+        },
+    )
+    .unwrap();
+    // One big step to the far side of the post: the end is clear, the path isn't.
+    let out = a
+        .drag(
+            std::slice::from_ref(&s),
+            DragTarget::Pose(Pose::from_translation(DVec3::new(80.0, 15.0, 10.0))),
+            Some(analysis::CollisionOptions::default()),
+        )
+        .unwrap();
+    assert!(out.collision.is_some());
+    let x = pose_of(&a, &s).translation.x;
+    assert!(
+        x + 10.0 <= 45.0 + 1e-6 && x + 10.0 > 44.0,
+        "stopped at the post: {x}"
+    );
+}

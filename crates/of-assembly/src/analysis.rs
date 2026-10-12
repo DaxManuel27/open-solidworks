@@ -223,40 +223,90 @@ impl Assembly {
         }
         // Pairs already overlapping before the drag are not collisions.
         let existing = colliding_pairs(&old, &key, options, &old);
-        if colliding_pairs(&new, &key, options, &old)
-            .iter()
-            .all(|p| existing.contains(p))
-        {
-            return Ok(outcome);
-        }
-        // Back off to the last collision-free position along the motion.
         let solved = self.doc.clone();
-        let (mut lo, mut hi) = (0.0f64, 1.0f64);
-        let mut best = before.clone();
-        let mut hit = None;
-        for _ in 0..10 {
-            let t = (lo + hi) / 2.0;
-            self.doc = before.clone();
-            for (c, s) in self.doc.components.iter_mut().zip(&solved.components) {
+        // The positions part way along the motion, solved back onto the mates.
+        let state_at = |asm: &mut Assembly, t: f64| {
+            asm.doc = before.clone();
+            for (c, s) in asm.doc.components.iter_mut().zip(&solved.components) {
                 let (a, b): (Pose, Pose) = (c.transform.into(), s.transform.into());
                 c.transform = interpolate(&a, &b, t).into();
                 c.flexible_poses = s.flexible_poses.clone();
             }
-            self.solve(&[], false);
-            let inst = self.instances();
+            if t < 1.0 {
+                asm.solve(&[], false);
+            }
+            let inst = asm.instances();
             let pairs: Vec<_> = colliding_pairs(&inst, &key, options, &old)
                 .into_iter()
                 .filter(|p| !existing.contains(p))
                 .collect();
+            (pairs, inst)
+        };
+        // Sample the path finely enough that no part can pass through another
+        // between samples: a quarter of the smallest moving part per step.
+        let travel = old
+            .iter()
+            .zip(&new)
+            .map(|(a, b)| {
+                let size = a
+                    .part()
+                    .and_then(|p| p.shape())
+                    .and_then(|s| s.bbox())
+                    .map_or(1.0, |b| b.diagonal());
+                a.pose.translation.distance(b.pose.translation)
+                    + a.pose.rotation.angle_between(b.pose.rotation) * size
+            })
+            .fold(0.0f64, f64::max);
+        let smallest = new
+            .iter()
+            .filter(|i| i.key.starts_with(&key))
+            .filter_map(|i| i.part().and_then(|p| p.shape()).and_then(|s| s.bbox()))
+            .map(|b| (b.max - b.min).min_element().max(1e-3))
+            .fold(f64::MAX, f64::min);
+        let samples = if smallest.is_finite() && smallest < f64::MAX {
+            ((travel / (0.25 * smallest)).ceil() as usize).clamp(1, 64)
+        } else {
+            1
+        };
+        let (mut lo, mut hi) = (0.0f64, 1.0f64);
+        let mut hit = None;
+        let mut collided = false;
+        for k in 1..=samples {
+            let t = k as f64 / samples as f64;
+            let (pairs, inst) = state_at(self, t);
             if pairs.is_empty() {
                 lo = t;
-                best = self.doc.clone();
+            } else {
+                hi = t;
+                hit = pairs.into_iter().next().map(|p| (p, inst));
+                collided = true;
+                break;
+            }
+        }
+        if !collided {
+            self.doc = solved;
+            return Ok(outcome);
+        }
+        // Back off to the last collision-free position before the contact.
+        let mut best = None;
+        for _ in 0..10 {
+            let t = (lo + hi) / 2.0;
+            let (pairs, inst) = state_at(self, t);
+            if pairs.is_empty() {
+                lo = t;
+                best = Some(self.doc.clone());
             } else {
                 hi = t;
                 hit = pairs.into_iter().next().map(|p| (p, inst));
             }
         }
-        self.doc = best;
+        self.doc = match best {
+            Some(doc) => doc,
+            None => {
+                state_at(self, lo);
+                self.doc.clone()
+            }
+        };
         self.solve(&[], false);
         if let Some(((a, b), inst)) = hit {
             outcome.faces = touching_faces(&inst, &a, &b);

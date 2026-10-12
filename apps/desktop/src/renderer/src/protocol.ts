@@ -352,13 +352,14 @@ export interface ExplodeStepView {
   [key: string]: unknown
 }
 
+/** Empty maps and lists are left out of the JSON. */
 export interface AsmConfiguration {
   id: number
   name: string
-  suppressed: Record<string, boolean>
-  part_configurations: Record<string, number>
-  mates_suppressed: Record<string, boolean>
-  explode: ExplodeStepView[]
+  suppressed?: Record<string, boolean>
+  part_configurations?: Record<string, number>
+  mates_suppressed?: Record<string, boolean>
+  explode?: ExplodeStepView[]
 }
 
 export interface AsmPattern {
@@ -366,7 +367,7 @@ export interface AsmPattern {
   name: string
   type: string
   seeds: string[]
-  skip: number[]
+  skip?: number[]
   suppressed: boolean
   [key: string]: unknown
 }

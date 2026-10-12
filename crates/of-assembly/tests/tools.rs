@@ -509,8 +509,20 @@ fn sketch_driven_pattern_follows_part_sketch_points() {
     let pf = save(&plate, &dir.path("plate.ofp"));
     let pin = save(&shaft_doc(3.0, 20.0), &dir.path("pin.ofp"));
     let mut a = Assembly::default();
-    let p = a.insert(&pf, Some(Pose::from_translation(DVec3::new(0.0, 0.0, 5.0))), None).unwrap();
-    let s = a.insert(&pin, Some(Pose::from_translation(DVec3::new(20.0, 20.0, 15.0))), None).unwrap();
+    let p = a
+        .insert(
+            &pf,
+            Some(Pose::from_translation(DVec3::new(0.0, 0.0, 5.0))),
+            None,
+        )
+        .unwrap();
+    let s = a
+        .insert(
+            &pin,
+            Some(Pose::from_translation(DVec3::new(20.0, 20.0, 15.0))),
+            None,
+        )
+        .unwrap();
     let id = a.doc.take_id();
     a.doc.patterns.push(Pattern {
         id,

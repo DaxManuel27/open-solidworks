@@ -223,7 +223,9 @@ fn transforms(
                     **id != of_model::sketch::ORIGIN && !e.construction && !used.contains(id)
                 })
                 .filter_map(|(_, e)| match e.geo {
-                    of_model::sketch::Geometry::Point { p } => Some(to_world.point(plane.to_world(p))),
+                    of_model::sketch::Geometry::Point { p } => {
+                        Some(to_world.point(plane.to_world(p)))
+                    }
                     _ => None,
                 })
                 .collect();

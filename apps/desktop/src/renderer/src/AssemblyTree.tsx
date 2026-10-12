@@ -417,13 +417,13 @@ export function AssemblyTree() {
           })}
         </div>
       )}
-      {active && active.explode.length > 0 && (
+      {active && (active.explode?.length ?? 0) > 0 && (
         <div
           className="tree-item meta"
           onClick={() => useStore.getState().openPanel({ type: 'explode' })}
         >
           <span className="icon">✦</span>
-          <span className="name">Exploded View ({active.explode.length} steps)</span>
+          <span className="name">Exploded View ({active.explode?.length} steps)</span>
         </div>
       )}
     </div>
