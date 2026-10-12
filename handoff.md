@@ -17,9 +17,13 @@ Branch `phase-2`, nothing committed. Earlier sections below are history.
 
 `cargo fmt --check`, clippy `-D warnings`, `cargo test --workspace`, `generate --check`, `pnpm lint`, `format:check`, `typecheck`, `build`, `bench` (10/10), `test:assistant`, `conformance` (65/65), `perf:check`, native desktop smoke.
 
+## Hosted CI
+
+`phase-2` is pushed. Run 38205003310 at `3ced10a` passed on macOS, Windows and Linux after three CI fixes: kernel sources include `of-kernel-sys/cpp/ofk.h` by one path (MSVC), `bench/results/reference.json` is committed and skipped by Prettier, and the serve tests wait for the core to exit before deleting their folder (Windows file locks).
+
 ## Remaining
 
-Hosted macOS/Windows/Linux CI on one release candidate: requires pushing `phase-2` (the owner's rule is to push only when the phase is complete, so ask). Out-of-scope extensions are listed in the last column of `docs/phase-2-status.md`. Commit only when asked; don't merge to main.
+Merge `phase-2` into `main` when the owner confirms the phase is complete. Out-of-scope extensions are listed in the last column of `docs/phase-2-status.md`. Commit only when asked; don't merge to main.
 
 # Handoff: Phase 2 continuation (2026-10-11, session 3)
 

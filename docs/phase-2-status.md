@@ -13,8 +13,8 @@ step draft, loft centerline and start/end tangency, sweep guides that scale or
 stretch the section, conical and geodesic (freeform) wrap, domes on non-circular
 faces, seams inside contour entities, ordered projected pieces and content-qualified
 import references — with performance budgets and a CI gate. All local gates, the
-native smoke and 65 conformance checks pass. Only hosted three-platform CI remains,
-which needs the branch pushed.
+native smoke and 65 conformance checks pass, and hosted macOS/Windows/Linux CI passed
+(run 38205003310).
 
 Implementation checkpoint, 2026-10-11 (later): every Phase 2 feature family now
 exists end to end — rib, wrap, boundary, face fillets, modeled threads and
@@ -82,8 +82,8 @@ rules, including equations that make a later parameter drive an earlier feature.
 - Performance budgets are recorded in [phase-2-budgets.json](phase-2-budgets.json) from three
   runs of [the measurement script](../scripts/phase-2-performance.mjs) and gated by
   `pnpm perf:check` (also in CI, scaled 4× for hosted runners).
-- Hosted macOS/Windows/Linux CI on the release candidate has not run; it needs a push of
-  the `phase-2` branch.
+- Hosted macOS/Windows/Linux CI passed on `phase-2` at `3ced10a` (GitHub Actions run
+  38205003310), including the native desktop smoke on each platform.
 
 ## Verification
 
