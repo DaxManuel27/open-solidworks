@@ -5,7 +5,7 @@
 // edges of the other sections, then interpolates every pole row across the
 // sections. A tangent condition is the derivative of every pole row at that
 // end, so the surface leaves the section along exactly that vector.
-#include "ofk.h"
+#include "of-kernel-sys/cpp/ofk.h"
 #include "of-kernel-sys/src/lib.rs.h"
 
 #include <BOPAlgo_ArgumentAnalyzer.hxx>

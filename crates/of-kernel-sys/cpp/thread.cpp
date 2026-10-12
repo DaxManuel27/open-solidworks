@@ -8,7 +8,7 @@
 // along a helix with the axis as a fixed binormal, so every axial cross-section
 // shows the same profile. The sweep starts and ends a pitch beyond the thread
 // and is trimmed flat at both ends of the thread length.
-#include "ofk.h"
+#include "of-kernel-sys/cpp/ofk.h"
 #include "of-kernel-sys/src/lib.rs.h"
 
 #include <BRepAlgoAPI_Common.hxx>

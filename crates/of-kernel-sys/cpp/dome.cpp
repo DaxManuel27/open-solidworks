@@ -7,7 +7,7 @@
 // The tangent variant also keeps the dome tangent to the faces beside the
 // boundary, which needs a boundary without corners. The filling's measured
 // boundary, apex and tangency errors must be within tolerance.
-#include "ofk.h"
+#include "of-kernel-sys/cpp/ofk.h"
 #include "of-kernel-sys/src/lib.rs.h"
 
 #include <BRepAdaptor_Curve.hxx>

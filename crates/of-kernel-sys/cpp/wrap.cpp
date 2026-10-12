@@ -14,7 +14,7 @@
 // must be parallel to such a tangent plane. That map is not affine, so each
 // curve's parameter-space image is interpolated through mapped points, doubling
 // them until the measured deviation is below tolerance.
-#include "ofk.h"
+#include "of-kernel-sys/cpp/ofk.h"
 #include "of-kernel-sys/src/lib.rs.h"
 
 #include <BRepAdaptor_Surface.hxx>

@@ -3,7 +3,7 @@
 // crossings into four-sided cells; each cell is filled with a Coons patch that
 // interpolates all four of its boundary curves exactly, so both curve families
 // constrain the surface. Planar end sections are capped and the patches sewn.
-#include "ofk.h"
+#include "of-kernel-sys/cpp/ofk.h"
 #include "of-kernel-sys/src/lib.rs.h"
 
 #include <BOPAlgo_ArgumentAnalyzer.hxx>
