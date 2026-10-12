@@ -693,6 +693,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "of-mate"
+version = "0.1.0"
+dependencies = [
+ "glam 0.34.1",
+ "nalgebra",
+]
+
+[[package]]
 name = "of-model"
 version = "0.1.0"
 dependencies = [
