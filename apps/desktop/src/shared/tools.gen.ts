@@ -1390,7 +1390,7 @@ export type PatternKind =
   }
   | {
     type: 'sketch_driven'
-    sketch: number
+    sketch: CompRef
     /** The seed point the instances are placed by; default the seed's origin. */
     reference?: CompRef | null
   }
