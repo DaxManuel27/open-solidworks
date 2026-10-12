@@ -250,6 +250,9 @@ async function run(win) {
   await key('Home')
   await js(`document.querySelector('[data-command="new"]').focus()`)
   await key('ArrowRight')
+  // New has a menu (part or assembly), so its trigger comes before Open.
+  assert.equal(await js(`document.activeElement.getAttribute('aria-label')`), 'New menu')
+  await key('ArrowRight')
   assert.equal(await js(`document.activeElement.getAttribute('data-command')`), 'open')
   await key('End')
   assert.equal(await js(`document.activeElement.getAttribute('data-command')`), 'select')

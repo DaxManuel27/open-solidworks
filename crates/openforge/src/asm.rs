@@ -1265,6 +1265,20 @@ impl AsmSession {
                 "hidden": i.hidden,
                 "derived": i.derived,
                 "configuration": i.configuration,
+                "configurations": match &i.loaded {
+                    Loaded::Part(p) => p
+                        .doc()
+                        .configurations
+                        .items
+                        .iter()
+                        .map(|c| json!({ "id": c.id, "name": c.name }))
+                        .collect::<Vec<_>>(),
+                    _ => Vec::new(),
+                },
+                "active_configuration": match &i.loaded {
+                    Loaded::Part(p) => json!(p.doc().configurations.active),
+                    _ => Value::Null,
+                },
             })
         };
         let mut out: Vec<Value> = Vec::new();

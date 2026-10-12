@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { call } from '../core'
-import type { PlaneData, Ref, SketchView } from '../protocol'
-import { type Pick, type PickKind, useStore } from '../store'
+import type { AsmScene, PlaneData, Ref, Scene, SketchView, Transform } from '../protocol'
+import { type AsmPick, type Pick, type PickKind, useStore } from '../store'
 import { formatAngle, formatLength, parseAngle, parseLength } from '../units'
+import { AssemblyView, type TriadHandle } from './assembly-view'
 import { Engine } from './engine'
+import { useMove } from './move-state'
 import { type Label, Sketcher } from './sketcher'
 import { SpatialSketcher } from './spatial-sketcher'
 import { useSpatial } from './spatial-state'
@@ -18,6 +20,55 @@ interface Prompt {
 }
 
 const DEFAULT_KINDS: PickKind[] = ['vertex', 'edge', 'face', 'datum', 'std_plane']
+
+/** The part-scene shell that carries an assembly's own planes and axes. */
+function referenceScene(a: AsmScene): Scene {
+  return {
+    cosmetic_threads: [],
+    sketches3d: [],
+    curves: [],
+    bodies: [],
+    body: null,
+    bbox: a.bbox,
+    datums: a.datums,
+    sketches: [],
+  }
+}
+
+function transformOf(m: THREE.Matrix4): Transform {
+  const t = new THREE.Vector3()
+  const q = new THREE.Quaternion()
+  m.decompose(t, q, new THREE.Vector3())
+  return { translation: [t.x, t.y, t.z], rotation: [q.x, q.y, q.z, q.w] }
+}
+
+/** The component a drag or triad acts on: the top-level key, or a flexible child. */
+function dragKey(key: string[]): string[] {
+  const a = useStore.getState().assembly
+  const top = a?.components.find((c) => c.key[0] === key[0])
+  return top?.flexible && key.length > 1 ? key.slice(0, 2) : key.slice(0, 1)
+}
+
+function isFixed(key: string[]): boolean {
+  const a = useStore.getState().assembly
+  return a?.components.find((c) => c.key[0] === key[0])?.fixed ?? true
+}
+
+interface ComponentDrag {
+  key: string[]
+  kind: 'free' | 'axis' | 'rotate' | 'triad_move' | 'triad_rotate'
+  start: THREE.Matrix4
+  /** Grab point: world and component frame. */
+  point: THREE.Vector3
+  local: THREE.Vector3
+  axis?: THREE.Vector3
+  /** Screen position at start, for rotation. */
+  sx: number
+  sy: number
+  /** Axis parameter or angle at start. */
+  t0: number
+  moved: boolean
+}
 
 export function Viewport() {
   const host = useRef<HTMLDivElement>(null)
@@ -39,6 +90,14 @@ export function Viewport() {
   const units = useStore((s) => s.snapshot?.units)
   const pickTarget = useStore((s) => s.pickTarget)
   const hoverFeature = useStore((s) => s.hoverFeature)
+  const asmScene = useStore((s) => s.asmScene)
+  const asmPreview = useStore((s) => s.asmPreview)
+  const asmSelection = useStore((s) => s.asmSelection)
+  const asmComponents = useStore((s) => s.asmComponents)
+  const asmMarks = useStore((s) => s.asmMarks)
+  const assemblyComponents = useStore((s) => s.assembly?.components)
+  const asmRef = useRef<AssemblyView | null>(null)
+  const [asmHover, setAsmHover] = useState<AsmPick | null>(null)
 
   // Create the engine and sketcher once.
   useEffect(() => {
@@ -77,6 +136,7 @@ export function Viewport() {
     sketcherRef.current = sketcher
     const spatial = new SpatialSketcher(engine, () => engine.onCamera())
     spatialRef.current = spatial
+    asmRef.current = new AssemblyView(engine)
     let labelFrame = 0
     engine.onCamera = () => {
       if (labelFrame) return
@@ -93,8 +153,47 @@ export function Viewport() {
   }, [])
 
   useEffect(() => {
+    if (asmScene) return
     engineRef.current?.setScene(scene)
-  }, [scene])
+  }, [scene, asmScene])
+
+  // Assemblies: the reference planes go through the part scene shell, the
+  // components through the assembly view.
+  useEffect(() => {
+    const engine = engineRef.current
+    const view = asmRef.current
+    if (!engine || !view) return
+    if (!asmScene) {
+      view.clear()
+      return
+    }
+    engine.setScene(referenceScene(asmScene))
+    engine.setBounds(asmScene.bbox?.min ?? null, asmScene.bbox?.max ?? null)
+    view.setScene(asmScene, null)
+  }, [asmScene])
+
+  useEffect(() => {
+    if (asmPreview) asmRef.current?.setPositions(asmPreview)
+    else if (asmScene) asmRef.current?.setPositions(asmScene.instances)
+  }, [asmPreview, asmScene])
+
+  useEffect(() => {
+    asmRef.current?.setHighlights({
+      hover: asmHover,
+      selected: asmSelection.flatMap((s) => (s.pick ? [s.pick] : [])),
+      components: asmComponents,
+      marks: asmMarks,
+    })
+  }, [asmHover, asmSelection, asmComponents, asmMarks])
+
+  // A triad on the one selected floating component.
+  useEffect(() => {
+    const view = asmRef.current
+    if (!view) return
+    const key = asmComponents.length === 1 ? asmComponents[0]! : null
+    const frame = key && !isFixed(key) ? view.matrixOf(key) : null
+    view.setTriad(frame)
+  }, [asmComponents, asmScene, asmPreview, assemblyComponents])
 
   useEffect(() => {
     engineRef.current?.setPreview(preview)
@@ -109,10 +208,12 @@ export function Viewport() {
   useEffect(() => {
     const e = engineRef.current
     if (!e) return
-    const wantsPlane = pickTarget?.kinds.includes('std_plane') ?? false
-    const empty = !scene?.body && !sketch
+    const wantsPlane =
+      (pickTarget?.kinds.includes('std_plane') ?? false) ||
+      (useStore.getState().asmTarget?.kinds.includes('face') ?? false)
+    const empty = asmScene ? asmScene.instances.length === 0 : !scene?.body && !sketch
     e.setStdPlanesVisible(wantsPlane || empty || (hoverFeature !== null && hoverFeature < 0))
-  }, [pickTarget, scene, sketch, hoverFeature])
+  }, [pickTarget, scene, sketch, hoverFeature, asmScene])
 
   useEffect(() => {
     if (units) sketcherRef.current?.setView(sketch, units)
@@ -155,11 +256,152 @@ export function Viewport() {
     let sketchOwns = false
     let spatialOwns = false
     let hoverFrame = 0
+    let drag: ComponentDrag | null = null
+    const assemblyOpen = () => !!useStore.getState().asmScene
+
+    /** Start dragging a component (or a triad handle) at the cursor. */
+    const startDrag = (e: PointerEvent): boolean => {
+      const view = asmRef.current
+      if (!view || !assemblyOpen() || e.button !== 0) return false
+      const handle: TriadHandle | null = view.pickTriad(e.clientX, e.clientY)
+      const move = useMove.getState()
+      if (handle && view.triadFrame) {
+        const key = useStore.getState().asmComponents[0]!
+        const frame = view.triadFrame
+        const origin = new THREE.Vector3().setFromMatrixPosition(frame)
+        const axes = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()]
+        frame.extractBasis(axes[0]!, axes[1]!, axes[2]!)
+        const axis = axes[handle.axis]!.normalize()
+        const kind = handle.type === 'move' ? 'triad_move' : 'triad_rotate'
+        drag = {
+          key: dragKey(key),
+          kind,
+          start: frame.clone(),
+          point: origin,
+          local: new THREE.Vector3(),
+          axis,
+          sx: e.clientX,
+          sy: e.clientY,
+          t0: 0,
+          moved: false,
+        }
+        drag.t0 = kind === 'triad_move' ? axisParam(drag, e) : ringAngle(drag, e)
+        return true
+      }
+      if (!(e.altKey || move.active)) return false
+      const hit = view.hit(e.clientX, e.clientY)
+      if (!hit) return false
+      const key = dragKey(hit.placed.key)
+      if (isFixed(key)) {
+        useStore.getState().toast('That component is fixed; float it to move it', 'info')
+        return false
+      }
+      const start = view.matrixOf(key) ?? hit.placed.matrix.clone()
+      const axisIndex = { x: 0, y: 1, z: 2 } as const
+      const kind = move.mode === 'rotate' ? 'rotate' : move.mode === 'free' ? 'free' : 'axis'
+      drag = {
+        key,
+        kind,
+        start,
+        point: hit.point.clone(),
+        local: hit.point.clone().applyMatrix4(start.clone().invert()),
+        axis:
+          move.mode === 'x' || move.mode === 'y' || move.mode === 'z'
+            ? new THREE.Vector3().setComponent(axisIndex[move.mode], 1)
+            : undefined,
+        sx: e.clientX,
+        sy: e.clientY,
+        t0: 0,
+        moved: false,
+      }
+      return true
+    }
+
+    /** Closest parameter along the drag axis to the cursor ray. */
+    const axisParam = (d: ComponentDrag, e: PointerEvent): number => {
+      const ray = engine.ray(e.clientX, e.clientY)
+      const w = d.point.clone().sub(ray.origin)
+      const a = d.axis!
+      const b = ray.direction
+      const ab = a.dot(b)
+      const den = 1 - ab * ab
+      if (Math.abs(den) < 1e-9) return 0
+      return (ab * w.dot(b) - w.dot(a)) / den
+    }
+
+    /** Cursor angle about the drag axis, in the plane through the origin. */
+    const ringAngle = (d: ComponentDrag, e: PointerEvent): number => {
+      const ray = engine.ray(e.clientX, e.clientY)
+      const n = d.axis!
+      const denom = ray.direction.dot(n)
+      if (Math.abs(denom) < 1e-9) return d.t0
+      const t = d.point.clone().sub(ray.origin).dot(n) / denom
+      const p = ray.origin.clone().addScaledVector(ray.direction, t).sub(d.point)
+      const u = new THREE.Vector3(1, 0, 0)
+      if (Math.abs(u.dot(n)) > 0.9) u.set(0, 1, 0)
+      u.sub(n.clone().multiplyScalar(u.dot(n))).normalize()
+      const v = new THREE.Vector3().crossVectors(n, u)
+      return Math.atan2(p.dot(v), p.dot(u))
+    }
+
+    /** The motion request for the current cursor position. */
+    const dragMotion = (d: ComponentDrag, e: PointerEvent): Record<string, unknown> => {
+      const rotate = (axis: THREE.Vector3, angle: number, about: THREE.Vector3) => {
+        const r = new THREE.Matrix4().makeRotationAxis(axis, angle)
+        const m = new THREE.Matrix4()
+          .makeTranslation(about.x, about.y, about.z)
+          .multiply(r)
+          .multiply(new THREE.Matrix4().makeTranslation(-about.x, -about.y, -about.z))
+          .multiply(d.start)
+        return { mode: 'pose', transform: transformOf(m) }
+      }
+      switch (d.kind) {
+        case 'free': {
+          const ray = engine.ray(e.clientX, e.clientY)
+          const n = engine.camera.getWorldDirection(new THREE.Vector3())
+          const t = d.point.clone().sub(ray.origin).dot(n) / ray.direction.dot(n)
+          const p = ray.origin.clone().addScaledVector(ray.direction, t)
+          return { mode: 'drag', local: d.local.toArray(), point: p.toArray() }
+        }
+        case 'axis':
+        case 'triad_move': {
+          const delta = axisParam(d, e) - d.t0
+          const m = new THREE.Matrix4()
+            .makeTranslation(d.axis!.x * delta, d.axis!.y * delta, d.axis!.z * delta)
+            .multiply(d.start)
+          return { mode: 'pose', transform: transformOf(m) }
+        }
+        case 'triad_rotate':
+          return rotate(d.axis!, ringAngle(d, e) - d.t0, d.point)
+        case 'rotate': {
+          // Horizontal motion turns about the view's up axis, vertical about its right.
+          const q = engine.camera.quaternion
+          const up = new THREE.Vector3(0, 1, 0).applyQuaternion(q)
+          const right = new THREE.Vector3(1, 0, 0).applyQuaternion(q)
+          const origin = new THREE.Vector3().setFromMatrixPosition(d.start)
+          const dx = (e.clientX - d.sx) * 0.01
+          const dy = (e.clientY - d.sy) * 0.01
+          const m = new THREE.Matrix4()
+            .makeTranslation(origin.x, origin.y, origin.z)
+            .multiply(new THREE.Matrix4().makeRotationAxis(up, dx))
+            .multiply(new THREE.Matrix4().makeRotationAxis(right, dy))
+            .multiply(new THREE.Matrix4().makeTranslation(-origin.x, -origin.y, -origin.z))
+            .multiply(d.start)
+          return { mode: 'pose', transform: transformOf(m) }
+        }
+      }
+    }
+
+    const collision = () => {
+      const m = useMove.getState()
+      return m.collision ? { dragged_only: m.draggedOnly } : null
+    }
 
     const onDown = (e: PointerEvent) => {
       canvas.setPointerCapture(e.pointerId)
       down = { x: e.clientX, y: e.clientY, button: e.button }
       sketchOwns = false
+      if (startDrag(e)) return
       spatialOwns = spatial.onDown(e)
       if (spatialOwns) return
       if (e.button === 0 && sketcher.active && !e.altKey) {
@@ -172,6 +414,17 @@ export function Viewport() {
     }
 
     const onMove = (e: PointerEvent) => {
+      if (drag) {
+        if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) < 3) return
+        const s = useStore.getState()
+        if (!drag.moved) {
+          drag.moved = true
+          void s.asmMove(drag.key, dragMotion(drag, e), 'start', collision())
+          return
+        }
+        void s.asmMove(drag.key, dragMotion(drag, e), 'move', collision())
+        return
+      }
       if (spatialOwns) {
         spatial.onMove(e)
         return
@@ -196,6 +449,17 @@ export function Viewport() {
       const y = e.clientY
       hoverFrame = requestAnimationFrame(() => {
         hoverFrame = 0
+        if (assemblyOpen()) {
+          const target = useStore.getState().asmTarget
+          const kinds = (target?.kinds.filter((k) => k !== 'component') ?? [
+            'vertex',
+            'edge',
+            'face',
+          ]) as ('vertex' | 'edge' | 'face')[]
+          const p = asmRef.current?.pick(x, y, kinds.length ? kinds : ['face']) ?? null
+          setAsmHover((h) => (JSON.stringify(h) === JSON.stringify(p) ? h : p))
+          return
+        }
         const kinds = sketcher.active
           ? (['edge'] as PickKind[])
           : (useStore.getState().pickTarget?.kinds ?? DEFAULT_KINDS)
@@ -209,6 +473,14 @@ export function Viewport() {
       const wasDown = down
       down = null
       nav = null
+      if (drag) {
+        const d = drag
+        drag = null
+        if (d.moved) {
+          void useStore.getState().asmMove(d.key, dragMotion(d, e), 'end', collision())
+          return
+        }
+      }
       if (spatialOwns) {
         spatialOwns = false
         spatial.onUp()
@@ -225,9 +497,38 @@ export function Viewport() {
         if (useStore.getState().sketchTool === 'convert') void sketcher.onPointerUp(e)
         return
       }
+      const additive = e.shiftKey || e.metaKey || e.ctrlKey
+      if (assemblyOpen()) {
+        const s = useStore.getState()
+        const target = s.asmTarget
+        const kinds = (target?.kinds.filter((k) => k !== 'component') ?? [
+          'vertex',
+          'edge',
+          'face',
+        ]) as ('vertex' | 'edge' | 'face')[]
+        const p = asmRef.current?.pick(e.clientX, e.clientY, kinds.length ? kinds : ['face'])
+        if (p) {
+          void s.asmPick(p, additive)
+          return
+        }
+        // Assembly planes and axes.
+        const ref = engine.pick(e.clientX, e.clientY, ['datum', 'std_plane'])
+        if (ref && target && target.kinds.includes('face')) {
+          const entity: Ref =
+            ref.kind === 'std_plane'
+              ? ref.ref
+              : ref.kind === 'datum'
+                ? { type: 'feature', id: ref.id }
+                : { type: 'origin' }
+          target.onPick({ pick: null, ref: { component: [], entity }, geometry: null })
+          return
+        }
+        if (!target) s.selectComponents([])
+        return
+      }
       const kinds = useStore.getState().pickTarget?.kinds ?? DEFAULT_KINDS
       const p = engine.pick(e.clientX, e.clientY, kinds)
-      if (p) void useStore.getState().pick(p, e.shiftKey || e.metaKey || e.ctrlKey)
+      if (p) void useStore.getState().pick(p, additive)
       else if (!useStore.getState().pickTarget) useStore.getState().clearSelection()
     }
 

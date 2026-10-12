@@ -157,6 +157,24 @@ export class Engine {
     return this.renderer.domElement
   }
 
+  /** Set the model box used for fitting and on-screen sizes. */
+  setBounds(min: Vec3 | null, max: Vec3 | null): void {
+    if (min && max) this.bounds.set(v3(min), v3(max))
+    else this.bounds.set(new THREE.Vector3(-50, -50, -50), new THREE.Vector3(50, 50, 50))
+    this.buildStdPlanes()
+  }
+
+  /** Viewport size in pixels. */
+  get viewSize(): { width: number; height: number } {
+    return { width: this.container.clientWidth, height: this.container.clientHeight }
+  }
+
+  /** A raycaster aimed through a screen point. */
+  raycastFrom(clientX: number, clientY: number): THREE.Raycaster {
+    this.raycaster.setFromCamera(this.ndc(clientX, clientY), this.camera)
+    return this.raycaster
+  }
+
   /** Model size, for scaling things drawn on screen. */
   get size(): number {
     return this.bounds.getSize(new THREE.Vector3()).length() || 100

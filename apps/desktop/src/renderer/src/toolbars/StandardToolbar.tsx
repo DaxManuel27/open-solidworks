@@ -1,8 +1,8 @@
 import { Toolbar, ToolbarControl, type Control } from './controls'
 const groups: Control[][] = [
   [
-    { command: 'new' },
-    { command: 'open', menu: ['import'] },
+    { command: 'new', menu: ['new', 'newAssembly'] },
+    { command: 'open', menu: ['import', 'importAssembly'] },
     { command: 'save', menu: ['saveAs', 'export'] },
     { command: 'print' },
   ],

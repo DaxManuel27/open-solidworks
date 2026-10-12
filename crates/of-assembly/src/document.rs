@@ -405,9 +405,10 @@ pub enum PatternKind {
         /// The pattern feature: a component path and `{type: feature, id}`.
         feature: CompRef,
     },
-    /// One instance per point of an assembly sketch (`reference` features).
+    /// One instance per sketch point: a sketch in a component part (its
+    /// component path and `{type: feature, id}`) or in the assembly (empty path).
     SketchDriven {
-        sketch: u32,
+        sketch: CompRef,
         /// The seed point the instances are placed by; default the seed's origin.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reference: Option<CompRef>,

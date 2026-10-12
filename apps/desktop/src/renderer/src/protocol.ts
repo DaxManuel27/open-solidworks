@@ -273,3 +273,171 @@ export function decodeU32(b64: string): Uint32Array {
 export function refKey(r: Ref): string {
   return JSON.stringify(r)
 }
+
+// ---- Assemblies (crates/openforge/src/asm.rs, crates/of-assembly) ----
+
+/** Geometry in an assembly: a component path (empty: the assembly) and a part reference. */
+export interface CompRef {
+  component: string[]
+  entity: Ref
+}
+
+/** Translation (mm) and unit quaternion [x, y, z, w]. */
+export interface Transform {
+  translation: Vec3
+  rotation: [number, number, number, number]
+}
+
+export interface AsmInstance {
+  key: string[]
+  name: string
+  /** Key into `AsmScene.parts`; null for subassembly nodes and missing files. */
+  part: string | null
+  /** Column-major 4x4, assembly frame (exploded when an explode is shown). */
+  transform: number[]
+  hidden: boolean
+  derived: number | null
+  kind: 'part' | 'assembly' | 'missing'
+}
+
+export interface AsmScene {
+  kind: 'assembly'
+  parts: Record<string, MeshPayload | null>
+  instances: AsmInstance[]
+  explode_lines: [Vec3, Vec3][]
+  exploded: boolean
+  datums: Scene['datums']
+  bbox: { min: Vec3; max: Vec3 } | null
+}
+
+export interface AsmComponent {
+  key: string[]
+  name: string
+  file: string
+  kind: 'part' | 'assembly' | 'missing' | 'suppressed'
+  error?: string | null
+  fixed: boolean
+  dof?: number | null
+  under_defined?: boolean
+  hidden?: boolean
+  derived?: number | null
+  configuration?: number | null
+  configurations?: { id: number; name: string }[]
+  active_configuration?: number | null
+  suppressed?: boolean
+  flexible?: boolean
+  exclude_from_bom?: boolean
+  children?: AsmComponent[]
+}
+
+export type MateKind = { type: string } & Record<string, unknown>
+
+export interface MateView {
+  id: number
+  name: string
+  type: string
+  definition: MateKind
+  suppressed: boolean
+  error: string | null
+  conflicting: boolean
+  redundant: boolean
+  components: string[]
+}
+
+export interface ExplodeStepView {
+  id: number
+  name: string
+  components: string[][]
+  type: 'translate' | 'rotate' | 'radial'
+  [key: string]: unknown
+}
+
+export interface AsmConfiguration {
+  id: number
+  name: string
+  suppressed: Record<string, boolean>
+  part_configurations: Record<string, number>
+  mates_suppressed: Record<string, boolean>
+  explode: ExplodeStepView[]
+}
+
+export interface AsmPattern {
+  id: number
+  name: string
+  type: string
+  seeds: string[]
+  skip: number[]
+  suppressed: boolean
+  [key: string]: unknown
+}
+
+export interface AsmMirror {
+  id: number
+  name: string
+  plane: CompRef
+  components: { component: string; opposite_hand?: string | null }[]
+  position: 'bounding_box' | 'center_of_mass' | 'origin'
+  suppressed: boolean
+}
+
+export interface AsmSnapshot {
+  kind: 'assembly'
+  generation: string
+  revision: number
+  path: string | null
+  dirty: boolean
+  can_undo: boolean
+  can_redo: boolean
+  units: Units
+  components: AsmComponent[]
+  mates: MateView[]
+  patterns: AsmPattern[]
+  mirrors: AsmMirror[]
+  reference: { id: number; name: string; type: string }[]
+  configurations: { active: number; items: AsmConfiguration[] }
+  explode: { steps: ExplodeStepView[]; shown: number | null }
+  ignored_interferences: [string, string][]
+  diagnostics: { solved: boolean; free: number; component_errors: Record<string, string> }
+  scene?: AsmScene
+  /** Set by some methods. */
+  key?: string
+  id?: number
+  path_written?: string
+}
+
+/** World geometry of a picked assembly reference, from `asm.pick`. */
+export type AsmGeometry =
+  | { type: 'point'; point: Vec3 }
+  | { type: 'line'; origin: Vec3; dir: Vec3; ends: [Vec3, Vec3] | null }
+  | { type: 'plane'; origin: Vec3; normal: Vec3; center: Vec3 }
+  | { type: 'cylinder'; origin: Vec3; dir: Vec3; radius: number }
+  | { type: 'cone'; origin: Vec3; dir: Vec3 }
+  | { type: 'sphere'; center: Vec3; radius: number }
+  | { type: 'circle'; center: Vec3; normal: Vec3; radius: number }
+  | { type: 'curve'; points: number; closed: boolean }
+
+export interface HardwareEntry {
+  kind: string
+  standard: string
+  name: string
+  sizes: string[]
+  lengths: number[]
+}
+
+export interface BomRow {
+  item: string
+  level: number
+  quantity: number
+  part_number: string
+  description: string
+  configuration: string
+  file: string
+  assembly: boolean
+  material: string
+  mass: number | null
+  properties: Record<string, string>
+}
+
+export function compRefKey(r: CompRef): string {
+  return JSON.stringify(r)
+}

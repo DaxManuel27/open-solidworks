@@ -2,11 +2,15 @@ import { useEffect, useRef, useState } from 'react'
 import { useStore } from './store'
 import { Toolbar, ToolbarControl } from './toolbars/controls'
 import {
-  availableTabs,
+  assemblyEvaluateGroups,
+  assemblyGroups,
+  assemblyTabOrder,
+  assemblyTabs,
+  availableTabs as partTabs,
   evaluateGroups,
   featureGroups,
   sketchGroups,
-  tabOrder,
+  tabOrder as partTabOrder,
   unavailableTabs,
 } from './toolbars/layout'
 import { StandardToolbar } from './toolbars/StandardToolbar'
@@ -17,6 +21,9 @@ export { SKETCH_KEYS } from './toolbars/commands'
 export function CommandManager() {
   const tab = useStore((s) => s.tab)
   const editing = useStore((s) => !!s.sketch)
+  const isAssembly = useStore((s) => !!s.assembly)
+  const availableTabs = isAssembly ? assemblyTabs : partTabs
+  const tabOrder = isAssembly ? assemblyTabOrder : partTabOrder
   const wasEditing = useRef(editing)
   useEffect(() => {
     if (wasEditing.current && !editing) useStore.getState().setTab('features')
@@ -25,7 +32,15 @@ export function CommandManager() {
   const track = useRef<HTMLDivElement>(null)
   const [overflow, setOverflow] = useState({ left: false, right: false })
   const groups =
-    tab === 'features' ? featureGroups : tab === 'sketch' ? sketchGroups(editing) : evaluateGroups
+    tab === 'assembly'
+      ? assemblyGroups
+      : tab === 'evaluate'
+        ? isAssembly
+          ? assemblyEvaluateGroups
+          : evaluateGroups
+        : tab === 'features'
+          ? featureGroups
+          : sketchGroups(editing)
   useEffect(() => {
     const el = track.current!
     const update = () =>
@@ -42,7 +57,7 @@ export function CommandManager() {
       observer.disconnect()
       el.removeEventListener('scroll', update)
     }
-  }, [tab, editing])
+  }, [tab, editing, isAssembly])
   return (
     <header className="command-manager">
       <StandardToolbar />
@@ -59,7 +74,7 @@ export function CommandManager() {
         )}
         <div ref={track} className="of-ribbon-track">
           <Toolbar
-            label={`${availableTabs.find((t) => t.id === tab)!.label} commands`}
+            label={`${availableTabs.find((t) => t.id === tab)?.label ?? 'Assembly'} commands`}
             className="of-ribbon-commands"
             key={tab}
           >
@@ -101,12 +116,13 @@ export function CommandManager() {
           if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return
           e.preventDefault()
           const index = availableTabs.findIndex((t) => t.id === tab)
+          const n = availableTabs.length
           const next =
             e.key === 'Home'
               ? 0
               : e.key === 'End'
-                ? 2
-                : (index + (e.key === 'ArrowRight' ? 1 : 2)) % 3
+                ? n - 1
+                : (index + (e.key === 'ArrowRight' ? 1 : n - 1)) % n
           const target = availableTabs[next]!.id
           useStore.getState().setTab(target)
           document.getElementById(`tab-${target}`)?.focus()

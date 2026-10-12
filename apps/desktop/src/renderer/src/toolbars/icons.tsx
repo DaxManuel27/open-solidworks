@@ -64,6 +64,7 @@ const paths = {
   appearance: 'M21 12a9 9 0 1 0-9 9c6 0-2-6 3-6h3z M7 7h1 M12 5h1 M17 8h1 M5 12h1',
   scene: 'M3 3h18v18H3z M3 17l6-7 4 5 3-3 5 6 M15 7h2',
   settings: 'M3 4h18v13H3z M8 21h8 M12 17v4',
+  mate: 'M2 6h8v12H2z M14 6h8v12h-8z M10 12h4 M10 9h4 M10 15h4',
 } as const
 
 export type IconId = keyof typeof paths

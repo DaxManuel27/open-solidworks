@@ -29,8 +29,25 @@ const api: OpenForgeApi = {
   openDialog: (kind) => ipcRenderer.invoke('dialog:open', kind) as Promise<string | null>,
   saveDialog: (kind, name) =>
     ipcRenderer.invoke('dialog:save', kind, name) as Promise<string | null>,
-  setDocState: (title, dirty) => ipcRenderer.send('doc:state', title, dirty),
+  setDocState: (title, dirty, path) => ipcRenderer.send('doc:state', title, dirty, path),
   closeWindow: () => ipcRenderer.send('window:close'),
+  openWindow: (path) => ipcRenderer.send('window:open', path),
+  notifySaved: (path) => ipcRenderer.send('doc:saved', path),
+  onFileSaved: (handler) => {
+    const listener = (_e: IpcRendererEvent, path: string) => handler(path)
+    ipcRenderer.on('file:saved', listener)
+    return () => ipcRenderer.removeListener('file:saved', listener)
+  },
+  launch: () => {
+    // The preload runs in the page, which has a location; its types are Node's.
+    const search = (globalThis as { location?: { search: string } }).location?.search ?? ''
+    const q = new URLSearchParams(search)
+    const kind = q.get('kind')
+    return {
+      open: q.get('open'),
+      kind: kind === 'assembly' || kind === 'part' ? kind : null,
+    }
+  },
   onMenu: (handler) => {
     const listener = (_e: IpcRendererEvent, command: string) => handler(command)
     ipcRenderer.on('menu', listener)

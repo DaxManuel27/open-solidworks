@@ -1,9 +1,15 @@
 import { create } from 'zustand'
 import { CallFailed, call } from './core'
 import type {
+  AsmGeometry,
+  AsmInstance,
+  AsmScene,
+  AsmSnapshot,
+  CompRef,
   CoreInfo,
   FeatureParams,
   Kind,
+  MeshPayload,
   PreviewResult,
   Ref,
   Scene,
@@ -18,6 +24,34 @@ export type Pick =
   | { kind: 'std_plane'; ref: Ref }
 
 export type PickKind = Pick['kind']
+
+/** Something picked on an assembly component. */
+export interface AsmPick {
+  component: string[]
+  kind: Kind
+  index: number
+}
+
+/** A picked assembly reference with its world geometry. */
+export interface AsmSelected {
+  pick: AsmPick | null
+  ref: CompRef
+  geometry: AsmGeometry | null
+}
+
+/** A panel that wants assembly picks routed to it. */
+export interface AsmPickTarget {
+  kinds: (Kind | 'component')[]
+  onPick: (selected: AsmSelected) => void
+}
+
+/** Things to mark in the assembly: collision faces and interference volumes. */
+export interface AsmMarks {
+  faces: { component: string[]; faces: number[] }[]
+  meshes: MeshPayload[]
+}
+
+export type DragPhase = 'start' | 'move' | 'end'
 
 /** A panel that wants viewport picks routed to it. */
 export interface PickTarget {
@@ -70,13 +104,33 @@ export type PanelType =
   | 'material'
   | 'units'
   | 'export'
+  | 'asm_insert'
+  | 'hardware'
+  | 'mate'
+  | 'move_component'
+  | 'rotate_component'
+  | 'component_pattern'
+  | 'mirror_components'
+  | 'explode'
+  | 'interference'
+  | 'clearance'
+  | 'bom'
+  | 'component_properties'
+  | 'asm_configurations'
+  | 'asm_reference'
+  | 'asm_measure'
+  | 'asm_mass'
 
 export interface Panel {
   type: PanelType
-  /** Feature being edited, if not creating a new one. */
+  /** Feature (or mate, pattern, mirror) being edited, if not creating a new one. */
   editing?: number
   /** Sketch to start a new feature from. */
   sketch?: number
+  /** Component a component panel is about. */
+  component?: string[]
+  /** Pattern kind or mate type a panel starts with. */
+  variant?: string
 }
 
 export interface Toast {
@@ -85,7 +139,7 @@ export interface Toast {
   kind: 'error' | 'info'
 }
 
-export type Tab = 'features' | 'sketch' | 'evaluate'
+export type Tab = 'features' | 'sketch' | 'evaluate' | 'assembly'
 
 export type ViewName =
   'front' | 'back' | 'left' | 'right' | 'top' | 'bottom' | 'iso' | 'normal' | 'fit'
@@ -137,6 +191,17 @@ interface State {
   status: string
   /** CommandManager tab. */
   tab: Tab
+  /** The open assembly, when the document is one; `snapshot` then mirrors its file state. */
+  assembly: AsmSnapshot | null
+  asmScene: AsmScene | null
+  /** Instance positions to show instead of the solved ones (mate preview, drags). */
+  asmPreview: AsmInstance[] | null
+  /** Picked faces, edges and vertices. */
+  asmSelection: AsmSelected[]
+  /** Selected components (tree or viewport). */
+  asmComponents: string[][]
+  asmTarget: AsmPickTarget | null
+  asmMarks: AsmMarks
 }
 
 interface Actions {
@@ -178,6 +243,24 @@ interface Actions {
   closeSketch(): Promise<void>
   setSketchTool(t: SketchTool): void
   setSketchSelection(ids: number[]): void
+
+  newAssembly(): Promise<void>
+  importAssembly(): Promise<void>
+  /** Pick on an assembly component: routed to the active panel, else selected. */
+  asmPick(pick: AsmPick, additive: boolean): Promise<void>
+  selectComponents(keys: string[][], additive?: boolean): void
+  setAsmTarget(t: AsmPickTarget | null): void
+  setAsmMarks(marks: AsmMarks): void
+  /** Move a component; `move` phases preview without recording undo. */
+  asmMove(
+    component: string[],
+    motion: Record<string, unknown>,
+    phase: DragPhase,
+    collision?: { dragged_only?: boolean } | null,
+  ): Promise<void>
+  openComponent(key: string[]): Promise<void>
+  /** Take an assembly result as the current document state. */
+  adoptAssembly(a: AsmSnapshot): Snapshot
 }
 
 let toastId = 1
@@ -185,15 +268,46 @@ let previewSequence = 0
 let dragInFlight = false
 let pendingDrag: { point: number; to: [number, number] } | null = null
 
-function fileName(path: string | null): string {
-  if (!path) return 'Part1'
+function fileName(path: string | null, fallback = 'Part1'): string {
+  if (!path) return fallback
   return (
     path
       .split(/[\\/]/)
       .pop()
-      ?.replace(/\.ofp$/i, '') ?? 'Part1'
+      ?.replace(/\.of[pa]$/i, '') ?? fallback
   )
 }
+
+/** The part-shaped file state the shell reads while an assembly is open. */
+function asPartSnapshot(a: AsmSnapshot): Snapshot {
+  return {
+    generation: a.generation,
+    configurations: { active: 1, next_id: 2, items: [] },
+    variables: {},
+    equations: {},
+    equation_values: {},
+    parameters: [],
+    revision: a.revision,
+    features: [],
+    rollback: null,
+    units: a.units,
+    material: null,
+    effective_material: null,
+    path: a.path,
+    dirty: a.dirty,
+    can_undo: a.can_undo,
+    can_redo: a.can_redo,
+    editing: null,
+  }
+}
+
+let moveInFlight = false
+let pendingMove: {
+  component: string[]
+  motion: Record<string, unknown>
+  phase: DragPhase
+  collision?: { dragged_only?: boolean } | null
+} | null = null
 
 export const useStore = create<State & Actions>((set, get) => ({
   snapshot: null,
@@ -216,15 +330,31 @@ export const useStore = create<State & Actions>((set, get) => ({
   view: { name: 'iso', seq: 0 },
   status: '',
   tab: 'features',
+  assembly: null,
+  asmScene: null,
+  asmPreview: null,
+  asmSelection: [],
+  asmComponents: [],
+  asmTarget: null,
+  asmMarks: { faces: [], meshes: [] },
 
   async init() {
     try {
       const info = await call<CoreInfo>('core.info')
-      if (info.protocol_version !== 3 || info.scene_version !== 3)
+      if (info.protocol_version !== 4 || info.scene_version !== 4)
         throw new Error(
           'The core and desktop versions do not match. Rebuild both before opening a part.',
         )
-      await get().run('doc.info')
+      const launch = window.openforge.launch()
+      // Restarting after a crash shows the core's (empty) document instead.
+      if (!get().snapshot && launch.open) {
+        if (await get().run('doc.open', { path: launch.open })) get().setView('fit')
+        else await get().run('doc.info')
+      } else if (!get().snapshot && launch.kind === 'assembly') {
+        await get().run('asm.new')
+      } else {
+        await get().run('doc.info')
+      }
     } catch (e) {
       get().toast((e as Error).message)
     }
@@ -234,8 +364,23 @@ export const useStore = create<State & Actions>((set, get) => ({
     ++previewSequence
     set({ busy: true, previewScene: null, previewError: null })
     try {
-      const snap = await call<Snapshot>(method, params)
-      if (snap.revision < (get().snapshot?.revision ?? -1)) return null
+      const result = await call<Snapshot | AsmSnapshot>(method, params)
+      if ((result as AsmSnapshot).kind === 'assembly')
+        return get().adoptAssembly(result as AsmSnapshot)
+      const snap = result as Snapshot
+      if (get().assembly) {
+        // Back to a part: drop every assembly state.
+        set({
+          assembly: null,
+          asmScene: null,
+          asmPreview: null,
+          asmSelection: [],
+          asmComponents: [],
+          asmTarget: null,
+          asmMarks: { faces: [], meshes: [] },
+          tab: 'features',
+        })
+      } else if (snap.revision < (get().snapshot?.revision ?? -1)) return null
       const update: Partial<State> = { snapshot: snap }
       if (method.startsWith('configuration.')) {
         Object.assign(update, {
@@ -250,7 +395,7 @@ export const useStore = create<State & Actions>((set, get) => ({
       if (snap.scene) update.scene = snap.scene
       set(update)
       const title = `${fileName(snap.path)}${snap.dirty ? ' •' : ''} — OpenForge`
-      window.openforge.setDocState(title, snap.dirty)
+      window.openforge.setDocState(title, snap.dirty, snap.path)
       return snap
     } catch (e) {
       get().toast(e instanceof CallFailed ? e.message : String(e))
@@ -299,12 +444,18 @@ export const useStore = create<State & Actions>((set, get) => ({
 
   async save(as = false) {
     let path = get().snapshot?.path ?? null
+    const assembly = !!get().assembly
     if (as || !path) {
-      path = await window.openforge.saveDialog('part', `${fileName(path)}.ofp`)
+      path = assembly
+        ? await window.openforge.saveDialog('assembly', `${fileName(path, 'Assembly1')}.ofa`)
+        : await window.openforge.saveDialog('part', `${fileName(path)}.ofp`)
       if (!path) return false
     }
     const r = await get().run('doc.save', { path })
-    if (r) get().toast('Saved', 'info')
+    if (r) {
+      get().toast('Saved', 'info')
+      window.openforge.notifySaved(path)
+    }
     return !!r
   },
 
@@ -535,6 +686,173 @@ export const useStore = create<State & Actions>((set, get) => ({
 
   setSketchSelection(ids) {
     set({ sketchSelection: ids })
+  },
+
+  async newAssembly() {
+    if (get().snapshot?.dirty && !confirm('Discard unsaved changes?')) return
+    set({ sketch: null, panel: null, selection: [], previewScene: null })
+    await get().run('asm.new')
+    get().setView('iso')
+  },
+
+  async importAssembly() {
+    if (get().snapshot?.dirty && !confirm('Discard unsaved changes?')) return
+    const path = await window.openforge.openDialog('step')
+    if (!path) return
+    set({ sketch: null, panel: null, selection: [], previewScene: null })
+    if (await get().run('asm.import_step', { path })) get().setView('fit')
+  },
+
+  async asmPick(pick, additive) {
+    const target = get().asmTarget
+    if (target?.kinds.includes('component') && !target.kinds.includes(pick.kind)) {
+      target.onPick({
+        pick,
+        ref: { component: pick.component, entity: { type: 'origin' } },
+        geometry: null,
+      })
+      return
+    }
+    let picked: { ref: CompRef; geometry: AsmGeometry | null }
+    try {
+      picked = await call('asm.pick', pick)
+    } catch (e) {
+      get().toast((e as Error).message)
+      return
+    }
+    const selected: AsmSelected = { pick, ...picked }
+    if (target) {
+      if (target.kinds.includes(pick.kind)) target.onPick(selected)
+      else
+        get().toast(
+          `Select ${target.kinds.map((k) => (k === 'component' ? 'a component' : describeKind(k))).join(' or ')}`,
+          'info',
+        )
+      return
+    }
+    const key = JSON.stringify(selected.ref)
+    set((s) => {
+      const exists = s.asmSelection.some((x) => JSON.stringify(x.ref) === key)
+      if (additive)
+        return {
+          asmSelection: exists
+            ? s.asmSelection.filter((x) => JSON.stringify(x.ref) !== key)
+            : [...s.asmSelection, selected],
+        }
+      return { asmSelection: [selected], asmComponents: [pick.component.slice(0, 1)] }
+    })
+  },
+
+  selectComponents(keys, additive = false) {
+    set((s) => {
+      if (!additive) return { asmComponents: keys, asmSelection: [] }
+      const out = [...s.asmComponents]
+      for (const k of keys) {
+        const i = out.findIndex((x) => x.join('/') === k.join('/'))
+        if (i >= 0) out.splice(i, 1)
+        else out.push(k)
+      }
+      return { asmComponents: out }
+    })
+  },
+
+  setAsmTarget(t) {
+    set({ asmTarget: t })
+  },
+
+  setAsmMarks(marks) {
+    set({ asmMarks: marks })
+  },
+
+  async asmMove(component, motion, phase, collision) {
+    // Coalesce drags: one request in flight, the latest target wins; start
+    // and end always go through.
+    pendingMove = { component, motion, phase, collision }
+    if (moveInFlight) return
+    moveInFlight = true
+    try {
+      while (pendingMove) {
+        const m = pendingMove
+        pendingMove = null
+        const params = {
+          component: m.component,
+          motion: m.motion,
+          phase: m.phase,
+          ...(m.collision ? { collision: m.collision } : {}),
+        }
+        if (m.phase === 'end') {
+          try {
+            const r = await call<
+              AsmSnapshot & {
+                collision: {
+                  components: string[][] | null
+                  faces: { component: string[]; faces: number[] }[]
+                }
+              }
+            >('asm.move', params)
+            get().adoptAssembly(r)
+            set({ asmPreview: null, asmMarks: { faces: r.collision.faces, meshes: [] } })
+            get().setStatus(r.collision.components ? 'Stopped at a collision' : '')
+          } catch (e) {
+            set({ asmPreview: null })
+            get().toast((e as Error).message)
+          }
+          continue
+        }
+        try {
+          const r = await call<{
+            instances: AsmInstance[]
+            collision: {
+              components: string[][] | null
+              faces: { component: string[]; faces: number[] }[]
+            }
+          }>('asm.move', params)
+          set({
+            asmPreview: r.instances,
+            asmMarks: { faces: r.collision.faces, meshes: [] },
+          })
+          if (r.collision.components) get().setStatus('Collision: the components touch here')
+          else get().setStatus('')
+        } catch (e) {
+          get().toast((e as Error).message)
+          pendingMove = null
+        }
+      }
+    } finally {
+      moveInFlight = false
+    }
+  },
+
+  adoptAssembly(a) {
+    const snap = asPartSnapshot(a)
+    const switched = !get().assembly
+    set({
+      assembly: a,
+      snapshot: snap,
+      scene: null,
+      ...(a.scene ? { asmScene: a.scene, asmPreview: null } : {}),
+      ...(switched
+        ? {
+            tab: 'assembly' as Tab,
+            sketch: null,
+            selection: [],
+            asmSelection: [],
+            asmComponents: [],
+          }
+        : {}),
+    })
+    const title = `${fileName(a.path, 'Assembly1')}${a.dirty ? ' •' : ''} — OpenForge`
+    window.openforge.setDocState(title, a.dirty, a.path)
+    return snap
+  },
+
+  async openComponent(key) {
+    try {
+      const r = await call<{ path: string }>('asm.component.open', { component: key })
+      window.openforge.openWindow(r.path)
+    } catch (e) {
+      get().toast((e as Error).message)
+    }
   },
 }))
 

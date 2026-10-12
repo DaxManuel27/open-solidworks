@@ -493,3 +493,47 @@ fn step_export_keeps_structure_and_import_rebuilds_it() {
         assert!((ca[k] - cb[k]).abs() < 1e-6);
     }
 }
+
+#[test]
+fn sketch_driven_pattern_follows_part_sketch_points() {
+    let dir = Scratch::new("sketchpattern");
+    let mut plate = plate_doc(100.0, 60.0, 10.0, &[]);
+    let mut sk = of_model::sketch::Sketch::new();
+    for (x, y) in [(20.0, 20.0), (50.0, 40.0), (80.0, 20.0)] {
+        sk.add_point(of_model::geom::DVec2::new(x, y));
+    }
+    let sketch = plate.add(of_model::FeatureKind::Sketch(of_model::SketchFeature {
+        plane: Ref::FrontPlane,
+        sketch: sk,
+    }));
+    let pf = save(&plate, &dir.path("plate.ofp"));
+    let pin = save(&shaft_doc(3.0, 20.0), &dir.path("pin.ofp"));
+    let mut a = Assembly::default();
+    let p = a.insert(&pf, Some(Pose::from_translation(DVec3::new(0.0, 0.0, 5.0))), None).unwrap();
+    let s = a.insert(&pin, Some(Pose::from_translation(DVec3::new(20.0, 20.0, 15.0))), None).unwrap();
+    let id = a.doc.take_id();
+    a.doc.patterns.push(Pattern {
+        id,
+        name: "SketchPattern1".into(),
+        kind: PatternKind::SketchDriven {
+            sketch: CompRef {
+                component: vec![p],
+                entity: Ref::Feature { id: sketch },
+            },
+            reference: None,
+        },
+        seeds: vec![s],
+        skip: vec![],
+        suppressed: false,
+    });
+    let mut xs: Vec<(f64, f64)> = a
+        .instances()
+        .iter()
+        .filter(|i| i.derived == Some(id))
+        .map(|i| (i.pose.translation.x, i.pose.translation.y))
+        .collect();
+    xs.sort_by(|a, b| a.0.total_cmp(&b.0));
+    assert_eq!(xs.len(), 2, "one per sketch point except the seed's");
+    assert!((xs[0].0 - 50.0).abs() < 1e-9 && (xs[0].1 - 40.0).abs() < 1e-9);
+    assert!((xs[1].0 - 80.0).abs() < 1e-9);
+}

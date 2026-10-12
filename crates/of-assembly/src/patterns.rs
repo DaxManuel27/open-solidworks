@@ -199,34 +199,55 @@ fn transforms(
             }
         }
         PatternKind::SketchDriven { sketch, reference } => {
-            let state = asm.reference_state();
-            let (plane, sk) = state
-                .sketches
-                .get(sketch)
-                .ok_or("select a sketch in the assembly")?;
+            let Ref::Feature { id } = sketch.entity else {
+                return Err("select a sketch for the pattern".into());
+            };
+            // Sketch points in the assembly frame: the assembly's own sketch,
+            // or a part sketch placed by its component.
+            let (state, to_world) = if sketch.component.is_empty() {
+                (asm.reference_state().clone(), Pose::IDENTITY)
+            } else {
+                let inst = base
+                    .iter()
+                    .find(|i| i.key == sketch.component)
+                    .ok_or("the sketch's component is missing")?;
+                let part = inst.part().ok_or("the sketch must be in a part")?;
+                (part.state().clone(), inst.pose)
+            };
+            let (plane, sk) = state.sketches.get(&id).ok_or("select a sketch")?;
             let used: Vec<u32> = sk.entities.values().flat_map(|e| e.point_refs()).collect();
             let points: Vec<DVec3> = sk
                 .entities
                 .iter()
-                .filter(|(id, e)| !e.construction && !used.contains(id))
+                .filter(|(id, e)| {
+                    **id != of_model::sketch::ORIGIN && !e.construction && !used.contains(id)
+                })
                 .filter_map(|(_, e)| match e.geo {
-                    of_model::sketch::Geometry::Point { p } => Some(plane.to_world(p)),
+                    of_model::sketch::Geometry::Point { p } => Some(to_world.point(plane.to_world(p))),
                     _ => None,
                 })
                 .collect();
+            if points.is_empty() {
+                return Err("the sketch has no sketch points".into());
+            }
             let seed = p.seeds.first().ok_or("select a seed component")?;
             let anchor = match reference {
                 Some(r) => asm.world_geometry(r)?.point(),
                 None => seed_pose(seed)?.translation,
             };
-            let size = points.iter().fold(1.0f64, |a, q| a.max(q.length()));
+            // The seed sits at the sketch point nearest its reference;
+            // every other point gets an instance offset from it.
+            let home = *points
+                .iter()
+                .min_by(|a, b| a.distance(anchor).total_cmp(&b.distance(anchor)))
+                .unwrap();
             let mut k = 0;
             for q in points {
-                if q.distance(anchor) < 1e-6 * size {
+                if q == home {
                     continue;
                 }
                 k += 1;
-                out.push((k, Pose::from_translation(q - anchor)));
+                out.push((k, Pose::from_translation(q - home)));
             }
         }
         PatternKind::CurveDriven {
