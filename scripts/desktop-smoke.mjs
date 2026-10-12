@@ -103,6 +103,15 @@ async function run(win) {
     await click(label)
     await click(item)
   }
+  const resize = async (width, height) => {
+    win.setContentSize(width, height)
+    // Native window resizing and the renderer's layout update are asynchronous.
+    const [contentWidth, contentHeight] = win.getContentSize()
+    await wait(
+      () => js(`innerWidth === ${contentWidth} && innerHeight === ${contentHeight}`),
+      `renderer resize to ${contentWidth}x${contentHeight}`,
+    )
+  }
   const captureLayouts = async (name) => {
     for (const theme of ['light', 'dark']) {
       nativeTheme.themeSource = theme
@@ -111,17 +120,11 @@ async function run(win) {
         [1024, 612],
         [900, 600],
       ]) {
-        win.setContentSize(width, height)
+        await resize(width, height)
         await js(`document.querySelector('.of-ribbon-track').scrollLeft = 0`)
-        await new Promise((r) => setTimeout(r, 180))
-        await wait(
-          () =>
-            js(
-              `(() => { const el=document.querySelector('.of-ribbon-track'); return (el.scrollWidth > el.clientWidth + 1) === !!document.querySelector('[aria-label="Scroll commands right"]'); })()`,
-            ),
-          'ribbon resize observer settled',
-        )
-        const layout = await js(`(() => {
+        let layout
+        await wait(async () => {
+          layout = await js(`(() => {
           const rect = s => document.querySelector(s).getBoundingClientRect();
           const standard = rect('.of-standard'), ribbon = rect('.of-ribbon'), tabs = rect('.of-tabs');
           const hud = rect('.of-heads-up'), viewport = rect('.viewport');
@@ -131,13 +134,16 @@ async function run(win) {
             bodyFits: document.body.scrollWidth === window.innerWidth,
             overflow: document.querySelector('.of-ribbon-track').scrollWidth > document.querySelector('.of-ribbon-track').clientWidth + 1,
             arrows: !!document.querySelector('[aria-label="Scroll commands right"]') };
-        })()`)
+          })()`)
+          // ResizeObserver and React must catch up with the new track dimensions.
+          return layout.overflow === layout.arrows
+        }, `ribbon overflow (${name}, ${theme}, ${width}x${height})`)
         assert.deepEqual(layout.heights, [32, 76, 24, 28])
         assert.ok(
           layout.centered && layout.below && layout.fits && layout.bodyFits,
           JSON.stringify(layout),
         )
-        assert.equal(layout.overflow, layout.arrows)
+        assert.equal(layout.overflow, layout.arrows, JSON.stringify({ name, theme, width, layout }))
         if (layout.overflow) {
           await click('Scroll commands right')
           await wait(
@@ -193,8 +199,7 @@ async function run(win) {
       }
     }
     nativeTheme.themeSource = 'light'
-    win.setContentSize(1440, 900)
-    await new Promise((r) => setTimeout(r, 180))
+    await resize(1440, 900)
   }
   await wait(
     () => js(`!!window.openforge && !!document.querySelector('.tree-item')`),
