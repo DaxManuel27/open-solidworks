@@ -78,6 +78,70 @@ impl Curve2 {
     }
 }
 
+impl Curve2 {
+    /// Split at parameter fraction `t` in (0, 1): by length for lines and arcs,
+    /// by curve parameter for Bezier curves. A circle has no ends, so it
+    /// becomes one full-turn arc starting at that fraction of the turn (an arc
+    /// whose start equals its end is a full turn). Splines are not split.
+    pub fn split(&self, t: f64) -> Option<(Curve2, Curve2)> {
+        if !(t > 0.0 && t < 1.0) {
+            return None;
+        }
+        match self {
+            Curve2::Line { a, b } => {
+                let m = a.lerp(*b, t);
+                Some((Curve2::Line { a: *a, b: m }, Curve2::Line { a: m, b: *b }))
+            }
+            Curve2::Arc { center, start, end } => {
+                let a0 = (*start - *center).to_angle();
+                let mut a1 = (*end - *center).to_angle();
+                if a1 <= a0 {
+                    a1 += std::f64::consts::TAU;
+                }
+                let r = (*start - *center).length();
+                let m = *center + DVec2::from_angle(a0 + (a1 - a0) * t) * r;
+                Some((
+                    Curve2::Arc {
+                        center: *center,
+                        start: *start,
+                        end: m,
+                    },
+                    Curve2::Arc {
+                        center: *center,
+                        start: m,
+                        end: *end,
+                    },
+                ))
+            }
+            Curve2::Bezier { points: p } => {
+                // de Casteljau.
+                let l = |a: DVec2, b: DVec2| a.lerp(b, t);
+                let (p01, p12, p23) = (l(p[0], p[1]), l(p[1], p[2]), l(p[2], p[3]));
+                let (p012, p123) = (l(p01, p12), l(p12, p23));
+                let m = l(p012, p123);
+                Some((
+                    Curve2::Bezier {
+                        points: [p[0], p01, p012, m],
+                    },
+                    Curve2::Bezier {
+                        points: [m, p123, p23, p[3]],
+                    },
+                ))
+            }
+            Curve2::Circle { center, radius } => {
+                let m = *center + DVec2::from_angle(std::f64::consts::TAU * t) * *radius;
+                let turn = Curve2::Arc {
+                    center: *center,
+                    start: m,
+                    end: m,
+                };
+                Some((turn.clone(), turn))
+            }
+            Curve2::Spline { .. } => None,
+        }
+    }
+}
+
 /// One planar face: an outer loop and any number of holes. Each loop is a
 /// list of curves joined end to end.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -96,6 +160,28 @@ pub struct Profile {
 impl Profile {
     /// Build the faces in the kernel: a single face, or a compound of faces.
     pub fn to_shape(&self) -> Result<Shape> {
+        let (curves, loop_sizes, face_loops) = self.flatten();
+        let s = ffi::make_faces(&self.plane.to_ffi(), &curves, &loop_sizes, &face_loops)?;
+        Ok(Shape(s))
+    }
+
+    /// The regions mapped onto cylindrical face `face` of `body` by arc length:
+    /// distance around the axis becomes angle and distance along it stays length.
+    /// The sketch plane must be parallel to the cylinder's axis.
+    pub fn wrap_onto(&self, body: &Shape, face: u32) -> Result<Shape> {
+        let (curves, loop_sizes, face_loops) = self.flatten();
+        let s = ffi::wrap_faces(
+            &body.0,
+            face,
+            &self.plane.to_ffi(),
+            &curves,
+            &loop_sizes,
+            &face_loops,
+        )?;
+        Ok(Shape(s))
+    }
+
+    fn flatten(&self) -> (Vec<ffi::Curve>, Vec<u32>, Vec<u32>) {
         let mut curves = Vec::new();
         let mut loop_sizes = Vec::new();
         let mut face_loops = Vec::new();
@@ -106,8 +192,7 @@ impl Profile {
             }
             face_loops.push(1 + f.holes.len() as u32);
         }
-        let s = ffi::make_faces(&self.plane.to_ffi(), &curves, &loop_sizes, &face_loops)?;
-        Ok(Shape(s))
+        (curves, loop_sizes, face_loops)
     }
 }
 

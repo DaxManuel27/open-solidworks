@@ -1,0 +1,23 @@
+{
+  "id": "03-shell-block",
+  "title": "Shell a block",
+  "prompt": "Shell this block to a 2 mm wall thickness, leaving the face at +Z (z = 20) open.",
+  "start": "../fixtures/block.ofp",
+  "expect": {
+    "outcome": "change",
+    "no_new_errors": true,
+    "keeps_features": [1, 2],
+    "part": {
+      "valid_solid": true,
+      "body_count": 1,
+      "volume": {
+        "value": 7152,
+        "tol": 0.5
+      },
+      "bbox_size": {
+        "value": [40, 30, 20],
+        "tol": 0.01
+      }
+    }
+  }
+}

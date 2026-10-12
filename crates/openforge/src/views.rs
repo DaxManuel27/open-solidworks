@@ -2,7 +2,7 @@
 
 use of_model::geom::{DVec2, DVec3, Kind, Plane, Shape};
 use of_model::sketch::{Definition, Geometry, Sketch, SolveReport};
-use of_model::{Datum, Document, FeatureKind, Model, State};
+use of_model::{Datum, Document, FeatureKind, Model, Ref, State};
 use of_protocol::{MeshPayload, b64_f32, b64_u32};
 use serde_json::{Value, json};
 
@@ -45,7 +45,14 @@ pub fn scene(doc: &Document, state: &State) -> Result<Value, String> {
         Some(b) => Some(mesh(&b.shape)?),
         None => None,
     };
-    let bbox = state.body.as_ref().and_then(|b| b.shape.bbox());
+    let display_geometry = Shape::compound(
+        state
+            .body
+            .iter()
+            .map(|b| &b.shape)
+            .chain(state.curves.values().map(|c| &c.shape)),
+    );
+    let bbox = display_geometry.bbox();
     let name = |id: u32| doc.feature(id).map(|f| f.name.clone()).unwrap_or_default();
     let datums: Vec<Value> = state
         .datums
@@ -89,12 +96,119 @@ pub fn scene(doc: &Document, state: &State) -> Result<Value, String> {
             json!({ "id": id, "name": name(*id), "plane": plane_json(plane), "polylines": polylines })
         })
         .collect();
+    let curves = state
+        .curves
+        .iter()
+        .map(|(id, curve)| {
+            let polylines = (0..curve.shape.count(of_model::geom::Kind::Edge))
+                .map(|edge| {
+                    curve
+                        .shape
+                        .edge_samples(edge, 0.05, ANGULAR)
+                        .map(|points| {
+                            points
+                                .iter()
+                                .flat_map(|p| [p.x, p.y, p.z])
+                                .collect::<Vec<_>>()
+                        })
+                        .map_err(|e| e.0)
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+            let segments = curve.segments.iter().map(|(segment, shape)| {
+                let polylines = (0..shape.count(Kind::Edge)).map(|edge| {
+                    shape.edge_samples(edge, 0.05, ANGULAR).map(|points| points.iter()
+                        .flat_map(|p| [p.x, p.y, p.z]).collect::<Vec<_>>()).map_err(|e| e.0)
+                }).collect::<Result<Vec<_>, _>>()?;
+                Ok(json!({ "reference": Ref::CurveSegment { curve: *id, segment: segment.clone() }, "polylines": polylines }))
+            }).collect::<Result<Vec<Value>, String>>()?;
+            Ok(json!({ "id": id, "name": name(*id), "polylines": polylines, "segments": segments }))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let sketches3d: Vec<_> = state
+        .sketches3d
+        .iter()
+        .map(|(id, (sk, report))| {
+            let polylines: Vec<Vec<f64>> = sk
+                .entities
+                .iter()
+                .filter(|e| {
+                    !e.construction
+                        && !matches!(
+                            e.geometry,
+                            of_model::sketch::spatial::Geometry3::Point { .. }
+                        )
+                })
+                .map(|e| {
+                    (0..=48)
+                        .filter_map(|i| sk.sample(e.id, i as f64 / 48.0).ok())
+                        .flat_map(|p| p.to_array())
+                        .collect()
+                })
+                .collect();
+            json!({"id":id,"name":name(*id),"polylines":polylines,"sketch":sk,"report":report})
+        })
+        .collect();
+    let mut bounds = bbox.map(|b| (b.min, b.max));
+    for (sk, _) in state.sketches3d.values() {
+        for e in &sk.entities {
+            if let of_model::sketch::spatial::Geometry3::Point { at } = e.geometry {
+                bounds = Some(bounds.map_or((at, at), |(lo, hi)| (lo.min(at), hi.max(at))));
+            }
+        }
+    }
+    let hole_threads = state.hole_threads.iter().map(|(id, threads)| {
+        json!({
+            "id": id, "name": name(*id),
+            "parameters": {"holes": threads},
+            "body": null,
+            "hidden": false,
+            "polylines": threads
+                .iter()
+                .map(|t| t.points().iter().flat_map(|p| p.to_array()).collect::<Vec<_>>())
+                .collect::<Vec<_>>(),
+            "error": null,
+        })
+    });
+    let cosmetic_threads: Vec<Value> = state.cosmetic_threads.iter().map(|(id, thread)| {
+        match of_model::cosmetic_thread::annotation(thread, state) {
+            Ok(annotation) => json!({
+                "id": id, "name": name(*id), "parameters": thread,
+                "body": annotation.body,
+                "hidden": doc.body_display.get(&annotation.body).is_some_and(|d| d.hidden),
+                "polylines": [annotation.points.iter().flat_map(|p| p.to_array()).collect::<Vec<_>>()],
+                "error": null,
+            }),
+            Err(error) => json!({"id":id,"name":name(*id),"parameters":thread,"body":null,"hidden":false,"polylines":[],"error":error}),
+        }
+    }).chain(hole_threads).collect();
     Ok(json!({
         "body": body,
-        "bbox": bbox.map(|b| json!({ "min": v3(b.min), "max": v3(b.max) })),
+        "bodies": body_views(doc, state)?,
+        "bbox": bounds.map(|(lo,hi)| json!({ "min": v3(lo), "max": v3(hi) })),
         "datums": datums,
         "sketches": sketches,
+        "curves": curves,
+        "sketches3d": sketches3d,
+        "cosmetic_threads": cosmetic_threads,
     }))
+}
+
+fn body_views(doc: &Document, state: &State) -> Result<Vec<Value>, String> {
+    let Some(whole) = &state.body else {
+        return Ok(Vec::new());
+    };
+    state.bodies.iter().enumerate().map(|(i, body)| {
+        let display = doc.body_display.get(&body.id);
+        let indices = |kind| body.geometry.shape.indices_in(&whole.shape, kind).map_err(|e| e.0);
+        Ok(json!({
+            "id": body.id,
+            "name": display.and_then(|d| d.name.as_deref()).map(str::to_owned).unwrap_or_else(|| format!("Body {}", i + 1)),
+            "hidden": display.is_some_and(|d| d.hidden),
+            "faces": indices(of_model::geom::Kind::Face)?,
+            "edges": indices(of_model::geom::Kind::Edge)?,
+            "vertices": indices(of_model::geom::Kind::Vertex)?,
+        }))
+    }).collect()
 }
 
 fn definition(d: Option<&Definition>) -> &'static str {
@@ -159,7 +273,18 @@ pub fn sketch(id: u32, plane: &Plane, sk: &Sketch, report: &SolveReport) -> Valu
             v
         })
         .collect();
-    let profile_error = sk.contours().err().map(|e| e.to_string());
+    let contour_result = sk.contours();
+    let profile_error = contour_result.as_ref().err().map(|e| e.to_string());
+    let contours: Vec<Value> = contour_result.map(|c| {
+        c.loops.into_iter().map(|chain| (chain, true))
+            .chain(c.open.into_iter().map(|chain| (chain, false)))
+            .map(|(chain, closed)| {
+                let ordered_entities = chain.entities;
+                let mut entities = ordered_entities.clone();
+                entities.sort_unstable();
+                json!({ "reference": Ref::SketchContour { sketch: id, entities }, "closed": closed, "ordered_entities": ordered_entities })
+            }).collect()
+    }).unwrap_or_default();
     json!({
         "id": id,
         "plane": plane_json(plane),
@@ -170,6 +295,7 @@ pub fn sketch(id: u32, plane: &Plane, sk: &Sketch, report: &SolveReport) -> Valu
         "status": report.summary(),
         "solved": report.status == of_model::sketch::SolveStatus::Solved,
         "profile_error": profile_error,
+        "contours": contours,
     })
 }
 
@@ -183,6 +309,7 @@ pub fn snapshot(model: &Model) -> Value {
         .zip(&statuses)
         .map(|(f, s)| {
             let mut params = serde_json::to_value(&f.kind).unwrap();
+            params["scope"] = json!(f.scope);
             // Sketch geometry is fetched separately; keep the tree light.
             if let FeatureKind::Sketch(_) = f.kind {
                 params["sketch"] = Value::Null;
@@ -191,7 +318,7 @@ pub fn snapshot(model: &Model) -> Value {
                 "id": f.id,
                 "name": f.name,
                 "type": params["type"].clone(),
-                "suppressed": f.suppressed,
+                "suppressed": s.suppressed,
                 "error": s.error,
                 "rolled_back": s.rolled_back,
                 "sketch_status": s.sketch.as_ref().map(|r| r.summary()),
@@ -204,5 +331,28 @@ pub fn snapshot(model: &Model) -> Value {
         "rollback": model.doc.rollback,
         "units": model.doc.units,
         "material": model.doc.material,
+        "effective_material": of_model::configurations::resolve(&model.doc).ok().and_then(|doc| doc.material),
+        "parameters": model.doc.features.iter().flat_map(of_model::equations::parameters).collect::<Vec<_>>(),
+        "variables": model.doc.variables,
+        "equations": model.doc.equations,
+        "equation_values": equation_values(&model.doc),
+        "configurations": model.doc.configurations,
+        "bodies": body_views(&model.doc, model.state()).unwrap_or_default(),
     })
+}
+
+pub fn equation_values(doc: &Document) -> Value {
+    let evaluation = of_model::equations::effective(doc);
+    let values: serde_json::Map<String, Value> = evaluation
+        .values
+        .into_iter()
+        .map(|(name, value)| {
+            let result = match value {
+                Ok(value) => json!({ "value": value, "error": null }),
+                Err(error) => json!({ "value": null, "error": error }),
+            };
+            (name, result)
+        })
+        .collect();
+    Value::Object(values)
 }

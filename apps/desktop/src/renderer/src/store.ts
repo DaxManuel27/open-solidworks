@@ -1,10 +1,21 @@
 import { create } from 'zustand'
 import { CallFailed, call } from './core'
-import type { FeatureParams, Kind, Ref, Scene, SketchView, Snapshot } from './protocol'
+import type {
+  CoreInfo,
+  FeatureParams,
+  Kind,
+  PreviewResult,
+  Ref,
+  Scene,
+  SketchView,
+  Snapshot,
+} from './protocol'
 
 /** Something picked in the viewport. */
 export type Pick =
-  { kind: Kind; index: number } | { kind: 'datum'; id: number } | { kind: 'std_plane'; ref: Ref }
+  | { kind: Kind; index: number }
+  | { kind: 'datum'; id: number; ref?: Ref }
+  | { kind: 'std_plane'; ref: Ref }
 
 export type PickKind = Pick['kind']
 
@@ -15,6 +26,30 @@ export interface PickTarget {
 }
 
 export type PanelType =
+  | 'dome'
+  | 'rib'
+  | 'thread'
+  | 'face_fillet'
+  | 'wrap'
+  | 'cosmetic_thread'
+  | 'sketch3d'
+  | 'draft'
+  | 'variable_fillet'
+  | 'sweep'
+  | 'sweep_cut'
+  | 'loft'
+  | 'loft_cut'
+  | 'boundary'
+  | 'boundary_cut'
+  | 'helix'
+  | 'composite_curve'
+  | 'split_line'
+  | 'projected_curve'
+  | 'configurations'
+  | 'equations'
+  | 'combine'
+  | 'move_body'
+  | 'split_body'
   | 'extrude'
   | 'cut'
   | 'revolve'
@@ -91,7 +126,7 @@ interface State {
   /** General selection in part mode. */
   selection: { pick: Pick; ref: Ref }[]
   /** Extra items to highlight (from panel selection boxes), as kernel indices. */
-  highlights: { kind: Kind; index: number }[]
+  highlights: Pick[]
   pickTarget: PickTarget | null
   treeSelection: number | null
   hoverFeature: number | null
@@ -130,7 +165,11 @@ interface Actions {
   openPanel(p: Panel): void
   closePanel(): Promise<void>
   preview(params: FeatureParams | null, editing?: number): Promise<void>
-  commit(params: FeatureParams, editing?: number): Promise<boolean>
+  commit(
+    params: FeatureParams,
+    editing?: number,
+    formulas?: Record<string, string | null>,
+  ): Promise<boolean>
 
   startSketch(plane: Ref): Promise<void>
   editSketch(id: number): Promise<void>
@@ -142,6 +181,7 @@ interface Actions {
 }
 
 let toastId = 1
+let previewSequence = 0
 let dragInFlight = false
 let pendingDrag: { point: number; to: [number, number] } | null = null
 
@@ -178,14 +218,35 @@ export const useStore = create<State & Actions>((set, get) => ({
   tab: 'features',
 
   async init() {
-    await get().run('doc.info')
+    try {
+      const info = await call<CoreInfo>('core.info')
+      if (info.protocol_version !== 3 || info.scene_version !== 3)
+        throw new Error(
+          'The core and desktop versions do not match. Rebuild both before opening a part.',
+        )
+      await get().run('doc.info')
+    } catch (e) {
+      get().toast((e as Error).message)
+    }
   },
 
   async run(method, params) {
-    set({ busy: true })
+    ++previewSequence
+    set({ busy: true, previewScene: null, previewError: null })
     try {
       const snap = await call<Snapshot>(method, params)
+      if (snap.revision < (get().snapshot?.revision ?? -1)) return null
       const update: Partial<State> = { snapshot: snap }
+      if (method.startsWith('configuration.')) {
+        Object.assign(update, {
+          sketch: null,
+          panel: null,
+          selection: [],
+          highlights: [],
+          pickTarget: null,
+          treeSelection: null,
+        })
+      }
       if (snap.scene) update.scene = snap.scene
       set(update)
       const title = `${fileName(snap.path)}${snap.dirty ? ' •' : ''} — OpenForge`
@@ -280,7 +341,7 @@ export const useStore = create<State & Actions>((set, get) => ({
   async pick(pick, additive) {
     const target = get().pickTarget
     let ref: Ref
-    if (pick.kind === 'datum') ref = { type: 'feature', id: pick.id }
+    if (pick.kind === 'datum') ref = pick.ref ?? { type: 'feature', id: pick.id }
     else if (pick.kind === 'std_plane') ref = pick.ref
     else {
       try {
@@ -314,9 +375,17 @@ export const useStore = create<State & Actions>((set, get) => ({
   },
 
   async setHighlights(refs) {
-    const out: { kind: Kind; index: number }[] = []
+    const out: Pick[] = []
     for (const r of refs) {
-      if (r.type !== 'face' && r.type !== 'edge' && r.type !== 'vertex') continue
+      if (r.type === 'curve_segment') {
+        out.push({ kind: 'datum', id: r.curve, ref: r })
+        continue
+      }
+      if (r.type === 'feature') {
+        out.push({ kind: 'datum', id: r.id })
+        continue
+      }
+      if (!['face', 'edge', 'vertex', 'body_topology'].includes(r.type)) continue
       try {
         const loc = await call<{ kind: Kind; index: number } | null>('select.locate', { ref: r })
         if (loc) out.push(loc)
@@ -336,11 +405,13 @@ export const useStore = create<State & Actions>((set, get) => ({
   },
 
   openPanel(p) {
+    ++previewSequence
     set({ panel: p, previewScene: null, previewError: null, highlights: [], pickTarget: null })
     if (p.editing !== undefined) void get().run('edit.begin', { id: p.editing })
   },
 
   async closePanel() {
+    ++previewSequence
     const editing = get().panel?.editing
     set({ panel: null, previewScene: null, previewError: null, highlights: [], pickTarget: null })
     await call('feature.preview', { feature: null })
@@ -348,22 +419,30 @@ export const useStore = create<State & Actions>((set, get) => ({
   },
 
   async preview(params, editing) {
+    const sequence = ++previewSequence
+    const revision = get().snapshot?.revision
+    const panel = get().panel
+    const current = () =>
+      sequence === previewSequence && get().panel === panel && get().snapshot?.revision === revision
     try {
-      const r = await call<{ scene: Scene | null; error: string | null }>('feature.preview', {
-        feature: params,
-        editing,
-      })
-      set({ previewScene: r.scene, previewError: r.error })
+      const r = await call<PreviewResult>('feature.preview', { feature: params, editing, revision })
+      if (current() && r.revision === revision)
+        set({ previewScene: r.scene, previewError: r.error })
     } catch (e) {
-      set({ previewScene: null, previewError: (e as Error).message })
+      if (current()) set({ previewScene: null, previewError: (e as Error).message })
     }
   },
 
-  async commit(params, editing) {
+  async commit(params, editing, formulas = {}) {
+    // A new feature has no equations to clear.
+    const sent =
+      editing !== undefined
+        ? formulas
+        : Object.fromEntries(Object.entries(formulas).filter(([, f]) => f !== null))
     const snap =
       editing !== undefined
-        ? await get().run('feature.update', { id: editing, feature: params })
-        : await get().run('feature.add', { feature: params })
+        ? await get().run('feature.update', { id: editing, feature: params, formulas: sent })
+        : await get().run('feature.add', { feature: params, formulas: sent })
     if (!snap) return false
     set({
       panel: null,
@@ -424,7 +503,7 @@ export const useStore = create<State & Actions>((set, get) => ({
       const v = await call<SketchView>('sketch.edit', { id, op })
       set({ sketch: v })
       if (op['op'] !== 'drag')
-        set({ snapshot: { ...get().snapshot!, dirty: true, can_undo: true } })
+        set({ snapshot: { ...get().snapshot!, revision: v.revision, dirty: true, can_undo: true } })
       return v
     } catch (e) {
       get().toast((e as Error).message)

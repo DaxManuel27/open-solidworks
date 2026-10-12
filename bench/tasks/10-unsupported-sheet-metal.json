@@ -1,0 +1,9 @@
+{
+  "id": "10-unsupported-sheet-metal",
+  "title": "Unsupported request",
+  "prompt": "Convert this plate to sheet metal and add a 20 mm edge flange along one long side.",
+  "start": "../fixtures/plate.ofp",
+  "expect": {
+    "outcome": "no_change"
+  }
+}

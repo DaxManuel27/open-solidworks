@@ -1,0 +1,23 @@
+{
+  "id": "04-fillet-edges",
+  "title": "Fillet vertical edges",
+  "prompt": "Round the four edges of this block that run parallel to Z with a 3 mm fillet.",
+  "start": "../fixtures/block.ofp",
+  "expect": {
+    "outcome": "change",
+    "no_new_errors": true,
+    "keeps_features": [1, 2],
+    "part": {
+      "valid_solid": true,
+      "body_count": 1,
+      "volume": {
+        "value": 23845.487,
+        "tol": 0.5
+      },
+      "bbox_size": {
+        "value": [40, 30, 20],
+        "tol": 0.01
+      }
+    }
+  }
+}

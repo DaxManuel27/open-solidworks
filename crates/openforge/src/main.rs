@@ -1,8 +1,10 @@
 //! `openforge`: the core process. The desktop app runs it as `openforge serve`;
 //! scripts and AI assistants use its CLI and MCP subcommands.
 
+mod bench;
 mod mcp;
 mod session;
+mod tools;
 mod views;
 
 use std::io::{BufRead, Write};
@@ -32,7 +34,29 @@ enum Command {
     /// Rebuild a part and print its features, errors and mass properties.
     Info { part: PathBuf },
     /// Rebuild a part and export it to STEP, IGES or STL (chosen by extension).
-    Export { part: PathBuf, output: PathBuf },
+    Export {
+        part: PathBuf,
+        output: PathBuf,
+        /// Export this configuration ID instead of the saved active variant.
+        #[arg(long)]
+        configuration: Option<u32>,
+    },
+    /// Regenerate the TypeScript tool types and protocol tables from the catalog.
+    Generate {
+        /// Repository root.
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+        /// Only check that the committed files are current.
+        #[arg(long)]
+        check: bool,
+    },
+    /// Check a finished part against a benchmark task's geometry assertions.
+    Check {
+        /// Task file, such as bench/tasks/01-plate-holes.json.
+        task: PathBuf,
+        /// The part produced by the task.
+        part: PathBuf,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -46,9 +70,32 @@ fn main() -> anyhow::Result<()> {
             mcp::run(session)
         }
         Command::Info { part } => info(part),
-        Command::Export { part, output } => {
+        Command::Generate { root, check } => {
+            let stale = tools::generate::run(&root, check)?;
+            match (check, stale.is_empty()) {
+                (true, false) => bail!("stale generated files: {}", stale.join(", ")),
+                (false, false) => println!("wrote {}", stale.join(", ")),
+                _ => println!("generated files are current"),
+            }
+            Ok(())
+        }
+        Command::Check { task, part } => {
+            if bench::run(&task, &part)? {
+                Ok(())
+            } else {
+                bail!("task checks failed")
+            }
+        }
+        Command::Export {
+            part,
+            output,
+            configuration,
+        } => {
             let mut s = Session::open(part).map_err(anyhow::Error::msg)?;
-            let r = s.handle("export", serde_json::json!({ "path": output }));
+            let r = s.handle(
+                "export",
+                serde_json::json!({ "path": output, "configuration": configuration }),
+            );
             match r {
                 Ok(_) => {
                     println!("wrote {}", output.display());
@@ -87,7 +134,7 @@ fn serve() -> anyhow::Result<()> {
                     ),
                 }
             }
-            Err(resp) => resp,
+            Err(resp) => *resp,
         };
         writeln!(out, "{}", serde_json::to_string(&resp)?)?;
         out.flush()?;
@@ -99,7 +146,7 @@ fn info(part: PathBuf) -> anyhow::Result<()> {
     let mut s = Session::open(part).map_err(anyhow::Error::msg)?;
     let model = s.model();
     for (f, st) in model.doc.features.iter().zip(model.statuses()) {
-        let state = if f.suppressed {
+        let state = if st.suppressed {
             "suppressed".to_string()
         } else if st.rolled_back {
             "rolled back".to_string()

@@ -1,9 +1,114 @@
 //! Feature definitions: the parameters a user edits in each feature's panel.
 //! Lengths are millimetres and angles radians.
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{FeatureId, Ref};
+
+/// A dome on a planar face without holes. On a circular disk it is an exact
+/// spherical cap (or half an ellipsoid); on other faces it is a smooth surface
+/// through the face's edges and a point `height` above the face's centroid.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Dome {
+    pub face: Ref,
+    /// Height in millimetres, positive; a spherical cap's height is at most the
+    /// disk radius.
+    #[schemars(extend("exclusiveMinimum" = 0))]
+    pub height: f64,
+    /// Remove an inward cap rather than adding an outward cap.
+    #[serde(default)]
+    pub inward: bool,
+    /// Meet the faces beside the boundary tangentially: half an ellipsoid of
+    /// revolution on a disk (its height may exceed the radius), or a surface
+    /// tangent to the side faces on a face whose boundary has no corners.
+    #[serde(default)]
+    pub elliptical: bool,
+}
+
+/// What a wrapped sketch does to the face it is wrapped onto.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum WrapMode {
+    /// Add raised material of `depth` outward from the face.
+    #[default]
+    Emboss,
+    /// Remove material `depth` into the face.
+    Deboss,
+    /// Split the face along the wrapped outline without changing material.
+    Scribe,
+}
+
+/// Closed sketch regions wrapped onto a curved face by true arc length.
+///
+/// Cylinders map exactly from a sketch plane parallel to the axis; cones unroll
+/// exactly from a plane parallel to one tangent to the cone. Other curved faces
+/// map along geodesics from the point under the sketch origin, where the sketch
+/// plane must be tangent; lengths may stretch by at most 1%.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Wrap {
+    /// Sketch feature ID with closed profiles (see above for the plane).
+    #[schemars(range(min = 1))]
+    pub sketch: FeatureId,
+    /// The curved face to wrap onto.
+    pub face: Ref,
+    #[serde(default)]
+    pub mode: WrapMode,
+    /// Depth in mm for emboss and deboss, along the face normal (away from the
+    /// axis for cylinders and cones); ignored for scribe.
+    #[serde(default)]
+    #[schemars(range(min = 0.0))]
+    pub depth: f64,
+}
+
+/// Which side of the sketch a rib's thickness grows to.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RibSide {
+    /// Half the thickness on each side of the sketch.
+    #[default]
+    Both,
+    /// All of the thickness on one side: the plane normal side for a rib parallel
+    /// to its sketch, the chain's offset side for a rib normal to it.
+    First,
+    /// All of the thickness on the opposite side.
+    Second,
+}
+
+/// How a rib's material grows from its sketch to the surrounding material.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RibDirection {
+    /// Grow within the sketch plane, perpendicular to the chain's chord; thickness
+    /// is measured normal to the sketch plane.
+    #[default]
+    ParallelToSketch,
+    /// Grow along the sketch plane normal; thickness is measured within the plane.
+    NormalToSketch,
+}
+
+/// A thin web grown from an open sketch until it meets existing material.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Rib {
+    /// Sketch feature ID with one or more open chains of lines and arcs.
+    #[schemars(range(min = 1))]
+    pub sketch: FeatureId,
+    /// Web thickness, mm.
+    #[schemars(extend("exclusiveMinimum" = 0))]
+    pub thickness: f64,
+    #[serde(default)]
+    pub side: RibSide,
+    #[serde(default)]
+    pub direction: RibDirection,
+    /// Grow away from the part instead of toward it. By default material grows
+    /// toward the center of the existing part.
+    #[serde(default)]
+    pub flip: bool,
+    /// Taper the rib's thickness faces by this angle (radians) so the web
+    /// thickens away from its sketch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub draft: Option<f64>,
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SketchFeature {
@@ -12,12 +117,13 @@ pub struct SketchFeature {
     pub sketch: of_sketch::Sketch,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "mode", rename_all = "snake_case")]
 pub enum PlaneDef {
     /// Parallel to a plane or planar face, `distance` along its normal.
     Offset {
         reference: Ref,
+        /// mm along the reference normal.
         distance: f64,
         #[serde(default)]
         flip: bool,
@@ -26,20 +132,15 @@ pub enum PlaneDef {
     Angle {
         reference: Ref,
         axis: Ref,
+        /// Radians.
         angle: f64,
     },
-    ThreePoints {
-        points: [Ref; 3],
-    },
+    /// Through three points.
+    ThreePoints { points: [Ref; 3] },
     /// Halfway between two planes or faces.
-    MidPlane {
-        a: Ref,
-        b: Ref,
-    },
-    ParallelAtPoint {
-        reference: Ref,
-        point: Ref,
-    },
+    MidPlane { a: Ref, b: Ref },
+    /// Parallel to `reference`, through `point`.
+    ParallelAtPoint { reference: Ref, point: Ref },
     /// Normal to an edge at its start (or end).
     NormalToCurve {
         edge: Ref,
@@ -63,31 +164,19 @@ impl PlaneDef {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "mode", rename_all = "snake_case")]
 pub enum AxisDef {
-    TwoPoints {
-        a: Ref,
-        b: Ref,
-    },
+    /// Through two points.
+    TwoPoints { a: Ref, b: Ref },
     /// Where two planes meet.
-    TwoPlanes {
-        a: Ref,
-        b: Ref,
-    },
+    TwoPlanes { a: Ref, b: Ref },
     /// The axis of a cylindrical or conical face, or a circular edge.
-    Cylinder {
-        face: Ref,
-    },
+    Cylinder { face: Ref },
     /// Along a straight edge or sketch line.
-    Edge {
-        edge: Ref,
-    },
+    Edge { edge: Ref },
     /// Through a point, normal to a plane.
-    PointAndFace {
-        point: Ref,
-        face: Ref,
-    },
+    PointAndFace { point: Ref, face: Ref },
 }
 
 impl AxisDef {
@@ -101,18 +190,13 @@ impl AxisDef {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "mode", rename_all = "snake_case")]
 pub enum PointDef {
-    Coordinates {
-        x: f64,
-        y: f64,
-        z: f64,
-    },
+    /// Model coordinates, mm.
+    Coordinates { x: f64, y: f64, z: f64 },
     /// On a vertex or sketch point; at the center of a face or circular edge.
-    At {
-        target: Ref,
-    },
+    At { target: Ref },
 }
 
 impl PointDef {
@@ -124,7 +208,7 @@ impl PointDef {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct CoordSysDef {
     pub origin: Ref,
     #[serde(default)]
@@ -134,12 +218,16 @@ pub struct CoordSysDef {
 }
 
 /// How far an extrude goes in one direction.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum EndCondition {
+    /// A fixed distance from the sketch plane.
     Blind {
+        /// mm, positive.
+        #[schemars(extend("exclusiveMinimum" = 0))]
         depth: f64,
     },
+    /// Through every body in the extrude direction.
     ThroughAll,
     /// To the next face that blocks the whole profile.
     UpToNext,
@@ -151,12 +239,16 @@ pub enum EndCondition {
     },
     OffsetFromSurface {
         target: Ref,
+        /// mm from the target surface.
+        #[schemars(range(min = 0.0))]
         offset: f64,
         #[serde(default)]
         reverse_offset: bool,
     },
     /// `depth` total, split equally either side of the sketch plane.
     MidPlane {
+        /// mm, positive.
+        #[schemars(extend("exclusiveMinimum" = 0))]
         depth: f64,
     },
 }
@@ -172,7 +264,7 @@ impl EndCondition {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ThinKind {
     OneDirection,
@@ -181,27 +273,34 @@ pub enum ThinKind {
 }
 
 /// A thin feature: the sketch contour thickened into a wall.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Thin {
     pub kind: ThinKind,
+    /// Wall thickness, mm.
+    #[schemars(extend("exclusiveMinimum" = 0))]
     pub thickness: f64,
-    /// Second-side thickness for [`ThinKind::TwoDirection`].
+    /// Second-side thickness for `two_direction`, mm.
     #[serde(default)]
+    #[schemars(range(min = 0.0))]
     pub thickness2: f64,
     #[serde(default)]
     pub reverse: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Extrude {
+    /// Sketch feature ID with closed profiles.
+    #[schemars(range(min = 1))]
     pub sketch: FeatureId,
     /// Remove material instead of adding it.
     #[serde(default)]
     pub cut: bool,
-    /// Start this far from the sketch plane.
+    /// Start this far from the sketch plane, mm.
     #[serde(default)]
     pub start_offset: f64,
     pub end1: EndCondition,
+    /// Extrude against the sketch normal. A cut on a face sketch needs
+    /// `true` to go into the material.
     #[serde(default)]
     pub reverse: bool,
     /// Also extrude the other way.
@@ -221,17 +320,26 @@ fn yes() -> bool {
     true
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RevolveAngle {
     Blind {
+        /// Radians; 2π (6.2832) is a full turn.
+        #[schemars(extend("exclusiveMinimum" = 0), range(max = std::f64::consts::TAU))]
         angle: f64,
     },
+    /// `angle` total, split equally either side of the sketch plane.
     MidPlane {
+        /// Radians.
+        #[schemars(extend("exclusiveMinimum" = 0), range(max = std::f64::consts::TAU))]
         angle: f64,
     },
     TwoDirection {
+        /// Radians.
+        #[schemars(range(min = 0.0, max = std::f64::consts::TAU))]
         angle1: f64,
+        /// Radians.
+        #[schemars(range(min = 0.0, max = std::f64::consts::TAU))]
         angle2: f64,
     },
     UpToVertex {
@@ -242,6 +350,8 @@ pub enum RevolveAngle {
     },
     OffsetFromSurface {
         target: Ref,
+        /// mm from the target surface.
+        #[schemars(range(min = 0.0))]
         offset: f64,
         #[serde(default)]
         reverse_offset: bool,
@@ -259,8 +369,9 @@ impl RevolveAngle {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Revolve {
+    #[schemars(range(min = 1))]
     pub sketch: FeatureId,
     /// A sketch line, reference axis or straight edge.
     pub axis: Ref,
@@ -278,25 +389,109 @@ pub struct Revolve {
     pub merge: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Fillet {
     #[serde(default)]
     pub edges: Vec<Ref>,
     /// All edges of these faces are filleted.
     #[serde(default)]
     pub faces: Vec<Ref>,
+    /// mm.
+    #[schemars(extend("exclusiveMinimum" = 0))]
     pub radius: f64,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum ChamferMode {
-    Equal { distance: f64 },
-    DistanceDistance { d1: f64, d2: f64 },
-    AngleDistance { distance: f64, angle: f64 },
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct RadiusStation {
+    /// Fraction along the edge, 0 to 1.
+    #[schemars(range(min = 0.0, max = 1.0))]
+    pub position: f64,
+    /// mm.
+    #[schemars(extend("exclusiveMinimum" = 0))]
+    pub radius: f64,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// A rolling-ball blend between two sets of planar faces.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct FaceFillet {
+    /// Faces in one plane on the first side of the blend.
+    #[schemars(length(min = 1))]
+    pub faces1: Vec<Ref>,
+    /// Faces in one plane on the other side; not parallel to the first.
+    #[schemars(length(min = 1))]
+    pub faces2: Vec<Ref>,
+    /// Blend radius, mm.
+    #[schemars(extend("exclusiveMinimum" = 0))]
+    pub radius: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct VariableFillet {
+    /// An edge of the chain to fillet; tangent-continuous neighbours join the chain.
+    pub edge: Ref,
+    /// Ordered stations; include positions 0 and 1. Positions are fractions of
+    /// the chain's length, measured in the selected edge's direction.
+    #[schemars(length(min = 2))]
+    pub stations: Vec<RadiusStation>,
+    /// Measure positions from the other end of the chain.
+    #[serde(default)]
+    pub reverse: bool,
+    /// Change the radius linearly between stations instead of smoothly.
+    #[serde(default)]
+    pub straight: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Draft {
+    /// Faces to taper about the neutral plane. Leave empty for a parting-line draft.
+    #[serde(default)]
+    pub faces: Vec<Ref>,
+    /// The neutral plane; with parting-line edges, only its normal (the pull
+    /// direction) is used.
+    pub neutral_plane: Ref,
+    pub direction: Option<Ref>,
+    /// Signed draft angle, radians.
+    #[schemars(range(min = -std::f64::consts::FRAC_PI_2, max = std::f64::consts::FRAC_PI_2))]
+    pub angle: f64,
+    /// Parting-line edges (straight or circular). Each face next to an edge on the
+    /// pull side tapers about a plane through that edge.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parting_line: Vec<Ref>,
+    /// Draft the faces on the side opposite the pull direction instead.
+    #[serde(default)]
+    pub other_side: bool,
+    /// Step draft: each planar face tilts about a line normal to the pull
+    /// direction through the parting line's nearest point, and perpendicular step
+    /// faces join it to inclined parts of the parting line.
+    #[serde(default)]
+    pub step: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ChamferMode {
+    /// Equal setbacks, mm.
+    Equal {
+        #[schemars(extend("exclusiveMinimum" = 0))]
+        distance: f64,
+    },
+    /// Two setbacks, mm.
+    DistanceDistance {
+        #[schemars(extend("exclusiveMinimum" = 0))]
+        d1: f64,
+        #[schemars(extend("exclusiveMinimum" = 0))]
+        d2: f64,
+    },
+    /// Setback in mm and angle in radians.
+    AngleDistance {
+        #[schemars(extend("exclusiveMinimum" = 0))]
+        distance: f64,
+        #[schemars(extend("exclusiveMinimum" = 0, "exclusiveMaximum" = std::f64::consts::FRAC_PI_2))]
+        angle: f64,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Chamfer {
     #[serde(default)]
     pub edges: Vec<Ref>,
@@ -308,17 +503,19 @@ pub struct Chamfer {
     pub flip: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ShellDef {
     /// Faces to remove. None hollows the part completely.
     #[serde(default)]
     pub faces: Vec<Ref>,
+    /// Wall thickness, mm.
+    #[schemars(extend("exclusiveMinimum" = 0))]
     pub thickness: f64,
     #[serde(default)]
     pub outward: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum HoleKind {
     Simple,
@@ -327,14 +524,14 @@ pub enum HoleKind {
     Tapped,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum HoleStandard {
     Iso,
     Ansi,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum HoleFit {
     Close,
@@ -342,18 +539,24 @@ pub enum HoleFit {
     Loose,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum HoleEnd {
-    Blind { depth: f64 },
+    Blind {
+        /// mm.
+        #[schemars(extend("exclusiveMinimum" = 0))]
+        depth: f64,
+    },
     ThroughAll,
 }
 
-/// Hole Wizard: holes at each point of a sketch, drilled into the sketch
-/// plane. Sizes come from the standard tables in [`crate::features::holes`];
-/// any `*_override` replaces the table value.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Hole Wizard: holes at each standalone point of a sketch, drilled into the
+/// sketch plane (`reverse` drills the other way). Sizes come from the standard
+/// tables (`hole.sizes`); any `*_override` replaces the table value.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Hole {
+    /// Sketch whose standalone points locate the holes.
+    #[schemars(range(min = 1))]
     pub sketch: FeatureId,
     pub kind: HoleKind,
     pub standard: HoleStandard,
@@ -364,49 +567,70 @@ pub struct Hole {
     pub end: HoleEnd,
     #[serde(default)]
     pub reverse: bool,
+    /// mm.
     #[serde(default)]
+    #[schemars(extend("exclusiveMinimum" = 0))]
     pub diameter_override: Option<f64>,
+    /// mm.
     #[serde(default)]
+    #[schemars(extend("exclusiveMinimum" = 0))]
     pub cbore_diameter_override: Option<f64>,
+    /// mm.
     #[serde(default)]
+    #[schemars(extend("exclusiveMinimum" = 0))]
     pub cbore_depth_override: Option<f64>,
+    /// mm.
     #[serde(default)]
+    #[schemars(extend("exclusiveMinimum" = 0))]
     pub csink_diameter_override: Option<f64>,
+    /// Included angle, radians.
     #[serde(default)]
+    #[schemars(extend("exclusiveMinimum" = 0, "exclusiveMaximum" = std::f64::consts::PI))]
     pub csink_angle_override: Option<f64>,
+    /// Show a cosmetic thread in each tapped hole: nominal diameter and coarse
+    /// pitch from the size table, through the material the hole drills.
+    #[serde(default)]
+    pub cosmetic_thread: bool,
 }
 
 fn normal_fit() -> HoleFit {
     HoleFit::Normal
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct PatternDirection {
     /// A straight edge, sketch line, axis, or plane/face (its normal).
     pub reference: Ref,
+    /// Distance between instances, mm.
+    #[schemars(extend("exclusiveMinimum" = 0))]
     pub spacing: f64,
     /// Total instances including the original.
+    #[schemars(range(min = 1))]
     pub count: u32,
     #[serde(default)]
     pub reverse: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct LinearPattern {
+    #[schemars(length(min = 1))]
     pub features: Vec<FeatureId>,
     pub direction1: PatternDirection,
     #[serde(default)]
     pub direction2: Option<PatternDirection>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct CircularPattern {
+    #[schemars(length(min = 1))]
     pub features: Vec<FeatureId>,
     /// An axis, cylindrical face, circular edge or straight edge.
     pub axis: Ref,
     /// Total instances including the original.
+    #[schemars(range(min = 1))]
     pub count: u32,
-    /// Total angle with equal spacing, or the angle between instances.
+    /// Total angle with equal spacing, or the angle between instances; radians.
+    #[schemars(extend("exclusiveMinimum" = 0), range(max = std::f64::consts::TAU))]
     pub angle: f64,
     #[serde(default = "yes")]
     pub equal_spacing: bool,
@@ -414,7 +638,7 @@ pub struct CircularPattern {
     pub reverse: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct MirrorDef {
     /// Features to mirror. Empty mirrors the whole body.
     #[serde(default)]
@@ -659,6 +883,35 @@ pub mod holes {
         table(standard)
             .iter()
             .find(|s| s.name.eq_ignore_ascii_case(name))
+    }
+
+    /// Coarse thread pitch, mm: the ISO 261 coarse series for metric sizes, and
+    /// 25.4 mm over the threads per inch given after the dash in an ANSI size name.
+    pub fn pitch(standard: HoleStandard, size: &HoleSize) -> Option<f64> {
+        match standard {
+            HoleStandard::Iso => match size.name {
+                "M1.6" => Some(0.35),
+                "M2" => Some(0.4),
+                "M2.5" => Some(0.45),
+                "M3" => Some(0.5),
+                "M4" => Some(0.7),
+                "M5" => Some(0.8),
+                "M6" => Some(1.0),
+                "M8" => Some(1.25),
+                "M10" => Some(1.5),
+                "M12" => Some(1.75),
+                "M16" => Some(2.0),
+                "M20" => Some(2.5),
+                "M24" => Some(3.0),
+                _ => None,
+            },
+            HoleStandard::Ansi => size
+                .name
+                .rsplit_once('-')
+                .and_then(|(_, tpi)| tpi.parse::<f64>().ok())
+                .filter(|tpi| *tpi > 0.0)
+                .map(|tpi| IN / tpi),
+        }
     }
 
     pub fn clearance(size: &HoleSize, fit: HoleFit) -> f64 {

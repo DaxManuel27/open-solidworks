@@ -10,6 +10,10 @@ use crate::{Ref, unit};
 /// What a reference points at.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Resolved {
+    Body {
+        id: crate::BodyId,
+        center: DVec3,
+    },
     Plane(Plane),
     Axis {
         origin: DVec3,
@@ -42,6 +46,59 @@ pub(crate) type RResult<T> = Result<T, String>;
 pub fn resolve(state: &State, r: &Ref) -> RResult<Resolved> {
     let missing = |what: &str, name: &str| format!("{what} {name} no longer exists");
     Ok(match r {
+        Ref::Body { id } => {
+            let body = state.solid(id)?;
+            Resolved::Body {
+                id: id.clone(),
+                center: body.geometry.shape.mass_props().map_err(|e| e.0)?.center,
+            }
+        }
+        Ref::BodyTopology { body, kind, name } => {
+            let selected = &state.solid(body)?.geometry;
+            let local = match kind {
+                Kind::Face => selected
+                    .names
+                    .faces
+                    .iter()
+                    .position(|n| n.first() == Some(name))
+                    .map(|i| i as u32),
+                Kind::Edge => selected
+                    .names
+                    .edges
+                    .iter()
+                    .position(|n| n == name)
+                    .map(|i| i as u32),
+                Kind::Vertex => selected
+                    .names
+                    .vertices
+                    .iter()
+                    .position(|n| n == name)
+                    .map(|i| i as u32),
+                _ => None,
+            }
+            .ok_or_else(|| missing("body topology", name))?;
+            let aggregate = state.body.as_ref().ok_or("there is no body")?;
+            let indices = selected
+                .shape
+                .indices_in(&aggregate.shape, *kind)
+                .map_err(|e| e.0)?;
+            let index = indices[local as usize];
+            match kind {
+                Kind::Face => Resolved::Face {
+                    index,
+                    info: aggregate.shape.face_info(index).map_err(|e| e.0)?,
+                },
+                Kind::Edge => Resolved::Edge {
+                    index,
+                    info: aggregate.shape.edge_info(index).map_err(|e| e.0)?,
+                },
+                Kind::Vertex => Resolved::Vertex {
+                    index,
+                    point: aggregate.shape.vertex_point(index).map_err(|e| e.0)?,
+                },
+                _ => return Err("expected a face, edge or vertex".into()),
+            }
+        }
         Ref::Origin => Resolved::Point(DVec3::ZERO),
         Ref::FrontPlane => Resolved::Plane(Plane::front()),
         Ref::TopPlane => Resolved::Plane(Plane::top()),
@@ -88,6 +145,19 @@ pub fn resolve(state: &State, r: &Ref) -> RResult<Resolved> {
             }
         }
         Ref::SketchEntity { sketch, entity } => {
+            if let Some((sk, report)) = state.sketches3d.get(sketch) {
+                if report.status == of_sketch::SolveStatus::Failed {
+                    return Err("the referenced 3D sketch cannot be solved".into());
+                }
+                return match sk.entity(*entity)?.geometry {
+                    of_sketch::spatial::Geometry3::Point { at } => Ok(Resolved::Point(at)),
+                    of_sketch::spatial::Geometry3::Line { a, b } => Ok(Resolved::Axis {
+                        origin: sk.point(a)?,
+                        dir: unit(sk.point(b)? - sk.point(a)?),
+                    }),
+                    _ => Err("select a 3D sketch point or straight line".into()),
+                };
+            }
             let (plane, sk) = state
                 .sketches
                 .get(sketch)
@@ -111,6 +181,17 @@ pub fn resolve(state: &State, r: &Ref) -> RResult<Resolved> {
                     return Err("a spline can't be used here".into());
                 }
             }
+        }
+        Ref::CurveSegment { .. } => {
+            return Err("a curve segment is a path, not a datum reference".into());
+        }
+        Ref::OrderedSketchContour(c) => {
+            let (plane, _) = crate::curves::ordered_contour(state, c, false)?;
+            Resolved::Plane(plane)
+        }
+        Ref::SketchContour { sketch, entities } => {
+            let (plane, _) = crate::curves::sketch_contour(state, *sketch, entities)?;
+            Resolved::Plane(plane)
         }
     })
 }
@@ -169,6 +250,7 @@ impl Resolved {
     /// A point: vertices, points, circle centers, face centroids.
     pub fn point(&self) -> RResult<DVec3> {
         match self {
+            Resolved::Body { center, .. } => Ok(*center),
             Resolved::Point(p) | Resolved::Vertex { point: p, .. } => Ok(*p),
             Resolved::Edge { info, .. } if info.kind == CurveKind::Circle => Ok(info.center),
             Resolved::Edge { info, .. } => Ok(info.mid),

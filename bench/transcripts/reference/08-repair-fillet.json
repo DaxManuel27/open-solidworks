@@ -1,0 +1,63 @@
+{
+  "task": "08-repair-fillet",
+  "source": "reference: hand-written against the current catalog",
+  "steps": [
+    {
+      "calls": [
+        {
+          "name": "part_info",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "get_feature",
+          "args": {
+            "id": 3
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "update_feature",
+          "args": {
+            "id": 3,
+            "feature": {
+              "type": "fillet",
+              "edges": [
+                {
+                  "type": "edge",
+                  "name": "E(2.end|2.s5)"
+                }
+              ],
+              "radius": 4
+            }
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "mass_properties",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "finish_task",
+          "args": {
+            "summary": "Reduced Fillet1 to 4 mm so it fits the 5 mm plate.",
+            "preview_only": false
+          }
+        }
+      ]
+    }
+  ]
+}

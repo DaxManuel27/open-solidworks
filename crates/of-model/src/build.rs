@@ -49,6 +49,13 @@ pub(crate) struct Tool {
 /// The model after some prefix of the feature tree.
 #[derive(Debug, Clone, Default)]
 pub struct State {
+    pub cosmetic_threads: HashMap<FeatureId, crate::CosmeticThread>,
+    /// Cosmetic threads of tapped holes, per hole feature.
+    pub hole_threads: HashMap<FeatureId, Vec<crate::cosmetic_thread::HoleThread>>,
+    pub sketches3d: HashMap<FeatureId, (of_sketch::spatial::Sketch3D, SolveReport)>,
+    pub curves: HashMap<FeatureId, crate::curves::CurveBody>,
+    pub bodies: Vec<crate::SolidBody>,
+    /// Derived aggregate cache for legacy feature operations and whole-part I/O.
     pub body: Option<Body>,
     pub datums: HashMap<FeatureId, Datum>,
     /// Each sketch's plane and solved geometry.
@@ -77,6 +84,12 @@ pub struct Model {
     states: Vec<State>,
     statuses: Vec<FeatureStatus>,
     empty: State,
+    /// The effective definition (after equations and the active configuration)
+    /// and any equation error that `states[i]` was built from. A state is reused
+    /// only while its input and every earlier input are unchanged.
+    inputs: Vec<(Feature, Option<String>)>,
+    /// Features built since the model was created, for cache diagnostics.
+    builds: usize,
 }
 
 impl Model {
@@ -86,15 +99,60 @@ impl Model {
             states: Vec::new(),
             statuses: Vec::new(),
             empty: State::default(),
+            inputs: Vec::new(),
+            builds: 0,
         };
         m.rebuild();
         m
     }
 
-    /// Forget cached results from feature `index` on.
+    /// Forget cached results from feature `index` on. Rebuilding also discards
+    /// any earlier state whose effective definition changed, such as a feature
+    /// driven by an equation on the edited one.
     pub fn invalidate_from(&mut self, index: usize) {
         self.states.truncate(index);
         self.statuses.truncate(index);
+        self.inputs.truncate(index);
+    }
+
+    /// How many features have been built since this model was created.
+    pub fn build_count(&self) -> usize {
+        self.builds
+    }
+
+    /// Drop cached states from the first one whose effective input changed.
+    fn sync_cache(&mut self, evaluation: &crate::equations::Evaluation) {
+        let features = &evaluation.document.features;
+        let changed = self
+            .inputs
+            .iter()
+            .enumerate()
+            .find(|(i, (feature, error))| {
+                features.get(*i).is_none_or(|current| {
+                    current != feature || evaluation.errors.get(&current.id) != error.as_ref()
+                })
+            })
+            .map(|(i, _)| i);
+        if let Some(i) = changed {
+            self.invalidate_from(i);
+        }
+    }
+
+    /// Build feature `i` on top of the cached states and cache the result.
+    fn build_next(&mut self, evaluation: &mut crate::equations::Evaluation) {
+        let i = self.states.len();
+        let prev = if i == 0 {
+            State::default()
+        } else {
+            self.states[i - 1].clone()
+        };
+        let input = evaluation.document.features[i].clone();
+        let error = evaluation.errors.get(&input.id).cloned();
+        let (state, status) = evaluated_feature(evaluation, i, prev);
+        self.builds += 1;
+        self.states.push(state);
+        self.statuses.push(status);
+        self.inputs.push((input, error));
     }
 
     /// Forget cached results from a feature on.
@@ -115,16 +173,34 @@ impl Model {
     /// Rebuild whatever isn't cached, up to the rollback bar.
     pub fn rebuild(&mut self) {
         let end = self.active_len();
+        let mut evaluation = crate::equations::effective(&self.doc);
+        self.sync_cache(&evaluation);
         while self.states.len() < end {
             let i = self.states.len();
-            let prev = if i == 0 {
-                State::default()
-            } else {
-                self.states[i - 1].clone()
-            };
-            let (state, status) = build_feature(&mut self.doc, i, prev);
-            self.states.push(state);
-            self.statuses.push(status);
+            self.build_next(&mut evaluation);
+            if self.doc.equations.is_empty()
+                && self.doc.configurations == crate::configurations::Configurations::default()
+            {
+                self.doc.features[i].kind = evaluation.document.features[i].kind.clone();
+            }
+        }
+        // An annotation follows its referenced cylinder through later body
+        // operations. Surface removal or trimming must not leave a stale glyph.
+        let annotation_errors: Vec<_> = self
+            .state()
+            .cosmetic_threads
+            .iter()
+            .map(|(id, thread)| {
+                (
+                    *id,
+                    crate::cosmetic_thread::annotation(thread, self.state()).err(),
+                )
+            })
+            .collect();
+        for (id, error) in annotation_errors {
+            if let Some(status) = self.statuses.iter_mut().find(|status| status.id == id) {
+                status.error = error;
+            }
         }
     }
 
@@ -149,16 +225,10 @@ impl Model {
         let Some(i) = self.doc.index_of(id) else {
             return &self.empty;
         };
+        let mut evaluation = crate::equations::effective(&self.doc);
+        self.sync_cache(&evaluation);
         while self.states.len() < i {
-            let k = self.states.len();
-            let prev = if k == 0 {
-                State::default()
-            } else {
-                self.states[k - 1].clone()
-            };
-            let (state, status) = build_feature(&mut self.doc, k, prev);
-            self.states.push(state);
-            self.statuses.push(status);
+            self.build_next(&mut evaluation);
         }
         if i == 0 {
             &self.empty
@@ -179,13 +249,44 @@ impl Model {
         kind: &FeatureKind,
         editing: Option<FeatureId>,
     ) -> Result<State, String> {
+        let scope = editing
+            .and_then(|id| self.doc.feature(id))
+            .and_then(|f| f.scope.clone());
+        self.preview_scoped(kind, editing, scope.as_deref())
+    }
+
+    pub fn preview_scoped(
+        &mut self,
+        kind: &FeatureKind,
+        editing: Option<FeatureId>,
+        scope: Option<&[crate::BodyId]>,
+    ) -> Result<State, String> {
+        if let Some(id) = editing
+            && (!self.doc.equations.is_empty()
+                || self.doc.configurations != crate::configurations::Configurations::default())
+        {
+            // Editing a later parameter can also drive earlier geometry. Build the
+            // complete trial prefix with the same resolution rules as commit.
+            let mut trial = self.doc.clone();
+            let index = trial.index_of(id).ok_or("no such feature")?;
+            trial.features[index].kind = kind.clone();
+            trial.features[index].scope = scope.map(<[_]>::to_vec);
+            trial.rollback = Some(index + 1);
+            let preview = Model::new(trial);
+            if let Some(error) = preview.status(id).and_then(|status| status.error) {
+                return Err(error);
+            }
+            return Ok(preview.state().clone());
+        }
         let prev = match editing {
             Some(id) => self.state_before(id).clone(),
             None => self.state().clone(),
         };
         let mut state = prev.clone();
-        let id = editing.unwrap_or(FeatureId::MAX);
-        build_kind(id, kind, &prev, &mut state)?;
+        // A preview must expose the same persistent body/piece/curve identities
+        // as its eventual commit. No ID is consumed; callers guard stale revisions.
+        let id = editing.unwrap_or(self.doc.next_id);
+        build_scoped(id, kind, scope, &prev, &mut state)?;
         Ok(state)
     }
 
@@ -219,6 +320,29 @@ impl Model {
     }
 }
 
+fn evaluated_feature(
+    evaluation: &mut crate::equations::Evaluation,
+    index: usize,
+    prev: State,
+) -> (State, FeatureStatus) {
+    let f = &evaluation.document.features[index];
+    if !f.suppressed
+        && let Some(error) = evaluation.errors.get(&f.id)
+    {
+        return (
+            prev,
+            FeatureStatus {
+                id: f.id,
+                error: Some(error.clone()),
+                sketch: None,
+                suppressed: false,
+                rolled_back: false,
+            },
+        );
+    }
+    build_feature(&mut evaluation.document, index, prev)
+}
+
 fn build_feature(doc: &mut Document, index: usize, prev: State) -> (State, FeatureStatus) {
     let f: Feature = doc.features[index].clone();
     let mut status = FeatureStatus {
@@ -233,6 +357,20 @@ fn build_feature(doc: &mut Document, index: usize, prev: State) -> (State, Featu
     }
     let mut state = prev.clone();
     let result: RResult<()> = match &f.kind {
+        FeatureKind::Sketch3d(s) => match build_spatial(&prev, s) {
+            Ok((sketch, report)) => {
+                let failed = report.status == of_sketch::SolveStatus::Failed;
+                status.sketch = Some(report.clone());
+                state.sketches3d.insert(f.id, (sketch.clone(), report));
+                if failed {
+                    Err("the 3D sketch can't be solved; check its conflicting relations".into())
+                } else {
+                    doc.features[index].kind = FeatureKind::Sketch3d(sketch);
+                    Ok(())
+                }
+            }
+            Err(e) => Err(e),
+        },
         FeatureKind::Sketch(s) => match build_sketch(&prev, s) {
             Ok((plane, sketch, report)) => {
                 // Keep the solved geometry in the document.
@@ -250,33 +388,167 @@ fn build_feature(doc: &mut Document, index: usize, prev: State) -> (State, Featu
             }
             Err(e) => Err(e),
         },
-        kind => build_kind(f.id, kind, &prev, &mut state),
+        kind => build_scoped(f.id, kind, f.scope.as_deref(), &prev, &mut state),
     };
     if let Err(e) = result {
         status.error = Some(e);
         // A failed sketch still shows (and can be fixed); other features are skipped.
-        if !matches!(f.kind, FeatureKind::Sketch(_)) {
+        if !matches!(f.kind, FeatureKind::Sketch(_) | FeatureKind::Sketch3d(_)) {
             state = prev;
         }
     }
     (state, status)
 }
 
+fn build_scoped(
+    id: FeatureId,
+    kind: &FeatureKind,
+    scope: Option<&[crate::BodyId]>,
+    prev: &State,
+    state: &mut State,
+) -> RResult<()> {
+    let Some(scope) = scope else {
+        return build_kind(id, kind, prev, state);
+    };
+    if !matches!(
+        kind,
+        FeatureKind::Extrude(_)
+            | FeatureKind::Dome(_)
+            | FeatureKind::Rib(_)
+            | FeatureKind::Thread(_)
+            | FeatureKind::Wrap(_)
+            | FeatureKind::Draft(_)
+            | FeatureKind::VariableFillet(_)
+            | FeatureKind::FaceFillet(_)
+            | FeatureKind::Sweep(_)
+            | FeatureKind::Loft(_)
+            | FeatureKind::Boundary(_)
+            | FeatureKind::Revolve(_)
+            | FeatureKind::Fillet(_)
+            | FeatureKind::Chamfer(_)
+            | FeatureKind::Shell(_)
+            | FeatureKind::Hole(_)
+            | FeatureKind::LinearPattern(_)
+            | FeatureKind::CircularPattern(_)
+            | FeatureKind::Mirror(_)
+    ) {
+        return Err("this feature does not accept a body scope".into());
+    }
+    if scope.is_empty() {
+        return Err("select at least one body for the feature scope".into());
+    }
+    for body in scope {
+        prev.solid(body)?;
+    }
+    let mut selected = prev.clone();
+    selected.bodies.retain(|b| scope.contains(&b.id));
+    selected.aggregate_bodies()?;
+    let mut result = selected.clone();
+    build_kind(id, kind, &selected, &mut result)?;
+    result.bodies.extend(
+        prev.bodies
+            .iter()
+            .filter(|b| !scope.contains(&b.id))
+            .cloned(),
+    );
+    result.aggregate_bodies()?;
+    *state = result;
+    Ok(())
+}
+
 /// Build any feature except a sketch onto `state`.
 fn build_kind(id: FeatureId, kind: &FeatureKind, prev: &State, state: &mut State) -> RResult<()> {
+    if let Some(curve) = crate::curves::generated(kind, prev)? {
+        state.curves.insert(id, curve);
+        return Ok(());
+    }
     let datum = match kind {
+        FeatureKind::CosmeticThread(thread) => {
+            crate::cosmetic_thread::annotation(thread, prev)?;
+            state.cosmetic_threads.insert(id, thread.clone());
+            return Ok(());
+        }
         FeatureKind::Plane(p) => build_plane(prev, p)?,
         FeatureKind::Axis(a) => build_axis(prev, a)?,
         FeatureKind::Point(p) => build_point(prev, p)?,
         FeatureKind::CoordSys(c) => build_coord_sys(prev, c)?,
+        FeatureKind::Sketch3d(s) => {
+            let (sketch, report) = build_spatial(prev, s)?;
+            if report.status == of_sketch::SolveStatus::Failed {
+                return Err(
+                    "the 3D sketch can't be solved; check its conflicting relations".into(),
+                );
+            }
+            state.sketches3d.insert(id, (sketch, report));
+            return Ok(());
+        }
         FeatureKind::Sketch(s) => {
             let (plane, sketch, _) = build_sketch(prev, s)?;
             state.sketches.insert(id, (plane, sketch));
             return Ok(());
         }
-        _ => return ops::build(id, kind, prev, state),
+        FeatureKind::Combine(p) => return crate::bodies::combine(id, p, prev, state),
+        FeatureKind::MoveBody(p) => return crate::bodies::move_body(id, p, prev, state),
+        FeatureKind::SplitBody(p) => return crate::bodies::split_body(id, p, prev, state),
+        _ => {
+            ops::build(id, kind, prev, state)?;
+            return state.refresh_bodies(id, prev);
+        }
     };
     state.datums.insert(id, datum);
+    Ok(())
+}
+
+fn build_spatial(
+    prev: &State,
+    s: &of_sketch::spatial::Sketch3D,
+) -> RResult<(of_sketch::spatial::Sketch3D, SolveReport)> {
+    let mut sketch = s.clone();
+    update_spatial_external(prev, &mut sketch)?;
+    let report = sketch.solve(None)?;
+    Ok((sketch, report))
+}
+
+/// Move associative fixed points and workplanes to their model references.
+fn update_spatial_external(prev: &State, sketch: &mut of_sketch::spatial::Sketch3D) -> RResult<()> {
+    use of_sketch::spatial::Relation3;
+    for constraint in &mut sketch.constraints {
+        let Some(text) = &constraint.external else {
+            continue;
+        };
+        let reference: Ref = serde_json::from_str(text)
+            .map_err(|_| format!("relation {} has an invalid model reference", constraint.id))?;
+        let missing = |_| {
+            format!(
+                "the model geometry that relation {} follows no longer exists",
+                constraint.id
+            )
+        };
+        let resolved = resolve(prev, &reference).map_err(missing)?;
+        match &mut constraint.relation {
+            Relation3::Fixed { at, .. } => {
+                *at = resolved.point().map_err(|_| {
+                    format!("relation {} must follow a vertex or point", constraint.id)
+                })?;
+            }
+            Relation3::PointOnPlane { origin, normal, .. } => {
+                let plane = resolved.plane().map_err(|_| {
+                    format!(
+                        "relation {} must follow a plane or planar face",
+                        constraint.id
+                    )
+                })?;
+                *origin = plane.origin;
+                *normal = plane.normal;
+            }
+            _ => {
+                return Err(format!(
+                    "only fixed and point-on-plane relations can follow model geometry (relation {})",
+                    constraint.id
+                ));
+            }
+        }
+    }
     Ok(())
 }
 
@@ -297,7 +569,11 @@ fn update_external(prev: &State, plane: &Plane, sketch: &mut Sketch) -> RResult<
         .filter_map(|(id, e)| e.external.clone().map(|x| (*id, x)))
         .collect();
     for (id, name) in externals {
-        let r = Ref::Edge { name };
+        let r = if name.starts_with('{') {
+            serde_json::from_str(&name).map_err(|_| "invalid converted edge reference")?
+        } else {
+            Ref::Edge { name }
+        };
         let Ok(Resolved::Edge { info, .. }) = resolve(prev, &r) else {
             return Err("an edge converted into this sketch no longer exists".into());
         };

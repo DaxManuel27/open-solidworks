@@ -1,3 +1,13 @@
+import { CosmeticThreadPanel } from './cosmetic-thread'
+import { SpatialPanel } from './spatial'
+import { DomePanel } from './dome'
+import { FaceFilletPanel } from './face-fillet'
+import { RibPanel } from './rib'
+import { WrapPanel } from './wrap'
+import { AdvancedDressupPanel, BoundaryPanel, CurvePanel, SweepLoftPanel } from './advanced'
+import { ConfigurationsPanel } from './configurations'
+import { EquationsPanel } from './equations'
+import { BodiesPanel } from './bodies'
 import type { Panel } from '../store'
 import {
   ChamferPanel,
@@ -17,6 +27,44 @@ import { ExportPanel, MassPanel, MaterialPanel, MeasurePanel, UnitsPanel } from 
 export function PanelHost({ panel }: { panel: Panel }) {
   const key = `${panel.type}:${panel.editing ?? 'new'}:${panel.sketch ?? ''}`
   switch (panel.type) {
+    case 'dome':
+      return <DomePanel key={key} panel={panel} />
+    case 'thread':
+      return <CosmeticThreadPanel key={key} panel={panel} />
+    case 'face_fillet':
+      return <FaceFilletPanel key={key} panel={panel} />
+    case 'rib':
+      return <RibPanel key={key} panel={panel} />
+    case 'wrap':
+      return <WrapPanel key={key} panel={panel} />
+    case 'cosmetic_thread':
+      return <CosmeticThreadPanel key={key} panel={panel} />
+    case 'sketch3d':
+      return <SpatialPanel key={key} panel={panel} />
+    case 'draft':
+    case 'variable_fillet':
+      return <AdvancedDressupPanel key={key} panel={panel} />
+    case 'sweep':
+    case 'sweep_cut':
+    case 'loft':
+    case 'loft_cut':
+      return <SweepLoftPanel key={key} panel={panel} />
+    case 'boundary':
+    case 'boundary_cut':
+      return <BoundaryPanel key={key} panel={panel} />
+    case 'helix':
+    case 'composite_curve':
+    case 'split_line':
+    case 'projected_curve':
+      return <CurvePanel key={key} panel={panel} />
+    case 'configurations':
+      return <ConfigurationsPanel key={key} />
+    case 'equations':
+      return <EquationsPanel key={key} />
+    case 'combine':
+    case 'move_body':
+    case 'split_body':
+      return <BodiesPanel key={key} panel={panel} />
     case 'extrude':
     case 'cut':
       return <ExtrudePanel key={key} panel={panel} />

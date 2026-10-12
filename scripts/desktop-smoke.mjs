@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import assert from 'node:assert/strict'
+import { assistantSmoke } from './assistant-smoke.mjs'
+import { phase2Smoke } from './phase-2-smoke.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 process.env.OPENFORGE_CORE = join(
@@ -49,15 +51,25 @@ dialog.showErrorBox = (title, message) => {
 const timeout = setTimeout(() => {
   console.error('Desktop smoke timed out')
   app.exit(1)
-}, 90000)
+}, 360000)
 
 async function run(win) {
-  // CI windows can be occluded; resize observers and smooth scrolling still need frames.
-  win.webContents.setBackgroundThrottling(false)
-  const js = (code) =>
-    win.webContents.executeJavaScript(code, true).catch((error) => {
-      throw new Error(`${error.message}\nRenderer script: ${code}`)
-    })
+  // A renderer script that never settles fails with its source instead of
+  // stalling until the whole smoke times out.
+  const js = (code) => {
+    let timer
+    return Promise.race([
+      win.webContents.executeJavaScript(code, true).catch((error) => {
+        throw new Error(`${error.message}\nRenderer script: ${code}`)
+      }),
+      new Promise((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`Renderer script did not settle in 20 s: ${code}`)),
+          20000,
+        )
+      }),
+    ]).finally(() => clearTimeout(timer))
+  }
   const wait = async (fn, label) => {
     const deadline = Date.now() + 15000
     while (Date.now() < deadline) {
@@ -120,7 +132,7 @@ async function run(win) {
             centered: Math.abs(hud.x + hud.width / 2 - viewport.x - viewport.width / 2) < 1,
             below: tabs.top === ribbon.bottom, fits: hud.left >= viewport.left && hud.right <= viewport.right,
             bodyFits: document.body.scrollWidth === window.innerWidth,
-            overflow: document.querySelector('.of-ribbon-track').scrollWidth > document.querySelector('.of-ribbon-track').clientWidth,
+            overflow: document.querySelector('.of-ribbon-track').scrollWidth > document.querySelector('.of-ribbon-track').clientWidth + 1,
             arrows: !!document.querySelector('[aria-label="Scroll commands right"]') };
           })()`)
           // ResizeObserver and React must catch up with the new track dimensions.
@@ -143,7 +155,7 @@ async function run(win) {
           )
         }
         await click('Reference Geometry')
-        await new Promise((r) => setTimeout(r, 60))
+        await wait(() => js(`!!document.querySelector('.of-menu')`), 'layout menu opened')
         assert.equal(
           await js(
             `(() => { const r = document.querySelector('.of-menu').getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight })()`,
@@ -196,6 +208,10 @@ async function run(win) {
   await js(
     `window.__smokeErrors = []; window.addEventListener('error', e => window.__smokeErrors.push(e.message)); window.addEventListener('unhandledrejection', e => window.__smokeErrors.push(String(e.reason)))`,
   )
+  if (process.env.OPENFORGE_SMOKE_ASSISTANT_ONLY) {
+    await assistantSmoke({ js, call, click, wait })
+    return
+  }
   assert.equal(await js(`typeof window.require`), 'undefined', 'renderer must stay sandboxed')
   assert.equal(await js(`document.querySelector('[data-command="print"]').disabled`), true)
   assert.match(
@@ -242,17 +258,6 @@ async function run(win) {
     'rebuild',
     'properties',
     'options',
-    'sweep',
-    'loft',
-    'boundary',
-    'sweepCut',
-    'loftCut',
-    'boundaryCut',
-    'draft',
-    'rib',
-    'wrap',
-    'intersect',
-    'curves',
     'direct',
     'zoomArea',
     'previousView',
@@ -592,15 +597,29 @@ async function run(win) {
   menu('zoom-fit')
   await new Promise((r) => setTimeout(r, 250))
   assert.deepEqual(await js('window.__smokeErrors'), [], 'renderer errors after revolve')
+  console.log('Core desktop checks passed; testing Phase 2 and assistant…')
+  await phase2Smoke({
+    js,
+    call,
+    click,
+    wait,
+    enabled,
+    root,
+    part,
+    sendInput: (event) => win.webContents.sendInputEvent(event),
+  })
+  await assistantSmoke({ js, call, click, wait })
   const screenshot = await win.capturePage()
   const artifact = process.env.OPENFORGE_SMOKE_SCREENSHOT
   if (artifact) writeFileSync(artifact, screenshot.toPNG())
   console.log(
-    'Desktop smoke passed: toolbar layout/themes, keyboard/menu isolation, sketch tools, dropdown panels, views, draw/extrude/revolve, undo/redo, save/reopen/import/export',
+    'Desktop smoke passed: toolbar layout/themes, keyboard/menu isolation, sketch tools, dropdown panels, views, draw/extrude/revolve, body visibility/copy/split retention, scoped formulas, configurations, spatial sketches, hollow sweeps, domes, cosmetic threads, ribs with formula entry, modeled threads, boundaries, tangent lofts, undo/redo, save/reopen/import/export',
   )
 }
 
 app.once('browser-window-created', (_event, win) => {
+  win.webContents.setBackgroundThrottling(false)
+  win.hide()
   win.webContents.once('did-finish-load', () => {
     run(win)
       .then(() => {

@@ -20,6 +20,7 @@ export const COLORS = {
 
 /** A body uploaded to the GPU, with lookups for picking. */
 interface BodyMesh {
+  hidden: Record<Kind, Set<number>>
   mesh: THREE.Mesh
   edges: THREE.LineSegments
   faceRanges: Uint32Array
@@ -30,10 +31,25 @@ interface BodyMesh {
   materials: THREE.Material[]
 }
 
+function hiddenTopology(scene: Scene): Record<Kind, Set<number>> {
+  const result = { face: new Set<number>(), edge: new Set<number>(), vertex: new Set<number>() }
+  for (const [kind, key] of [
+    ['face', 'faces'],
+    ['edge', 'edges'],
+    ['vertex', 'vertices'],
+  ] as const) {
+    for (const body of scene.bodies)
+      if (body.hidden) for (const index of body[key]) result[kind].add(index)
+    for (const body of scene.bodies)
+      if (!body.hidden) for (const index of body[key]) result[kind].delete(index)
+  }
+  return result
+}
+
 export interface HighlightSet {
   hover: Pick | null
   selected: Pick[]
-  aux: { kind: Kind; index: number }[]
+  aux: Pick[]
 }
 
 const STD_PLANES: { ref: Ref; name: string; plane: PlaneData }[] = [
@@ -80,7 +96,7 @@ export class Engine {
   readonly overlayGroup = new THREE.Group()
   private highlightGroup = new THREE.Group()
   private stdPlaneMeshes: { mesh: THREE.Mesh; ref: Ref }[] = []
-  private datumMeshes: { object: THREE.Object3D; id: number }[] = []
+  private datumMeshes: { object: THREE.Object3D; id: number; ref?: Ref; curve?: boolean }[] = []
   private bounds = new THREE.Box3(new THREE.Vector3(-50, -50, -50), new THREE.Vector3(50, 50, 50))
   private raycaster = new THREE.Raycaster()
   private frame = 0
@@ -211,6 +227,7 @@ export class Engine {
 
   setScene(scene: Scene | null): void {
     this.clearBody()
+    this.disposeThreadLines(this.datumGroup)
     this.datumGroup.clear()
     this.datumMeshes = []
     this.sketchGroup.clear()
@@ -223,8 +240,37 @@ export class Engine {
     } else {
       this.bounds.set(new THREE.Vector3(-50, -50, -50), new THREE.Vector3(50, 50, 50))
     }
-    if (scene.body) this.body = this.uploadBody(scene.body, this.bodyGroup, false)
+    if (scene.body)
+      this.body = this.uploadBody(scene.body, this.bodyGroup, false, hiddenTopology(scene))
     for (const d of scene.datums) this.addDatum(d.id, d.geometry)
+    for (const curve of [
+      ...scene.curves,
+      ...scene.sketches3d.map((s) => ({ ...s, segments: [] })),
+    ]) {
+      const addCurves = (polylines: number[][], ref?: Ref) => {
+        const group = new THREE.Group()
+        for (const polyline of polylines) {
+          const geometry = new THREE.BufferGeometry().setAttribute(
+            'position',
+            new THREE.Float32BufferAttribute(polyline, 3),
+          )
+          group.add(new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: COLORS.sketch })))
+        }
+        this.datumGroup.add(group)
+        this.datumMeshes.push({ object: group, id: curve.id, ref, curve: true })
+      }
+      const segments = curve.segments ?? []
+      for (const segment of segments) addCurves(segment.polylines, segment.reference)
+      // Preserve display and whole-curve picking for pieces without unique provenance.
+      if (
+        segments.reduce((n, segment) => n + segment.polylines.length, 0) !== curve.polylines.length
+      )
+        addCurves(curve.polylines)
+    }
+    for (const annotation of scene.cosmetic_threads ?? []) {
+      if (annotation.hidden) continue
+      this.addThreadLines(annotation.polylines, this.datumGroup)
+    }
     for (const s of scene.sketches) {
       const m = new THREE.LineBasicMaterial({ color: COLORS.sketch })
       for (const pl of s.polylines) {
@@ -240,9 +286,13 @@ export class Engine {
   }
 
   setPreview(scene: Scene | null): void {
+    this.disposeThreadLines(this.previewGroup)
     this.previewGroup.traverse((o) => (o as THREE.Mesh).geometry?.dispose())
     this.previewGroup.clear()
-    if (scene?.body) this.uploadBody(scene.body, this.previewGroup, true)
+    if (scene?.body) this.uploadBody(scene.body, this.previewGroup, true, hiddenTopology(scene))
+    for (const annotation of scene?.cosmetic_threads ?? []) {
+      if (!annotation.hidden) this.addThreadLines(annotation.polylines, this.previewGroup)
+    }
     // Dim the real body so the preview reads clearly.
     if (this.body) {
       const m = this.body.materials[0] as THREE.MeshStandardMaterial
@@ -260,13 +310,42 @@ export class Engine {
     this.requestRender()
   }
 
+  private disposeThreadLines(group: THREE.Group): void {
+    group.traverse((object) => {
+      if (object.userData.cosmeticThread && object instanceof THREE.Line) {
+        object.geometry.dispose()
+        const materials = Array.isArray(object.material) ? object.material : [object.material]
+        for (const material of materials) material.dispose()
+      }
+    })
+  }
+
+  private addThreadLines(polylines: number[][], group: THREE.Group): void {
+    for (const polyline of polylines) {
+      const geometry = new THREE.BufferGeometry().setAttribute(
+        'position',
+        new THREE.Float32BufferAttribute(polyline, 3),
+      )
+      const material = new THREE.LineBasicMaterial({ color: 0xc78d36, depthTest: false })
+      const line = new THREE.Line(geometry, material)
+      line.renderOrder = 4
+      line.userData.cosmeticThread = true
+      group.add(line)
+    }
+  }
+
   private clearBody(): void {
     this.bodyGroup.traverse((o) => (o as THREE.Mesh).geometry?.dispose())
     this.bodyGroup.clear()
     this.body = null
   }
 
-  private uploadBody(p: Scene['body'] & object, group: THREE.Group, preview: boolean): BodyMesh {
+  private uploadBody(
+    p: Scene['body'] & object,
+    group: THREE.Group,
+    preview: boolean,
+    hidden: Record<Kind, Set<number>>,
+  ): BodyMesh {
     const geom = new THREE.BufferGeometry()
     geom.setAttribute('position', new THREE.BufferAttribute(decodeF32(p.positions), 3))
     geom.setAttribute('normal', new THREE.BufferAttribute(decodeF32(p.normals), 3))
@@ -294,7 +373,10 @@ export class Engine {
         side: THREE.DoubleSide,
       })
     const materials = [base, mat(COLORS.hover), mat(COLORS.selected), mat(COLORS.aux)]
-    geom.addGroup(0, geom.index!.count, 0)
+    for (let f = 0; f < p.face_count; f++) {
+      if (!hidden.face.has(f))
+        geom.addGroup(faceRanges[f]! * 3, (faceRanges[f + 1]! - faceRanges[f]!) * 3, 0)
+    }
     const mesh = new THREE.Mesh(geom, materials)
     group.add(mesh)
 
@@ -302,6 +384,7 @@ export class Engine {
     const edgeRanges = decodeU32(p.edge_ranges)
     const segs: number[] = []
     for (let e = 0; e + 1 < edgeRanges.length; e++) {
+      if (hidden.edge.has(e)) continue
       for (let i = edgeRanges[e]!; i + 1 < edgeRanges[e + 1]!; i++) {
         segs.push(edgePoints[3 * i]!, edgePoints[3 * i + 1]!, edgePoints[3 * i + 2]!)
         segs.push(edgePoints[3 * i + 3]!, edgePoints[3 * i + 4]!, edgePoints[3 * i + 5]!)
@@ -318,6 +401,7 @@ export class Engine {
     group.add(edges)
     this.requestRender()
     return {
+      hidden,
       mesh,
       edges,
       faceRanges,
@@ -429,6 +513,31 @@ export class Engine {
       ;(o as THREE.Mesh).geometry?.dispose()
       this.highlightGroup.remove(o)
     }
+    // Datum/curve highlighting also works when the document has no solid body.
+    const sel = [
+      ...this.highlights.selected,
+      ...this.highlights.aux,
+      ...(this.highlights.hover ? [this.highlights.hover] : []),
+    ]
+    for (const { object, id, ref, curve } of this.datumMeshes) {
+      const on = sel.some(
+        (p) =>
+          p.kind === 'datum' &&
+          p.id === id &&
+          (!p.ref || JSON.stringify(p.ref) === JSON.stringify(ref)),
+      )
+      if (curve)
+        object.traverse((child) => {
+          const material = (child as THREE.Line).material
+          if (material instanceof THREE.LineBasicMaterial)
+            material.color.set(on ? COLORS.hover : COLORS.sketch)
+        })
+      else setOpacity(object, on ? 0.35 : 0.12)
+    }
+    for (const { mesh, ref } of this.stdPlaneMeshes) {
+      const on = sel.some((p) => p.kind === 'std_plane' && p.ref.type === ref.type)
+      setOpacity(mesh, on ? 0.35 : 0.12)
+    }
     const b = this.body
     if (!b) {
       this.requestRender()
@@ -444,14 +553,11 @@ export class Engine {
     if (this.highlights.hover) mark(this.highlights.hover as { kind: string; index?: number }, 1)
     const g = b.mesh.geometry
     g.clearGroups()
-    let start = 0
-    for (let f = 0; f <= b.faceCount; f++) {
-      if (f === b.faceCount || (f > 0 && style[f] !== style[f - 1])) {
-        const s0 = b.faceRanges[start]! * 3
-        const s1 = b.faceRanges[f]! * 3
-        if (s1 > s0) g.addGroup(s0, s1 - s0, style[start]!)
-        start = f
-      }
+    for (let f = 0; f < b.faceCount; f++) {
+      if (b.hidden.face.has(f)) continue
+      const start = b.faceRanges[f]! * 3
+      const end = b.faceRanges[f + 1]! * 3
+      if (end > start) g.addGroup(start, end - start, style[f]!)
     }
     // Edges and vertices: fat lines and dots.
     const edgeSets: [number, number[]][] = [
@@ -464,8 +570,9 @@ export class Engine {
       [COLORS.hover, []],
     ]
     const add = (p: Pick, edgeIdx: number, vertexIdx: number) => {
-      if (p.kind === 'edge') edgeSets[edgeIdx]![1].push(p.index)
-      if (p.kind === 'vertex' && vertexIdx >= 0) vertexSets[vertexIdx]![1].push(p.index)
+      if (p.kind === 'edge' && !b.hidden.edge.has(p.index)) edgeSets[edgeIdx]![1].push(p.index)
+      if (p.kind === 'vertex' && vertexIdx >= 0 && !b.hidden.vertex.has(p.index))
+        vertexSets[vertexIdx]![1].push(p.index)
     }
     for (const a of this.highlights.aux) add(a as Pick, 0, 0)
     for (const s of this.highlights.selected) add(s, 1, 0)
@@ -499,19 +606,6 @@ export class Engine {
       )
       pm.renderOrder = 11
       this.highlightGroup.add(pm)
-    }
-    // Datum and standard plane highlights.
-    const sel = [
-      ...this.highlights.selected,
-      ...(this.highlights.hover ? [this.highlights.hover] : []),
-    ]
-    for (const { object, id } of this.datumMeshes) {
-      const on = sel.some((p) => p.kind === 'datum' && p.id === id)
-      setOpacity(object, on ? 0.35 : 0.12)
-    }
-    for (const { mesh, ref } of this.stdPlaneMeshes) {
-      const on = sel.some((p) => p.kind === 'std_plane' && p.ref.type === ref.type)
-      setOpacity(mesh, on ? 0.35 : 0.12)
     }
     this.requestRender()
   }
@@ -576,6 +670,7 @@ export class Engine {
       let best = -1
       let bestD = 8
       for (let i = 0; i < b.vertices.length / 3; i++) {
+        if (b.hidden.vertex.has(i)) continue
         const p = new THREE.Vector3(b.vertices[3 * i], b.vertices[3 * i + 1], b.vertices[3 * i + 2])
         if (depth(p) > faceDepth + tol) continue
         const s = this.toScreen(p)
@@ -591,6 +686,7 @@ export class Engine {
       let best = -1
       let bestD = 6
       for (let e = 0; e + 1 < b.edgeRanges.length; e++) {
+        if (b.hidden.edge.has(e)) continue
         for (let i = b.edgeRanges[e]!; i + 1 < b.edgeRanges[e + 1]!; i++) {
           const p = new THREE.Vector3(
             b.edgePoints[3 * i],
@@ -632,7 +728,7 @@ export class Engine {
         const d = this.datumMeshes.find(
           (x) => x.object === hit.object || x.object.children.includes(hit.object),
         )
-        if (d) return { kind: 'datum', id: d.id }
+        if (d) return { kind: 'datum', id: d.id, ...(d.ref ? { ref: d.ref } : {}) }
       }
     }
     if (kinds.includes('std_plane') && this.planeGroup.visible) {

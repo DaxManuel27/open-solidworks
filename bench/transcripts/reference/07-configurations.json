@@ -1,0 +1,85 @@
+{
+  "task": "07-configurations",
+  "source": "reference: hand-written against the current catalog",
+  "steps": [
+    {
+      "calls": [
+        {
+          "name": "part_info",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "create_configuration",
+          "args": {
+            "name": "Thin"
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "update_configuration",
+          "args": {
+            "configuration": {
+              "id": 2,
+              "name": "Thin",
+              "parameters": {
+                "f2.end1.depth": 3
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "create_configuration",
+          "args": {
+            "name": "Thick"
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "update_configuration",
+          "args": {
+            "configuration": {
+              "id": 3,
+              "name": "Thick",
+              "parameters": {
+                "f2.end1.depth": 10
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "mass_properties",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "finish_task",
+          "args": {
+            "summary": "Created Thin (3 mm) and Thick (10 mm) configurations.",
+            "preview_only": false
+          }
+        }
+      ]
+    }
+  ]
+}

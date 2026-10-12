@@ -6,9 +6,11 @@
 //! shape; `of-model` maps them to stable names across rebuilds using the
 //! [`History`] every operation returns.
 
+mod curves;
 mod plane;
 mod profile;
 
+pub use curves::{Curve3, EndTangent};
 pub use glam::{DAffine3, DMat3, DVec2, DVec3};
 pub use plane::Plane;
 pub use profile::{Curve2, Profile, ProfileFace};
@@ -31,7 +33,7 @@ impl From<cxx::Exception> for GeomError {
 pub type Result<T> = std::result::Result<T, GeomError>;
 
 /// Kinds of sub-shape.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
     Face = 0,
@@ -244,7 +246,7 @@ pub struct Distance {
 }
 
 /// Boolean operations.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum BoolOp {
     Fuse = 0,
@@ -275,6 +277,11 @@ impl Shape {
 
     pub fn sub_shape(&self, kind: Kind, index: u32) -> Result<Shape> {
         Ok(Shape(ffi::sub_shape(&self.0, kind as u8, index)?))
+    }
+
+    /// Map this shape's sub-shapes to a containing compound by kernel identity.
+    pub fn indices_in(&self, whole: &Shape, kind: Kind) -> Result<Vec<u32>> {
+        Ok(ffi::indices_in(&self.0, &whole.0, kind as u8)?)
     }
 
     /// The solids in this shape, each as its own shape.
@@ -330,6 +337,42 @@ impl Shape {
             shape: Shape(s),
             history: convert_history(h),
         })
+    }
+
+    pub fn split_plane(&self, plane: &Plane) -> Result<OpResult> {
+        let mut h = Vec::new();
+        let shape = ffi::split_plane(&self.0, &plane.to_ffi(), &mut h)?;
+        Ok(OpResult {
+            shape: Shape(shape),
+            history: convert_history(h),
+        })
+    }
+
+    /// An unbounded planar cutting face, retaining the authored plane normal.
+    pub fn plane_face(plane: &Plane) -> Result<Shape> {
+        Ok(Shape(ffi::plane_face(&plane.to_ffi())?))
+    }
+
+    /// Partition this shape with bounded faces, solids or unbounded plane faces.
+    /// History input 1 describes the cutting tools; tool material is not included.
+    pub fn split_tools(&self, tools: &Shape) -> Result<OpResult> {
+        let mut history = Vec::new();
+        let shape = ffi::split_tools(&self.0, &tools.0, &mut history)?;
+        Ok(OpResult {
+            shape: Shape(shape),
+            history: convert_history(history),
+        })
+    }
+
+    /// Topological orientation of a boundary face within this solid (+1 / -1).
+    /// Thicken faces from [`Profile::wrap_onto`] radially by `depth`, outward
+    /// (emboss) or inward (deboss), into solids.
+    pub fn wrap_solid(&self, depth: f64, outward: bool) -> Result<Shape> {
+        Ok(Shape(ffi::wrap_solid(&self.0, depth, outward)?))
+    }
+
+    pub fn face_orientation(&self, face: u32) -> Result<i8> {
+        Ok(ffi::face_orientation(&self.0, face)?)
     }
 
     pub fn revolve(&self, origin: DVec3, axis: DVec3, angle: f64) -> Result<OpResult> {

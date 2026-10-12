@@ -1,0 +1,22 @@
+{
+  "id": "02-revolved-shaft",
+  "title": "Revolved stepped shaft",
+  "prompt": "Make a stepped shaft by revolving a sketch: 20 mm diameter for 30 mm, then 12 mm diameter for the next 20 mm.",
+  "expect": {
+    "outcome": "change",
+    "no_new_errors": true,
+    "part": {
+      "valid_solid": true,
+      "body_count": 1,
+      "volume": {
+        "value": 11686.725,
+        "tol": 0.5
+      },
+      "bbox_size": {
+        "value": [20, 20, 50],
+        "tol": 0.01,
+        "sorted": true
+      }
+    }
+  }
+}

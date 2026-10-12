@@ -1,0 +1,24 @@
+{
+  "id": "08-repair-fillet",
+  "title": "Repair a failed feature",
+  "prompt": "Fillet1 failed. Fix it so the edge is still rounded, keeping the fillet feature.",
+  "start": "../fixtures/plate-failed-fillet.ofp",
+  "expect": {
+    "outcome": "change",
+    "no_errors": true,
+    "feature_count": 3,
+    "keeps_features": [1, 2, 3],
+    "part": {
+      "valid_solid": true,
+      "body_count": 1,
+      "volume_range": {
+        "min": 11670,
+        "max": 11999
+      },
+      "bbox_size": {
+        "value": [60, 40, 5],
+        "tol": 0.01
+      }
+    }
+  }
+}

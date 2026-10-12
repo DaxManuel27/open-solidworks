@@ -1,0 +1,239 @@
+{
+  "format": "openforge-part",
+  "version": 2,
+  "document": {
+    "configurations": {
+      "active": 1,
+      "next_id": 2,
+      "items": [
+        {
+          "id": 1,
+          "name": "Default",
+          "parameters": {},
+          "equations": {},
+          "variables": {},
+          "suppressed": {},
+          "material": {
+            "mode": "inherit"
+          }
+        }
+      ]
+    },
+    "variables": {},
+    "equations": {},
+    "body_display": {},
+    "units": {
+      "length": "mm",
+      "angle": "deg",
+      "mass": "g",
+      "decimals": 2
+    },
+    "material": null,
+    "features": [
+      {
+        "id": 1,
+        "name": "Sketch1",
+        "suppressed": false,
+        "type": "sketch",
+        "plane": {
+          "type": "front_plane"
+        },
+        "sketch": {
+          "entities": [
+            [
+              0,
+              {
+                "geo": {
+                  "type": "point",
+                  "p": [
+                    0.0,
+                    0.0
+                  ]
+                },
+                "construction": false
+              }
+            ],
+            [
+              1,
+              {
+                "geo": {
+                  "type": "point",
+                  "p": [
+                    0.0,
+                    0.0
+                  ]
+                },
+                "construction": false
+              }
+            ],
+            [
+              2,
+              {
+                "geo": {
+                  "type": "point",
+                  "p": [
+                    40.0,
+                    0.0
+                  ]
+                },
+                "construction": false
+              }
+            ],
+            [
+              3,
+              {
+                "geo": {
+                  "type": "point",
+                  "p": [
+                    40.0,
+                    30.0
+                  ]
+                },
+                "construction": false
+              }
+            ],
+            [
+              4,
+              {
+                "geo": {
+                  "type": "point",
+                  "p": [
+                    0.0,
+                    30.0
+                  ]
+                },
+                "construction": false
+              }
+            ],
+            [
+              5,
+              {
+                "geo": {
+                  "type": "line",
+                  "a": 1,
+                  "b": 2
+                },
+                "construction": false
+              }
+            ],
+            [
+              6,
+              {
+                "geo": {
+                  "type": "line",
+                  "a": 2,
+                  "b": 3
+                },
+                "construction": false
+              }
+            ],
+            [
+              7,
+              {
+                "geo": {
+                  "type": "line",
+                  "a": 3,
+                  "b": 4
+                },
+                "construction": false
+              }
+            ],
+            [
+              8,
+              {
+                "geo": {
+                  "type": "line",
+                  "a": 4,
+                  "b": 1
+                },
+                "construction": false
+              }
+            ]
+          ],
+          "constraints": [
+            [
+              9,
+              {
+                "type": "horizontal",
+                "line": 5,
+                "driving": true
+              }
+            ],
+            [
+              10,
+              {
+                "type": "horizontal",
+                "line": 7,
+                "driving": true
+              }
+            ],
+            [
+              11,
+              {
+                "type": "vertical",
+                "line": 6,
+                "driving": true
+              }
+            ],
+            [
+              12,
+              {
+                "type": "vertical",
+                "line": 8,
+                "driving": true
+              }
+            ],
+            [
+              13,
+              {
+                "type": "coincident",
+                "a": 1,
+                "b": 0,
+                "driving": true
+              }
+            ],
+            [
+              14,
+              {
+                "type": "length",
+                "line": 5,
+                "value": 40.0,
+                "driving": true
+              }
+            ],
+            [
+              15,
+              {
+                "type": "length",
+                "line": 6,
+                "value": 30.0,
+                "driving": true
+              }
+            ]
+          ],
+          "next_id": 16
+        }
+      },
+      {
+        "id": 2,
+        "name": "Boss-Extrude1",
+        "suppressed": false,
+        "type": "extrude",
+        "sketch": 1,
+        "cut": false,
+        "start_offset": 0.0,
+        "end1": {
+          "type": "blind",
+          "depth": 20.0
+        },
+        "reverse": false,
+        "end2": null,
+        "thin": null,
+        "flip_side_to_cut": false,
+        "merge": true
+      }
+    ],
+    "rollback": null,
+    "next_id": 3
+  }
+}

@@ -1,0 +1,4218 @@
+{
+  "metadata": {
+    "recorded_at_utc": "2026-10-12T03:09:47.275Z",
+    "commit": "aaaa94d26c0fa7eca53a1a6a4bad8e31f1dbf0cd",
+    "worktree_status": "M .github/workflows/ci.yml\n M apps/desktop/src/main/assistant/coordinator.ts\n M apps/desktop/src/main/assistant/provider.ts\n M apps/desktop/src/renderer/src/FeatureTree.tsx\n M apps/desktop/src/renderer/src/panels/PanelHost.tsx\n M apps/desktop/src/renderer/src/panels/advanced.tsx\n M apps/desktop/src/renderer/src/panels/bodies.tsx\n M apps/desktop/src/renderer/src/panels/configurations.tsx\n M apps/desktop/src/renderer/src/panels/equations.tsx\n M apps/desktop/src/renderer/src/panels/features.tsx\n M apps/desktop/src/renderer/src/panels/fields.tsx\n M apps/desktop/src/renderer/src/protocol.ts\n M apps/desktop/src/renderer/src/store.ts\n M apps/desktop/src/renderer/src/toolbars/commands.ts\n M apps/desktop/src/renderer/src/toolbars/icons.tsx\n M apps/desktop/src/renderer/src/toolbars/layout.ts\n M apps/desktop/src/renderer/src/viewport/Viewport.tsx\n M apps/desktop/src/renderer/src/viewport/engine.ts\n M apps/desktop/src/renderer/src/viewport/sketcher.ts\n M apps/desktop/src/shared/tools.gen.ts\n M crates/of-geom/src/curves.rs\n M crates/of-geom/src/lib.rs\n M crates/of-geom/src/profile.rs\n M crates/of-kernel-sys/Cargo.toml\n M crates/of-kernel-sys/build.rs\n M crates/of-kernel-sys/cpp/ofk.cpp\n M crates/of-kernel-sys/cpp/ofk.h\n M crates/of-kernel-sys/src/lib.rs\n M crates/of-model/src/bodies.rs\n M crates/of-model/src/build.rs\n M crates/of-model/src/curves.rs\n M crates/of-model/src/equations.rs\n M crates/of-model/src/features.rs\n M crates/of-model/src/file.rs\n M crates/of-model/src/lib.rs\n M crates/of-model/src/naming.rs\n M crates/of-model/src/ops.rs\n M crates/of-model/src/resolve.rs\n M crates/of-model/tests/compatibility.rs\n M crates/of-model/tests/curves.rs\n M crates/of-model/tests/dressup.rs\n M crates/of-model/tests/features.rs\n M crates/of-model/tests/multibody.rs\n M crates/of-model/tests/parameters.rs\n M crates/of-protocol/src/lib.rs\n M crates/of-sketch/src/lib.rs\n M crates/openforge/src/session.rs\n M crates/openforge/src/tools/envelope.rs\n M crates/openforge/src/tools/generate.rs\n M crates/openforge/src/tools/mod.rs\n M crates/openforge/src/tools/params.rs\n M crates/openforge/src/views.rs\n M crates/openforge/tests/serve.rs\n M docs/ai-implementation-plan.md\n M docs/assistant.md\n M docs/mcp-baseline.md\n M docs/phase-2-plan.md\n M docs/phase-2-status.md\n M docs/plan.md\n M docs/protocol.md\n M package.json\n M scripts/assistant-smoke.mjs\n M scripts/assistant-test.mjs\n M scripts/desktop-smoke.mjs\n M scripts/phase-2-smoke.mjs\n?? apps/desktop/src/renderer/src/panels/cosmetic-thread.tsx\n?? apps/desktop/src/renderer/src/panels/dome.tsx\n?? apps/desktop/src/renderer/src/panels/face-fillet.tsx\n?? apps/desktop/src/renderer/src/panels/parameter-editor.tsx\n?? apps/desktop/src/renderer/src/panels/rib.tsx\n?? apps/desktop/src/renderer/src/panels/spatial.tsx\n?? apps/desktop/src/renderer/src/panels/wrap.tsx\n?? apps/desktop/src/renderer/src/viewport/spatial-sketcher.ts\n?? apps/desktop/src/renderer/src/viewport/spatial-state.ts\n?? crates/of-geom/tests/\n?? crates/of-kernel-sys/cpp/boundary.cpp\n?? crates/of-kernel-sys/cpp/dome.cpp\n?? crates/of-kernel-sys/cpp/probes.cpp\n?? crates/of-kernel-sys/cpp/probes.h\n?? crates/of-kernel-sys/cpp/skin.cpp\n?? crates/of-kernel-sys/cpp/thread.cpp\n?? crates/of-kernel-sys/cpp/wrap.cpp\n?? crates/of-kernel-sys/examples/\n?? crates/of-kernel-sys/src/probes.rs\n?? crates/of-kernel-sys/tests/phase2_probes.rs\n?? crates/of-model/src/bodies/\n?? crates/of-model/src/cosmetic_thread.rs\n?? crates/of-model/src/ops/\n?? crates/of-model/tests/boundaries.rs\n?? crates/of-model/tests/contours.rs\n?? crates/of-model/tests/cosmetic_threads.rs\n?? crates/of-model/tests/dome.rs\n?? crates/of-model/tests/face_fillets.rs\n?? crates/of-model/tests/general_split.rs\n?? crates/of-model/tests/hollow_sweeps.rs\n?? crates/of-model/tests/profile_selection.rs\n?? crates/of-model/tests/rebuild_cache.rs\n?? crates/of-model/tests/reference_corpus.rs\n?? crates/of-model/tests/ribs.rs\n?? crates/of-model/tests/spatial_paths.rs\n?? crates/of-model/tests/split_modes.rs\n?? crates/of-model/tests/sweep_corners.rs\n?? crates/of-model/tests/sweep_modes.rs\n?? crates/of-model/tests/threads.rs\n?? crates/of-model/tests/wraps.rs\n?? crates/of-sketch/src/spatial.rs\n?? crates/of-sketch/tests/\n?? crates/openforge/tests/spatial_paths.rs\n?? docs/features/\n?? docs/phase-2-checkpoint-2026-10-11.md\n?? docs/phase-2-kernel-feasibility.md\n?? docs/phase-2-performance.json\n?? docs/phase-2-performance.md\n?? docs/phase-2-probe-results.csv\n?? docs/phase-2-r1-split.md\n?? docs/phase-2-r5-dome.md\n?? docs/phase-2-remaining-plan.md\n?? docs/soliworks-ui.jpeg\n?? handoff.md\n?? scripts/catalog-conformance.mjs\n?? scripts/phase-2-advanced-smoke.mjs\n?? scripts/phase-2-cosmetic-thread-smoke.mjs\n?? scripts/phase-2-dome-smoke.mjs\n?? scripts/phase-2-equation-smoke.mjs\n?? scripts/phase-2-performance.mjs\n?? scripts/phase-2-spatial-smoke.mjs\n?? scripts/phase-2-split-smoke.mjs",
+    "os": {
+      "platform": "darwin",
+      "release": "25.6.0",
+      "arch": "arm64"
+    },
+    "cpu": {
+      "model": "Apple M3 Max",
+      "logical_processors": 14
+    },
+    "system_memory_bytes": 38654705664,
+    "node": "v24.21.0",
+    "rust": "rustc 1.98.1 (48a229cea 2026-09-01)",
+    "core_binary": "/Users/daxmanuel/Documents/Projects/open-solidworks/open-solidworks/target/debug/openforge",
+    "core_sha256": "857735ce3b8aa981b6fa40199f20248ae27a8cd72a1c57d38335683a20aad01e",
+    "build_profile": "debug",
+    "opencascade": {
+      "version": "7.9.3",
+      "header": "/opt/homebrew/include/opencascade/Standard_Version.hxx"
+    },
+    "timing_method": "Monotonic parent-process wall clock; RPC response includes rebuild/preview geometry, tessellation and JSON serialization. Startup includes process creation and doc.open; operating-system file caches are uncontrolled.",
+    "memory_method": "/usr/bin/time -l maximum core resident set size over each complete core process, including RPC scenes, preview states and undo checkpoints; no polling estimate."
+  },
+  "runs": [
+    [
+      {
+        "fixture": "straight_spatial_sweep",
+        "repetitions": 5,
+        "volume_mm3": 4021.238596594927,
+        "expected_volume_mm3": 4021.238596594935,
+        "volume_tolerance_mm3": 0.0001,
+        "startup_open": {
+          "samples_ms": [
+            72.429709,
+            70.79937500000005,
+            71.09649999999965,
+            73.3388329999998,
+            73.3755000000001
+          ],
+          "median_ms": 72.429709,
+          "min_ms": 70.79937500000005,
+          "max_ms": 73.3755000000001
+        },
+        "feature_rebuild_rpc": {
+          "samples_ms": [
+            2.8421250000001237,
+            2.9209169999999176,
+            2.7953340000003664,
+            2.9866250000000036,
+            3.091707999999926
+          ],
+          "median_ms": 2.9209169999999176,
+          "min_ms": 2.7953340000003664,
+          "max_ms": 3.091707999999926
+        },
+        "preview_rpc": {
+          "samples_ms": [
+            2.665625000000091,
+            2.5600839999997334,
+            2.657459000000017,
+            2.9929159999996955,
+            2.5454580000000533
+          ],
+          "median_ms": 2.657459000000017,
+          "min_ms": 2.5454580000000533,
+          "max_ms": 2.9929159999996955
+        },
+        "peak_rss_bytes": 38879232,
+        "peak_rss_samples_bytes": [
+          37486592,
+          37502976,
+          37421056,
+          37421056,
+          37650432,
+          38879232
+        ],
+        "core_info": {
+          "capabilities": [
+            "revisioned_preview",
+            "assistant_drafts",
+            "part_v1_read",
+            "multibody",
+            "equations",
+            "configurations",
+            "cosmetic_threads",
+            "modeled_threads",
+            "curves",
+            "sketch_contour_paths",
+            "ordered_profile_contours",
+            "curve_segment_references",
+            "general_body_split",
+            "constrained_spatial_sketch",
+            "part_v2_read",
+            "sweep_loft",
+            "draft",
+            "circular_spherical_dome",
+            "elliptical_dome",
+            "noncircular_dome",
+            "step_draft",
+            "rib",
+            "cylindrical_wrap",
+            "conical_wrap",
+            "freeform_wrap",
+            "loft_centerline",
+            "loft_end_conditions",
+            "sweep_scaling_guides",
+            "interior_contour_seams",
+            "projected_curve_pieces",
+            "boundary",
+            "variable_fillet",
+            "planar_face_fillet",
+            "split_line"
+          ],
+          "generation": "52936-1791774590583016000-1",
+          "part_file_version": 3,
+          "protocol_version": 3,
+          "revision": 0,
+          "scene_version": 3
+        }
+      },
+      {
+        "fixture": "hollow_spatial_sweep",
+        "repetitions": 5,
+        "volume_mm3": 3015.9289474461966,
+        "expected_volume_mm3": 3015.928947446201,
+        "volume_tolerance_mm3": 0.0001,
+        "startup_open": {
+          "samples_ms": [
+            79.23337500000025,
+            87.36737500000027,
+            79.22350000000006,
+            80.94312499999978,
+            82.21670899999981
+          ],
+          "median_ms": 80.94312499999978,
+          "min_ms": 79.22350000000006,
+          "max_ms": 87.36737500000027
+        },
+        "feature_rebuild_rpc": {
+          "samples_ms": [
+            9.55462499999976,
+            9.657333000000108,
+            9.165624999999636,
+            8.945000000000164,
+            9.484291000000212
+          ],
+          "median_ms": 9.484291000000212,
+          "min_ms": 8.945000000000164,
+          "max_ms": 9.657333000000108
+        },
+        "preview_rpc": {
+          "samples_ms": [
+            9.81316599999991,
+            9.873916999999892,
+            9.447207999999591,
+            8.669875000000047,
+            8.452541999999994
+          ],
+          "median_ms": 9.447207999999591,
+          "min_ms": 8.452541999999994,
+          "max_ms": 9.873916999999892
+        },
+        "peak_rss_bytes": 41795584,
+        "peak_rss_samples_bytes": [
+          39272448,
+          39387136,
+          39354368,
+          39337984,
+          39485440,
+          41795584
+        ],
+        "core_info": {
+          "capabilities": [
+            "revisioned_preview",
+            "assistant_drafts",
+            "part_v1_read",
+            "multibody",
+            "equations",
+            "configurations",
+            "cosmetic_threads",
+            "modeled_threads",
+            "curves",
+            "sketch_contour_paths",
+            "ordered_profile_contours",
+            "curve_segment_references",
+            "general_body_split",
+            "constrained_spatial_sketch",
+            "part_v2_read",
+            "sweep_loft",
+            "draft",
+            "circular_spherical_dome",
+            "elliptical_dome",
+            "noncircular_dome",
+            "step_draft",
+            "rib",
+            "cylindrical_wrap",
+            "conical_wrap",
+            "freeform_wrap",
+            "loft_centerline",
+            "loft_end_conditions",
+            "sweep_scaling_guides",
+            "interior_contour_seams",
+            "projected_curve_pieces",
+            "boundary",
+            "variable_fillet",
+            "planar_face_fillet",
+            "split_line"
+          ],
+          "generation": "52948-1791774591105961000-1",
+          "part_file_version": 3,
+          "protocol_version": 3,
+          "revision": 0,
+          "scene_version": 3
+        }
+      },
+      {
+        "fixture": "spherical_cap_dome",
+        "repetitions": 5,
+        "volume_mm3": 2998.6501878514373,
+        "expected_volume_mm3": 2998.6501878514578,
+        "volume_tolerance_mm3": 0.0001,
+        "startup_open": {
+          "samples_ms": [
+            86.96520899999996,
+            86.84783400000015,
+            87.2685419999998,
+            87.62283300000036,
+            88.45787500000006
+          ],
+          "median_ms": 87.2685419999998,
+          "min_ms": 86.84783400000015,
+          "max_ms": 88.45787500000006
+        },
+        "feature_rebuild_rpc": {
+          "samples_ms": [
+            17.81670899999972,
+            17.447707999999693,
+            17.930833999999777,
+            19.087749999999687,
+            18.582250000000386
+          ],
+          "median_ms": 17.930833999999777,
+          "min_ms": 17.447707999999693,
+          "max_ms": 19.087749999999687
+        },
+        "preview_rpc": {
+          "samples_ms": [
+            16.912208000000646,
+            17.158124999999927,
+            17.454999999999927,
+            17.331333000000086,
+            17.109416000000238
+          ],
+          "median_ms": 17.158124999999927,
+          "min_ms": 16.912208000000646,
+          "max_ms": 17.454999999999927
+        },
+        "peak_rss_bytes": 45318144,
+        "peak_rss_samples_bytes": [
+          40124416,
+          40140800,
+          40370176,
+          40026112,
+          40108032,
+          45318144
+        ],
+        "core_info": {
+          "capabilities": [
+            "revisioned_preview",
+            "assistant_drafts",
+            "part_v1_read",
+            "multibody",
+            "equations",
+            "configurations",
+            "cosmetic_threads",
+            "modeled_threads",
+            "curves",
+            "sketch_contour_paths",
+            "ordered_profile_contours",
+            "curve_segment_references",
+            "general_body_split",
+            "constrained_spatial_sketch",
+            "part_v2_read",
+            "sweep_loft",
+            "draft",
+            "circular_spherical_dome",
+            "elliptical_dome",
+            "noncircular_dome",
+            "step_draft",
+            "rib",
+            "cylindrical_wrap",
+            "conical_wrap",
+            "freeform_wrap",
+            "loft_centerline",
+            "loft_end_conditions",
+            "sweep_scaling_guides",
+            "interior_contour_seams",
+            "projected_curve_pieces",
+            "boundary",
+            "variable_fillet",
+            "planar_face_fillet",
+            "split_line"
+          ],
+          "generation": "52962-1791774591728645000-1",
+          "part_file_version": 3,
+          "protocol_version": 3,
+          "revision": 0,
+          "scene_version": 3
+        }
+      },
+      {
+        "fixture": "modeled_thread",
+        "repetitions": 5,
+        "volume_mm3": 1369.8215560701458,
+        "expected_volume_mm3": 1369.8220403238106,
+        "volume_tolerance_mm3": 0.02009742864710862,
+        "startup_open": {
+          "samples_ms": [
+            1477.4983339999999,
+            1470.4843339999998,
+            1491.206209,
+            1479.5480829999997,
+            1482.9790000000012
+          ],
+          "median_ms": 1479.5480829999997,
+          "min_ms": 1470.4843339999998,
+          "max_ms": 1491.206209
+        },
+        "feature_rebuild_rpc": {
+          "samples_ms": [
+            1525.578125,
+            1451.5886250000003,
+            1417.5102499999994,
+            1423.9971670000014,
+            1416.1452080000017
+          ],
+          "median_ms": 1423.9971670000014,
+          "min_ms": 1416.1452080000017,
+          "max_ms": 1525.578125
+        },
+        "preview_rpc": {
+          "samples_ms": [
+            1428.2302080000009,
+            1432.7459170000002,
+            1445.3681660000002,
+            1431.9317500000034,
+            1440.6357080000016
+          ],
+          "median_ms": 1432.7459170000002,
+          "min_ms": 1428.2302080000009,
+          "max_ms": 1445.3681660000002
+        },
+        "peak_rss_bytes": 129843200,
+        "peak_rss_samples_bytes": [
+          91684864,
+          90882048,
+          90669056,
+          90914816,
+          96813056,
+          129843200
+        ],
+        "core_info": {
+          "capabilities": [
+            "revisioned_preview",
+            "assistant_drafts",
+            "part_v1_read",
+            "multibody",
+            "equations",
+            "configurations",
+            "cosmetic_threads",
+            "modeled_threads",
+            "curves",
+            "sketch_contour_paths",
+            "ordered_profile_contours",
+            "curve_segment_references",
+            "general_body_split",
+            "constrained_spatial_sketch",
+            "part_v2_read",
+            "sweep_loft",
+            "draft",
+            "circular_spherical_dome",
+            "elliptical_dome",
+            "noncircular_dome",
+            "step_draft",
+            "rib",
+            "cylindrical_wrap",
+            "conical_wrap",
+            "freeform_wrap",
+            "loft_centerline",
+            "loft_end_conditions",
+            "sweep_scaling_guides",
+            "interior_contour_seams",
+            "projected_curve_pieces",
+            "boundary",
+            "variable_fillet",
+            "planar_face_fillet",
+            "split_line"
+          ],
+          "generation": "52985-1791774599427375000-1",
+          "part_file_version": 3,
+          "protocol_version": 3,
+          "revision": 0,
+          "scene_version": 3
+        }
+      },
+      {
+        "fixture": "housing_rib",
+        "repetitions": 5,
+        "volume_mm3": 3647.9999999999964,
+        "expected_volume_mm3": 3648,
+        "volume_tolerance_mm3": 0.0001,
+        "startup_open": {
+          "samples_ms": [
+            107.27899999999863,
+            106.90658299999996,
+            105.11212499999965,
+            104.19016700000066,
+            105.6180830000012
+          ],
+          "median_ms": 105.6180830000012,
+          "min_ms": 104.19016700000066,
+          "max_ms": 107.27899999999863
+        },
+        "feature_rebuild_rpc": {
+          "samples_ms": [
+            20.04883400000108,
+            20.298416999998153,
+            21.89574999999968,
+            21.19683300000179,
+            20.174208000000363
+          ],
+          "median_ms": 20.298416999998153,
+          "min_ms": 20.04883400000108,
+          "max_ms": 21.89574999999968
+        },
+        "preview_rpc": {
+          "samples_ms": [
+            20.93341700000019,
+            20.48254199999792,
+            19.843124999999418,
+            20.268458000002283,
+            21.786167000002024
+          ],
+          "median_ms": 20.48254199999792,
+          "min_ms": 19.843124999999418,
+          "max_ms": 21.786167000002024
+        },
+        "peak_rss_bytes": 46596096,
+        "peak_rss_samples_bytes": [
+          44056576,
+          43827200,
+          43843584,
+          43843584,
+          43433984,
+          46596096
+        ],
+        "core_info": {
+          "capabilities": [
+            "revisioned_preview",
+            "assistant_drafts",
+            "part_v1_read",
+            "multibody",
+            "equations",
+            "configurations",
+            "cosmetic_threads",
+            "modeled_threads",
+            "curves",
+            "sketch_contour_paths",
+            "ordered_profile_contours",
+            "curve_segment_references",
+            "general_body_split",
+            "constrained_spatial_sketch",
+            "part_v2_read",
+            "sweep_loft",
+            "draft",
+            "circular_spherical_dome",
+            "elliptical_dome",
+            "noncircular_dome",
+            "step_draft",
+            "rib",
+            "cylindrical_wrap",
+            "conical_wrap",
+            "freeform_wrap",
+            "loft_centerline",
+            "loft_end_conditions",
+            "sweep_scaling_guides",
+            "interior_contour_seams",
+            "projected_curve_pieces",
+            "boundary",
+            "variable_fillet",
+            "planar_face_fillet",
+            "split_line"
+          ],
+          "generation": "53147-1791774616682829000-1",
+          "part_file_version": 3,
+          "protocol_version": 3,
+          "revision": 0,
+          "scene_version": 3
+        }
+      },
+      {
+        "fixture": "cylinder_wrap",
+        "repetitions": 5,
+        "volume_mm3": 12587.370614359512,
+        "expected_volume_mm3": 12587.370614359173,
+        "volume_tolerance_mm3": 0.0001,
+        "startup_open": {
+          "samples_ms": [
+            88.70604199999798,
+            88.94562500000029,
+            91.50320799999827,
+            88.91100000000006,
+            90.36541600000055
+          ],
+          "median_ms": 88.94562500000029,
+          "min_ms": 88.70604199999798,
+          "max_ms": 91.50320799999827
+        },
+        "feature_rebuild_rpc": {
+          "samples_ms": [
+            15.163667000000714,
+            17.195208000001003,
+            15.424125000001368,
+            15.356207999997423,
+            15.51683299999786
+          ],
+          "median_ms": 15.424125000001368,
+          "min_ms": 15.163667000000714,
+          "max_ms": 17.195208000001003
+        },
+        "preview_rpc": {
+          "samples_ms": [
+            14.545374999997875,
+            13.622541999997338,
+            13.990874999999505,
+            14.039542000002257,
+            14.040374999996857
+          ],
+          "median_ms": 14.039542000002257,
+          "min_ms": 13.622541999997338,
+          "max_ms": 14.545374999997875
+        },
+        "peak_rss_bytes": 55197696,
+        "peak_rss_samples_bytes": [
+          45940736,
+          45842432,
+          44531712,
+          44957696,
+          45907968,
+          55197696
+        ],
+        "core_info": {
+          "capabilities": [
+            "revisioned_preview",
+            "assistant_drafts",
+            "part_v1_read",
+            "multibody",
+            "equations",
+            "configurations",
+            "cosmetic_threads",
+            "modeled_threads",
+            "curves",
+            "sketch_contour_paths",
+            "ordered_profile_contours",
+            "curve_segment_references",
+            "general_body_split",
+            "constrained_spatial_sketch",
+            "part_v2_read",
+            "sweep_loft",
+            "draft",
+            "circular_spherical_dome",
+            "elliptical_dome",
+            "noncircular_dome",
+            "step_draft",
+            "rib",
+            "cylindrical_wrap",
+            "conical_wrap",
+            "freeform_wrap",
+            "loft_centerline",
+            "loft_end_conditions",
+            "sweep_scaling_guides",
+            "interior_contour_seams",
+            "projected_curve_pieces",
+            "boundary",
+            "variable_fillet",
+            "planar_face_fillet",
+            "split_line"
+          ],
+          "generation": "53160-1791774617459249000-1",
+          "part_file_version": 3,
+          "protocol_version": 3,
+          "revision": 0,
+          "scene_version": 3
+        }
+      },
+      {
+        "fixture": "boundary_prism",
+        "repetitions": 5,
+        "volume_mm3": 1000.0000000000007,
+        "expected_volume_mm3": 1000,
+        "volume_tolerance_mm3": 0.0001,
+        "startup_open": {
+          "samples_ms": [
+            154.9979170000006,
+            154.34458399999858,
+            157.3289169999989,
+            160.37691699999777,
+            163.7430830000012
+          ],
+          "median_ms": 157.3289169999989,
+          "min_ms": 154.34458399999858,
+          "max_ms": 163.7430830000012
+        },
+        "feature_rebuild_rpc": {
+          "samples_ms": [
+            80.54166600000099,
+            81.11458300000231,
+            81.66329199999745,
+            82.25704199999745,
+            80.40174999999726
+          ],
+          "median_ms": 81.11458300000231,
+          "min_ms": 80.40174999999726,
+          "max_ms": 82.25704199999745
+        },
+        "preview_rpc": {
+          "samples_ms": [
+            80.8013749999991,
+            81.15875000000233,
+            80.52304100000038,
+            81.68066700000054,
+            82.31408300000112
+          ],
+          "median_ms": 81.15875000000233,
+          "min_ms": 80.52304100000038,
+          "max_ms": 82.31408300000112
+        },
+        "peak_rss_bytes": 62898176,
+        "peak_rss_samples_bytes": [
+          50118656,
+          49905664,
+          50397184,
+          50233344,
+          50102272,
+          62898176
+        ],
+        "core_info": {
+          "capabilities": [
+            "revisioned_preview",
+            "assistant_drafts",
+            "part_v1_read",
+            "multibody",
+            "equations",
+            "configurations",
+            "cosmetic_threads",
+            "modeled_threads",
+            "curves",
+            "sketch_contour_paths",
+            "ordered_profile_contours",
+            "curve_segment_references",
+            "general_body_split",
+            "constrained_spatial_sketch",
+            "part_v2_read",
+            "sweep_loft",
+            "draft",
+            "circular_spherical_dome",
+            "elliptical_dome",
+            "noncircular_dome",
+            "step_draft",
+            "rib",
+            "cylindrical_wrap",
+            "conical_wrap",
+            "freeform_wrap",
+            "loft_centerline",
+            "loft_end_conditions",
+            "sweep_scaling_guides",
+            "interior_contour_seams",
+            "projected_curve_pieces",
+            "boundary",
+            "variable_fillet",
+            "planar_face_fillet",
+            "split_line"
+          ],
+          "generation": "53172-1791774618505621000-1",
+          "part_file_version": 3,
+          "protocol_version": 3,
+          "revision": 0,
+          "scene_version": 3
+        }
+      },
+      {
+        "fixture": "scaled_guide_sweep",
+        "repetitions": 5,
+        "volume_mm3": 586.4306289400289,
+        "expected_volume_mm3": 586.4306286700947,
+        "volume_tolerance_mm3": 0.0001,
+        "startup_open": {
+          "samples_ms": [
+            106.26145799999722,
+            109.68070799999987,
+            106.80862500000148,
+            107.31116699999984,
+            107.7220419999976
+          ],
+          "median_ms": 107.31116699999984,
+          "min_ms": 106.26145799999722,
+          "max_ms": 109.68070799999987
+        },
+        "feature_rebuild_rpc": {
+          "samples_ms": [
+            35.53429099999994,
+            34.696875000001455,
+            34.03133399999933,
+            36.20083299999533,
+            33.79345900000044
+          ],
+          "median_ms": 34.696875000001455,
+          "min_ms": 33.79345900000044,
+          "max_ms": 36.20083299999533
+        },
+        "preview_rpc": {
+          "samples_ms": [
+            32.794207999999344,
+            34.25074999999924,
+            33.20654099999956,
+            33.40483299999323,
+            33.229417000002286
+          ],
+          "median_ms": 33.229417000002286,
+          "min_ms": 32.794207999999344,
+          "max_ms": 34.25074999999924
+        },
+        "peak_rss_bytes": 48496640,
+        "peak_rss_samples_bytes": [
+          40763392,
+          41271296,
+          40747008,
+          40779776,
+          40894464,
+          48496640
+        ],
+        "core_info": {
+          "capabilities": [
+            "revisioned_preview",
+            "assistant_drafts",
+            "part_v1_read",
+            "multibody",
+            "equations",
+            "configurations",
+            "cosmetic_threads",
+            "modeled_threads",
+            "curves",
+            "sketch_contour_paths",
+            "ordered_profile_contours",
+            "curve_segment_references",
+            "general_body_split",
+            "constrained_spatial_sketch",
+            "part_v2_read",
+            "sweep_loft",
+            "draft",
+            "circular_spherical_dome",
+            "elliptical_dome",
+            "noncircular_dome",
+            "step_draft",
+            "rib",
+            "cylindrical_wrap",
+            "conical_wrap",
+            "freeform_wrap",
+            "loft_centerline",
+            "loft_end_conditions",
+            "sweep_scaling_guides",
+            "interior_contour_seams",
+            "projected_curve_pieces",
+            "boundary",
+            "variable_fillet",
+            "planar_face_fillet",
+            "split_line"
+          ],
+          "generation": "53190-1791774620025953000-1",
+          "part_file_version": 3,
+          "protocol_version": 3,
+          "revision": 0,
+          "scene_version": 3
+        }
+      },
+      {
+        "fixture": "tangent_loft",
+        "repetitions": 5,
+        "volume_mm3": 659.4285714285718,
+        "expected_volume_mm3": 659.4285714285717,
+        "volume_tolerance_mm3": 0.001,
+        "startup_open": {
+          "samples_ms": [
+            163.01829200000066,
+            158.98274999999558,
+            157.8174579999977,
+            156.63020900000265,
+            163.22729200000322
+          ],
+          "median_ms": 158.98274999999558,
+          "min_ms": 156.63020900000265,
+          "max_ms": 163.22729200000322
+        },
+        "feature_rebuild_rpc": {
+          "samples_ms": [
+            158.31891700000415,
+            104.30733400000463,
+            96.08154099999956,
+            93.97941700000229,
+            86.41350000000239
+          ],
+          "median_ms": 96.08154099999956,
+          "min_ms": 86.41350000000239,
+          "max_ms": 158.31891700000415
+        },
+        "preview_rpc": {
+          "samples_ms": [
+            83.8159999999989,
+            119.46574999999575,
+            123.89087499999732,
+            89.12970800000039,
+            98.68004199999996
+          ],
+          "median_ms": 98.68004199999996,
+          "min_ms": 83.8159999999989,
+          "max_ms": 123.89087499999732
+        },
+        "peak_rss_bytes": 53395456,
+        "peak_rss_samples_bytes": [
+          46268416,
+          46088192,
+          46284800,
+          46514176,
+          45973504,
+          53395456
+        ],
+        "core_info": {
+          "capabilities": [
+            "revisioned_preview",
+            "assistant_drafts",
+            "part_v1_read",
+            "multibody",
+            "equations",
+            "configurations",
+            "cosmetic_threads",
+            "modeled_threads",
+            "curves",
+            "sketch_contour_paths",
+            "ordered_profile_contours",
+            "curve_segment_references",
+            "general_body_split",
+            "constrained_spatial_sketch",
+            "part_v2_read",
+            "sweep_loft",
+            "draft",
+            "circular_spherical_dome",
+            "elliptical_dome",
+            "noncircular_dome",
+            "step_draft",
+            "rib",
+            "cylindrical_wrap",
+            "conical_wrap",
+            "freeform_wrap",
+            "loft_centerline",
+            "loft_end_conditions",
+            "sweep_scaling_guides",
+            "interior_contour_seams",
+            "projected_curve_pieces",
+            "boundary",
+            "variable_fillet",
+            "planar_face_fillet",
+            "split_line"
+          ],
+          "generation": "53204-1791774621652547000-1",
+          "part_file_version": 3,
+          "protocol_version": 3,
+          "revision": 0,
+          "scene_version": 3
+        }
+      },
+      {
+        "fixture": "centerline_loft",
+        "repetitions": 5,
+        "volume_mm3": 653.3333333333333,
+        "expected_volume_mm3": 653.3333333333334,
+        "volume_tolerance_mm3": 0.0001,
+        "startup_open": {
+          "samples_ms": [
+            142.8865420000002,
+            81.79487499999959,
+            78.98070899999584,
+            79.56374999999389,
+            79.33083299999998
+          ],
+          "median_ms": 79.56374999999389,
+          "min_ms": 78.98070899999584,
+          "max_ms": 142.8865420000002
+        },
+        "feature_rebuild_rpc": {
+          "samples_ms": [
+            7.469208000002254,
+            7.312167000003683,
+            7.335250000003725,
+            7.487583000001905,
+            7.522166999995534
+          ],
+          "median_ms": 7.469208000002254,
+          "min_ms": 7.312167000003683,
+          "max_ms": 7.522166999995534
+        },
+        "preview_rpc": {
+          "samples_ms": [
+            6.910541999997804,
+            7.02733299999818,
+            11.07362500000454,
+            7.294458000003942,
+            7.137957999999344
+          ],
+          "median_ms": 7.137957999999344,
+          "min_ms": 6.910541999997804,
+          "max_ms": 11.07362500000454
+        },
+        "peak_rss_bytes": 40894464,
+        "peak_rss_samples_bytes": [
+          38944768,
+          38993920,
+          39010304,
+          39157760,
+          38715392,
+          40894464
+        ],
+        "core_info": {
+          "capabilities": [
+            "revisioned_preview",
+            "assistant_drafts",
+            "part_v1_read",
+            "multibody",
+            "equations",
+            "configurations",
+            "cosmetic_threads",
+            "modeled_threads",
+            "curves",
+            "sketch_contour_paths",
+            "ordered_profile_contours",
+            "curve_segment_references",
+            "general_body_split",
+            "constrained_spatial_sketch",
+            "part_v2_read",
+            "sweep_loft",
+            "draft",
+            "circular_spherical_dome",
+            "elliptical_dome",
+            "noncircular_dome",
+            "step_draft",
+            "rib",
+            "cylindrical_wrap",
+            "conical_wrap",
+            "freeform_wrap",
+            "loft_centerline",
+            "loft_end_conditions",
+            "sweep_scaling_guides",
+            "interior_contour_seams",
+            "projected_curve_pieces",
+            "boundary",
+            "variable_fillet",
+            "planar_face_fillet",
+            "split_line"
+          ],
+          "generation": "53315-1791774623363710000-1",
+          "part_file_version": 3,
+          "protocol_version": 3,
+          "revision": 0,
+          "scene_version": 3
+        }
+      },
+      {
+        "fixture": "dome_geodesic_wrap",
+        "repetitions": 5,
+        "volume_mm3": 13423.742552882632,
+        "expected_volume_mm3": 13423.742552911748,
+        "volume_tolerance_mm3": 0.0001,
+        "startup_open": {
+          "samples_ms": [
+            302.8466660000049,
+            279.39287499999773,
+            276.4923340000023,
+            276.18987500000367,
+            273.6622079999943
+          ],
+          "median_ms": 276.4923340000023,
+          "min_ms": 273.6622079999943,
+          "max_ms": 302.8466660000049
+        },
+        "feature_rebuild_rpc": {
+          "samples_ms": [
+            192.53187500000058,
+            194.7264170000053,
+            194.0364169999957,
+            193.38937499999884,
+            192.88112499999988
+          ],
+          "median_ms": 193.38937499999884,
+          "min_ms": 192.53187500000058,
+          "max_ms": 194.7264170000053
+        },
+        "preview_rpc": {
+          "samples_ms": [
+            190.71095900000364,
+            192.13824999999633,
+            191.61133400000108,
+            188.98091600000043,
+            193.5926249999975
+          ],
+          "median_ms": 191.61133400000108,
+          "min_ms": 188.98091600000043,
+          "max_ms": 193.5926249999975
+        },
+        "peak_rss_bytes": 59179008,
+        "peak_rss_samples_bytes": [
+          49889280,
+          49807360,
+          49725440,
+          51511296,
+          50036736,
+          59179008
+        ],
+        "core_info": {
+          "capabilities": [
+            "revisioned_preview",
+            "assistant_drafts",
+            "part_v1_read",
+            "multibody",
+            "equations",
+            "configurations",
+            "cosmetic_threads",
+            "modeled_threads",
+            "curves",
+            "sketch_contour_paths",
+            "ordered_profile_contours",
+            "curve_segment_references",
+            "general_body_split",
+            "constrained_spatial_sketch",
+            "part_v2_read",
+            "sweep_loft",
+            "draft",
+            "circular_spherical_dome",
+            "elliptical_dome",
+            "noncircular_dome",
+            "step_draft",
+            "rib",
+            "cylindrical_wrap",
+            "conical_wrap",
+            "freeform_wrap",
+            "loft_centerline",
+            "loft_end_conditions",
+            "sweep_scaling_guides",
+            "interior_contour_seams",
+            "projected_curve_pieces",
+            "boundary",
+            "variable_fillet",
+            "planar_face_fillet",
+            "split_line"
+          ],
+          "generation": "53352-1791774624946334000-1",
+          "part_file_version": 3,
+          "protocol_version": 3,
+          "revision": 0,
+          "scene_version": 3
+        }
+      }
+    ],
+    [
+      {
+        "fixture": "straight_spatial_sweep",
+        "repetitions": 5,
+        "volume_mm3": 4021.238596594927,
+        "expected_volume_mm3": 4021.238596594935,
+        "volume_tolerance_mm3": 0.0001,
+        "startup_open": {
+          "samples_ms": [
+            74.07837499999732,
+            82.29066700000112,
+            116.39854199999536,
+            76.46670799999993,
+            74.91291700000147
+          ],
+          "median_ms": 76.46670799999993,
+          "min_ms": 74.07837499999732,
+          "max_ms": 116.39854199999536
+        },
+        "feature_rebuild_rpc": {
+          "samples_ms": [
+            3.073667000004207,
+            2.664667000004556,
+            2.892416000002413,
+            2.9453749999956926,
+            3.7946670000019367
+          ],
+          "median_ms": 2.9453749999956926,
+          "min_ms": 2.664667000004556,
+          "max_ms": 3.7946670000019367
+        },
+        "preview_rpc": {
+          "samples_ms": [
+            2.8803750000006403,
+            3.2675410000010743,
+            2.9696249999979045,
+            2.8821250000037253,
+            2.770083000003069
+          ],
+          "median_ms": 2.8821250000037253,
+          "min_ms": 2.770083000003069,
+          "max_ms": 3.2675410000010743
+        },
+        "peak_rss_bytes": 39010304,
+        "peak_rss_samples_bytes": [
+          37470208,
+          37519360,
+          37289984,
+          37421056,
+          37519360,
+          39010304
+        ],
+        "core_info": {
+          "capabilities": [
+            "revisioned_preview",
+            "assistant_drafts",
+            "part_v1_read",
+            "multibody",
+            "equations",
+            "configurations",
+            "cosmetic_threads",
+            "modeled_threads",
+            "curves",
+            "sketch_contour_paths",
+            "ordered_profile_contours",
+            "curve_segment_references",
+            "general_body_split",
+            "constrained_spatial_sketch",
+            "part_v2_read",
+            "sweep_loft",
+            "draft",
+            "circular_spherical_dome",
+            "elliptical_dome",
+            "noncircular_dome",
+            "step_draft",
+            "rib",
+            "cylindrical_wrap",
+            "conical_wrap",
+            "freeform_wrap",
+            "loft_centerline",
+            "loft_end_conditions",
+            "sweep_scaling_guides",
+            "interior_contour_seams",
+            "projected_curve_pieces",
+            "boundary",
+            "variable_fillet",
+            "planar_face_fillet",
+            "split_line"
+          ],
+          "generation": "53371-1791774627706515000-1",
+          "part_file_version": 3,
+          "protocol_version": 3,
+          "revision": 0,
+          "scene_version": 3
+        }
+      },
+      {
+        "fixture": "hollow_spatial_sweep",
+        "repetitions": 5,
+        "volume_mm3": 3015.9289474461966,
+        "expected_volume_mm3": 3015.928947446201,
+        "volume_tolerance_mm3": 0.0001,
+        "startup_open": {
+          "samples_ms": [
+            83.17833400000382,
+            83.66583299999911,
+            81.41841700000077,
+            82.62441699999908,
+            80.32420899999852
+          ],
+          "median_ms": 82.62441699999908,
+          "min_ms": 80.32420899999852,
+          "max_ms": 83.66583299999911
+        },
+        "feature_rebuild_rpc": {
+          "samples_ms": [
+            9.303958000004059,
+            9.113041999997222,
+            8.869250000003376,
+            9.313874999999825,
+            9.804208000001381
+          ],
+          "median_ms": 9.303958000004059,
+          "min_ms": 8.869250000003376,
+          "max_ms": 9.804208000001381
+        },
+        "preview_rpc": {
+          "samples_ms": [
+            9.72137500000099,
+            10.076374999996915,
+            9.413666000000376,
+            8.650334000005387,
+            9.045165999996243
+          ],
+          "median_ms": 9.413666000000376,
+          "min_ms": 8.650334000005387,
+          "max_ms": 10.076374999996915
+        },
+        "peak_rss_bytes": 41844736,
+        "peak_rss_samples_bytes": [
+          39403520,
+          39419904,
+          39518208,
+          39518208,
+          39206912,
+          41844736
+        ],
+        "core_info": {
+          "capabilities": [
+            "revisioned_preview",
+            "assistant_drafts",
+            "part_v1_read",
+            "multibody",
+            "equations",
+            "configurations",
+            "cosmetic_threads",
+            "modeled_threads",
+            "curves",
+            "sketch_contour_paths",
+            "ordered_profile_contours",
+            "curve_segment_references",
+            "general_body_split",
+            "constrained_spatial_sketch",
+            "part_v2_read",
+            "sweep_loft",
+            "draft",
+            "circular_spherical_dome",
+            "elliptical_dome",
+            "noncircular_dome",
+            "step_draft",
+            "rib",
+            "cylindrical_wrap",
+            "conical_wrap",
+            "freeform_wrap",
+            "loft_centerline",
+            "loft_end_conditions",
+            "sweep_scaling_guides",
+            "interior_contour_seams",
+            "projected_curve_pieces",
+            "boundary",
+            "variable_fillet",
+            "planar_face_fillet",
+            "split_line"
+          ],
+          "generation": "53383-1791774628232995000-1",
+          "part_file_version": 3,
+          "protocol_version": 3,
+          "revision": 0,
+          "scene_version": 3
+        }
+      },
+      {
+        "fixture": "spherical_cap_dome",
+        "repetitions": 5,
+        "volume_mm3": 2998.6501878514373,
+        "expected_volume_mm3": 2998.6501878514578,
+        "volume_tolerance_mm3": 0.0001,
+        "startup_open": {
+          "samples_ms": [
+            88.13012499999604,
+            88.36779199999728,
+            90.94766700000037,
+            91.58454199999687,
+            93.50375000000349
+          ],
+          "median_ms": 90.94766700000037,
+          "min_ms": 88.13012499999604,
+          "max_ms": 93.50375000000349
+        },
+        "feature_rebuild_rpc": {
+          "samples_ms": [
+            19.70916700000089,
+            20.026458000000275,
+            19.236292000001413,
+            18.532165999997233,
+            18.913667000000714
+          ],
+          "median_ms": 19.236292000001413,
+          "min_ms": 18.532165999997233,
+          "max_ms": 20.026458000000275
+        },
+        "preview_rpc": {
+          "samples_ms": [
+            17.660499999998137,
+            18.368125000000873,
+            17.812416000000667,
+            19.12145800000144,
+            19.24762500000361
+          ],
+          "median_ms": 18.368125000000873,
+          "min_ms": 17.660499999998137,
+          "max_ms": 19.24762500000361
+        },
+        "peak_rss_bytes": 46563328,
+        "peak_rss_samples_bytes": [
+          40124416,
+          40108032,
+          40026112,
+          40206336,
+          40026112,
+          46563328
+        ],
+        "core_info": {
+          "capabilities": [
+            "revisioned_preview",
+            "assistant_drafts",
+            "part_v1_read",
+            "multibody",
+            "equations",
+            "configurations",
+            "cosmetic_threads",
+            "modeled_threads",
+            "curves",
+            "sketch_contour_paths",
+            "ordered_profile_contours",
+            "curve_segment_references",
+            "general_body_split",
+            "constrained_spatial_sketch",
+            "part_v2_read",
+            "sweep_loft",
+            "draft",
+            "circular_spherical_dome",
+            "elliptical_dome",
+            "noncircular_dome",
+            "step_draft",
+            "rib",
+            "cylindrical_wrap",
+            "conical_wrap",
+            "freeform_wrap",
+            "loft_centerline",
+            "loft_end_conditions",
+            "sweep_scaling_guides",
+            "interior_contour_seams",
+            "projected_curve_pieces",
+            "boundary",
+            "variable_fillet",
+            "planar_face_fillet",
+            "split_line"
+          ],
+          "generation": "53395-1791774628889355000-1",
+          "part_file_version": 3,
+          "protocol_version": 3,
+          "revision": 0,
+          "scene_version": 3
+        }
+      },
+      {
+        "fixture": "modeled_thread",
+        "repetitions": 5,
+        "volume_mm3": 1369.8215560701458,
+        "expected_volume_mm3": 1369.8220403238106,
+        "volume_tolerance_mm3": 0.02009742864710862,
+        "startup_open": {
+          "samples_ms": [
+            1547.7680830000027,
+            1620.6502499999988,
+            1517.7735840000023,
+            1498.269834000006,
+            1496.4346250000017
+          ],
+          "median_ms": 1517.7735840000023,
+          "min_ms": 1496.4346250000017,
+          "max_ms": 1620.6502499999988
+        },
+        "feature_rebuild_rpc": {
+          "samples_ms": [
+            1423.2034579999963,
+            1472.1829579999976,
+            1416.638082999998,
+            1423.257083000004,
+            1419.2609999999986
+          ],
+          "median_ms": 1423.2034579999963,
+          "min_ms": 1416.638082999998,
+          "max_ms": 1472.1829579999976
+        },
+        "preview_rpc": {
+          "samples_ms": [
+            1426.6184170000051,
+            1412.5039580000011,
+            1430.176333000003,
+            1421.7620830000014,
+            1418.4415410000001
+          ],
+          "median_ms": 1421.7620830000014,
+          "min_ms": 1412.5039580000011,
+          "max_ms": 1430.176333000003
+        },
+        "peak_rss_bytes": 125304832,
+        "peak_rss_samples_bytes": [
+          96518144,
+          91602944,
+          91455488,
+          88309760,
+          96550912,
+          125304832
+        ],
+        "core_info": {
+          "capabilities": [
+            "revisioned_preview",
+            "assistant_drafts",
+            "part_v1_read",
+            "multibody",
+            "equations",
+            "configurations",
+            "cosmetic_threads",
+            "modeled_threads",
+            "curves",
+            "sketch_contour_paths",
+            "ordered_profile_contours",
+            "curve_segment_references",
+            "general_body_split",
+            "constrained_spatial_sketch",
+            "part_v2_read",
+            "sweep_loft",
+            "draft",
+            "circular_spherical_dome",
+            "elliptical_dome",
+            "noncircular_dome",
+            "step_draft",
+            "rib",
+            "cylindrical_wrap",
+            "conical_wrap",
+            "freeform_wrap",
+            "loft_centerline",
+            "loft_end_conditions",
+            "sweep_scaling_guides",
+            "interior_contour_seams",
+            "projected_curve_pieces",
+            "boundary",
+            "variable_fillet",
+            "planar_face_fillet",
+            "split_line"
+          ],
+          "generation": "53424-1791774636883384000-1",
+          "part_file_version": 3,
+          "protocol_version": 3,
+          "revision": 0,
+          "scene_version": 3
+        }
+      },
+      {
+        "fixture": "housing_rib",
+        "repetitions": 5,
+        "volume_mm3": 3647.9999999999964,
+        "expected_volume_mm3": 3648,
+        "volume_tolerance_mm3": 0.0001,
+        "startup_open": {
+          "samples_ms": [
+            104.58662500001083,
+            102.55333300000348,
+            105.87675000001036,
+            104.70124999999825,
+            103.52079199999571
+          ],
+          "median_ms": 104.58662500001083,
+          "min_ms": 102.55333300000348,
+          "max_ms": 105.87675000001036
+        },
+        "feature_rebuild_rpc": {
+          "samples_ms": [
+            20.934792000000016,
+            21.045375000001513,
+            21.038832999998704,
+            21.91562499999418,
+            20.678291999996873
+          ],
+          "median_ms": 21.038832999998704,
+          "min_ms": 20.678291999996873,
+          "max_ms": 21.91562499999418
+        },
+        "preview_rpc": {
+          "samples_ms": [
+            19.91479199999594,
+            20.255166000002646,
+            20.43416599999182,
+            21.554042000003392,
+            20.66874999999709
+          ],
+          "median_ms": 20.43416599999182,
+          "min_ms": 19.91479199999594,
+          "max_ms": 21.554042000003392
+        },
+        "peak_rss_bytes": 45973504,
+        "peak_rss_samples_bytes": [
+          43548672,
+          43745280,
+          44023808,
+          43171840,
+          43810816,
+          45973504
+        ],
+        "core_info": {
+          "capabilities": [
+            "revisioned_preview",
+            "assistant_drafts",
+            "part_v1_read",
+            "multibody",
+            "equations",
+            "configurations",
+            "cosmetic_threads",
+            "modeled_threads",
+            "curves",
+            "sketch_contour_paths",
+            "ordered_profile_contours",
+            "curve_segment_references",
+            "general_body_split",
+            "constrained_spatial_sketch",
+            "part_v2_read",
+            "sweep_loft",
+            "draft",
+            "circular_spherical_dome",
+            "elliptical_dome",
+            "noncircular_dome",
+            "step_draft",
+            "rib",
+            "cylindrical_wrap",
+            "conical_wrap",
+            "freeform_wrap",
+            "loft_centerline",
+            "loft_end_conditions",
+            "sweep_scaling_guides",
+            "interior_contour_seams",
+            "projected_curve_pieces",
+            "boundary",
+            "variable_fillet",
+            "planar_face_fillet",
+            "split_line"
+          ],
+          "generation": "53491-1791774653899717000-1",
+          "part_file_version": 3,
+          "protocol_version": 3,
+          "revision": 0,
+          "scene_version": 3
+        }
+      },
+      {
+        "fixture": "cylinder_wrap",
+        "repetitions": 5,
+        "volume_mm3": 12587.370614359512,
+        "expected_volume_mm3": 12587.370614359173,
+        "volume_tolerance_mm3": 0.0001,
+        "startup_open": {
+          "samples_ms": [
+            86.19999999999709,
+            86.92462499999965,
+            86.68587500001013,
+            86.16812499999651,
+            83.64841699998942
+          ],
+          "median_ms": 86.19999999999709,
+          "min_ms": 83.64841699998942,
+          "max_ms": 86.92462499999965
+        },
+        "feature_rebuild_rpc": {
+          "samples_ms": [
+            13.623042000006535,
+            13.922375000009197,
+            13.733625000008033,
+            14.553917000012007,
+            14.444957999992766
+          ],
+          "median_ms": 13.922375000009197,
+          "min_ms": 13.623042000006535,
+          "max_ms": 14.553917000012007
+        },
+        "preview_rpc": {
+          "samples_ms": [
+            13.759625000006054,
+            13.880707999996957,
+            14.184500000003027,
+            13.599750000008498,
+            13.199500000002445
+          ],
+          "median_ms": 13.759625000006054,
+          "min_ms": 13.199500000002445,
+          "max_ms": 14.184500000003027
+        },
+        "peak_rss_bytes": 50282496,
+        "peak_rss_samples_bytes": [
+          45875200,
+          45662208,
+          46415872,
+          46514176,
+          46039040,
+          50282496
+        ],
+        "core_info": {
+          "capabilities": [
+            "revisioned_preview",
+            "assistant_drafts",
+            "part_v1_read",
+            "multibody",
+            "equations",
+            "configurations",
+            "cosmetic_threads",
+            "modeled_threads",
+            "curves",
+            "sketch_contour_paths",
+            "ordered_profile_contours",
+            "curve_segment_references",
+            "general_body_split",
+            "constrained_spatial_sketch",
+            "part_v2_read",
+            "sweep_loft",
+            "draft",
+            "circular_spherical_dome",
+            "elliptical_dome",
+            "noncircular_dome",
+            "step_draft",
+            "rib",
+            "cylindrical_wrap",
+            "conical_wrap",
+            "freeform_wrap",
+            "loft_centerline",
+            "loft_end_conditions",
+            "sweep_scaling_guides",
+            "interior_contour_seams",
+            "projected_curve_pieces",
+            "boundary",
+            "variable_fillet",
+            "planar_face_fillet",
+            "split_line"
+          ],
+          "generation": "53505-1791774654656156000-1",
+          "part_file_version": 3,
+          "protocol_version": 3,
+          "revision": 0,
+          "scene_version": 3
+        }
+      },
+      {
+        "fixture": "boundary_prism",
+        "repetitions": 5,
+        "volume_mm3": 1000.0000000000007,
+        "expected_volume_mm3": 1000,
+        "volume_tolerance_mm3": 0.0001,
+        "startup_open": {
+          "samples_ms": [
+            150.97550000000047,
+            149.1457500000106,
+            149.8243749999965,
+            151.6062499999971,
+            151.32166700001108
+          ],
+          "median_ms": 150.97550000000047,
+          "min_ms": 149.1457500000106,
+          "max_ms": 151.6062499999971
+        },
+        "feature_rebuild_rpc": {
+          "samples_ms": [
+            79.52233400000841,
+            80.33074999999371,
+            80.35275000000547,
+            79.07083399999829,
+            79.33212500000081
+          ],
+          "median_ms": 79.52233400000841,
+          "min_ms": 79.07083399999829,
+          "max_ms": 80.35275000000547
+        },
+        "preview_rpc": {
+          "samples_ms": [
+            80.58141599998635,
+            78.15183300001081,
+            80.69204199999513,
+            79.53158399999666,
+            79.89237499999581
+          ],
+          "median_ms": 79.89237499999581,
+          "min_ms": 78.15183300001081,
+          "max_ms": 80.69204199999513
+        },
+        "peak_rss_bytes": 63700992,
+        "peak_rss_samples_bytes": [
+          49938432,
+          50036736,
+          49676288,
+          49135616,
+          49954816,
+          63700992
+        ],
+        "core_info": {
+          "capabilities": [
+            "revisioned_preview",
+            "assistant_drafts",
+            "part_v1_read",
+            "multibody",
+            "equations",
+            "configurations",
+            "cosmetic_threads",
+            "modeled_threads",
+            "curves",
+            "sketch_contour_paths",
+            "ordered_profile_contours",
+            "curve_segment_references",
+            "general_body_split",
+            "constrained_spatial_sketch",
+            "part_v2_read",
+            "sweep_loft",
+            "draft",
+            "circular_spherical_dome",
+            "elliptical_dome",
+            "noncircular_dome",
+            "step_draft",
+            "rib",
+            "cylindrical_wrap",
+            "conical_wrap",
+            "freeform_wrap",
+            "loft_centerline",
+            "loft_end_conditions",
+            "sweep_scaling_guides",
+            "interior_contour_seams",
+            "projected_curve_pieces",
+            "boundary",
+            "variable_fillet",
+            "planar_face_fillet",
+            "split_line"
+          ],
+          "generation": "53519-1791774655649194000-1",
+          "part_file_version": 3,
+          "protocol_version": 3,
+          "revision": 0,
+          "scene_version": 3
+        }
+      },
+      {
+        "fixture": "scaled_guide_sweep",
+        "repetitions": 5,
+        "volume_mm3": 586.4306289400289,
+        "expected_volume_mm3": 586.4306286700947,
+        "volume_tolerance_mm3": 0.0001,
+        "startup_open": {
+          "samples_ms": [
+            105.62154200000805,
+            103.34658299999137,
+            103.29504199999792,
+            107.40445900001214,
+            104.41900000000896
+          ],
+          "median_ms": 104.41900000000896,
+          "min_ms": 103.29504199999792,
+          "max_ms": 107.40445900001214
+        },
+        "feature_rebuild_rpc": {
+          "samples_ms": [
+            35.01945799999521,
+            34.21837499999674,
+            33.50100000000384,
+            33.16991599999892,
+            33.823291000007885
+          ],
+          "median_ms": 33.823291000007885,
+          "min_ms": 33.16991599999892,
+          "max_ms": 35.01945799999521
+        },
+        "preview_rpc": {
+          "samples_ms": [
+            32.85016600000381,
+            32.72116599998844,
+            32.418250000002445,
+            31.95416700000351,
+            32.86704199999804
+          ],
+          "median_ms": 32.72116599998844,
+          "min_ms": 31.95416700000351,
+          "max_ms": 32.86704199999804
+        },
+        "peak_rss_bytes": 46841856,
+        "peak_rss_samples_bytes": [
+          40796160,
+          41254912,
+          40779776,
+          40894464,
+          41189376,
+          46841856
+        ],
+        "core_info": {
+          "capabilities": [
+            "revisioned_preview",
+            "assistant_drafts",
+            "part_v1_read",
+            "multibody",
+            "equations",
+            "configurations",
+            "cosmetic_threads",
+            "modeled_threads",
+            "curves",
+            "sketch_contour_paths",
+            "ordered_profile_contours",
+            "curve_segment_references",
+            "general_body_split",
+            "constrained_spatial_sketch",
+            "part_v2_read",
+            "sweep_loft",
+            "draft",
+            "circular_spherical_dome",
+            "elliptical_dome",
+            "noncircular_dome",
+            "step_draft",
+            "rib",
+            "cylindrical_wrap",
+            "conical_wrap",
+            "freeform_wrap",
+            "loft_centerline",
+            "loft_end_conditions",
+            "sweep_scaling_guides",
+            "interior_contour_seams",
+            "projected_curve_pieces",
+            "boundary",
+            "variable_fillet",
+            "planar_face_fillet",
+            "split_line"
+          ],
+          "generation": "53534-1791774657139917000-1",
+          "part_file_version": 3,
+          "protocol_version": 3,
+          "revision": 0,
+          "scene_version": 3
+        }
+      },
+      {
+        "fixture": "tangent_loft",
+        "repetitions": 5,
+        "volume_mm3": 659.4285714285718,
+        "expected_volume_mm3": 659.4285714285717,
+        "volume_tolerance_mm3": 0.001,
+        "startup_open": {
+          "samples_ms": [
+            156.10737500000687,
+            155.9259999999922,
+            156.85899999999674,
+            152.5326250000071,
+            154.81791599999997
+          ],
+          "median_ms": 155.9259999999922,
+          "min_ms": 152.5326250000071,
+          "max_ms": 156.85899999999674
+        },
+        "feature_rebuild_rpc": {
+          "samples_ms": [
+            82.596000000005,
+            82.37879099999554,
+            83.35779199999524,
+            83.2462089999899,
+            83.28479200000584
+          ],
+          "median_ms": 83.2462089999899,
+          "min_ms": 82.37879099999554,
+          "max_ms": 83.35779199999524
+        },
+        "preview_rpc": {
+          "samples_ms": [
+            82.32787500000268,
+            83.013082999998,
+            83.14241699999548,
+            82.46558400000504,
+            83.24170800000138
+          ],
+          "median_ms": 83.013082999998,
+          "min_ms": 82.32787500000268,
+          "max_ms": 83.24170800000138
+        },
+        "peak_rss_bytes": 53149696,
+        "peak_rss_samples_bytes": [
+          46055424,
+          46104576,
+          46219264,
+          46104576,
+          45842432,
+          53149696
+        ],
+        "core_info": {
+          "capabilities": [
+            "revisioned_preview",
+            "assistant_drafts",
+            "part_v1_read",
+            "multibody",
+            "equations",
+            "configurations",
+            "cosmetic_threads",
+            "modeled_threads",
+            "curves",
+            "sketch_contour_paths",
+            "ordered_profile_contours",
+            "curve_segment_references",
+            "general_body_split",
+            "constrained_spatial_sketch",
+            "part_v2_read",
+            "sweep_loft",
+            "draft",
+            "circular_spherical_dome",
+            "elliptical_dome",
+            "noncircular_dome",
+            "step_draft",
+            "rib",
+            "cylindrical_wrap",
+            "conical_wrap",
+            "freeform_wrap",
+            "loft_centerline",
+            "loft_end_conditions",
+            "sweep_scaling_guides",
+            "interior_contour_seams",
+            "projected_curve_pieces",
+            "boundary",
+            "variable_fillet",
+            "planar_face_fillet",
+            "split_line"
+          ],
+          "generation": "53546-1791774658730153000-1",
+          "part_file_version": 3,
+          "protocol_version": 3,
+          "revision": 0,
+          "scene_version": 3
+        }
+      },
+      {
+        "fixture": "centerline_loft",
+        "repetitions": 5,
+        "volume_mm3": 653.3333333333333,
+        "expected_volume_mm3": 653.3333333333334,
+        "volume_tolerance_mm3": 0.0001,
+        "startup_open": {
+          "samples_ms": [
+            76.47166599999764,
+            78.80749999999534,
+            76.88575000000128,
+            78.90533300000243,
+            78.78620800000499
+          ],
+          "median_ms": 78.78620800000499,
+          "min_ms": 76.47166599999764,
+          "max_ms": 78.90533300000243
+        },
+        "feature_rebuild_rpc": {
+          "samples_ms": [
+            7.250917000012123,
+            7.12995800000499,
+            6.866750000001048,
+            7.139999999999418,
+            7.211167000001296
+          ],
+          "median_ms": 7.139999999999418,
+          "min_ms": 6.866750000001048,
+          "max_ms": 7.250917000012123
+        },
+        "preview_rpc": {
+          "samples_ms": [
+            6.325082999988808,
+            6.078874999991967,
+            6.565583999996306,
+            6.757333000001381,
+            6.719000000011874
+          ],
+          "median_ms": 6.565583999996306,
+          "min_ms": 6.078874999991967,
+          "max_ms": 6.757333000001381
+        },
+        "peak_rss_bytes": 40517632,
+        "peak_rss_samples_bytes": [
+          38912000,
+          38928384,
+          39092224,
+          38993920,
+          39059456,
+          40517632
+        ],
+        "core_info": {
+          "capabilities": [
+            "revisioned_preview",
+            "assistant_drafts",
+            "part_v1_read",
+            "multibody",
+            "equations",
+            "configurations",
+            "cosmetic_threads",
+            "modeled_threads",
+            "curves",
+            "sketch_contour_paths",
+            "ordered_profile_contours",
+            "curve_segment_references",
+            "general_body_split",
+            "constrained_spatial_sketch",
+            "part_v2_read",
+            "sweep_loft",
+            "draft",
+            "circular_spherical_dome",
+            "elliptical_dome",
+            "noncircular_dome",
+            "step_draft",
+            "rib",
+            "cylindrical_wrap",
+            "conical_wrap",
+            "freeform_wrap",
+            "loft_centerline",
+            "loft_end_conditions",
+            "sweep_scaling_guides",
+            "interior_contour_seams",
+            "projected_curve_pieces",
+            "boundary",
+            "variable_fillet",
+            "planar_face_fillet",
+            "split_line"
+          ],
+          "generation": "53562-1791774660130839000-1",
+          "part_file_version": 3,
+          "protocol_version": 3,
+          "revision": 0,
+          "scene_version": 3
+        }
+      },
+      {
+        "fixture": "dome_geodesic_wrap",
+        "repetitions": 5,
+        "volume_mm3": 13423.742552882632,
+        "expected_volume_mm3": 13423.742552911748,
+        "volume_tolerance_mm3": 0.0001,
+        "startup_open": {
+          "samples_ms": [
+            274.3136250000098,
+            273.0354590000061,
+            273.7570839999971,
+            276.9785830000037,
+            275.55804199998965
+          ],
+          "median_ms": 274.3136250000098,
+          "min_ms": 273.0354590000061,
+          "max_ms": 276.9785830000037
+        },
+        "feature_rebuild_rpc": {
+          "samples_ms": [
+            191.8860410000052,
+            192.62558299998636,
+            191.25229200000467,
+            191.00045799999498,
+            192.37091699999291
+          ],
+          "median_ms": 191.8860410000052,
+          "min_ms": 191.00045799999498,
+          "max_ms": 192.62558299998636
+        },
+        "preview_rpc": {
+          "samples_ms": [
+            190.4745840000105,
+            190.80829200000153,
+            190.5367089999927,
+            194.0625,
+            188.39379200000258
+          ],
+          "median_ms": 190.5367089999927,
+          "min_ms": 188.39379200000258,
+          "max_ms": 194.0625
+        },
+        "peak_rss_bytes": 56524800,
+        "peak_rss_samples_bytes": [
+          51675136,
+          49561600,
+          50561024,
+          49561600,
+          49348608,
+          56524800
+        ],
+        "core_info": {
+          "capabilities": [
+            "revisioned_preview",
+            "assistant_drafts",
+            "part_v1_read",
+            "multibody",
+            "equations",
+            "configurations",
+            "cosmetic_threads",
+            "modeled_threads",
+            "curves",
+            "sketch_contour_paths",
+            "ordered_profile_contours",
+            "curve_segment_references",
+            "general_body_split",
+            "constrained_spatial_sketch",
+            "part_v2_read",
+            "sweep_loft",
+            "draft",
+            "circular_spherical_dome",
+            "elliptical_dome",
+            "noncircular_dome",
+            "step_draft",
+            "rib",
+            "cylindrical_wrap",
+            "conical_wrap",
+            "freeform_wrap",
+            "loft_centerline",
+            "loft_end_conditions",
+            "sweep_scaling_guides",
+            "interior_contour_seams",
+            "projected_curve_pieces",
+            "boundary",
+            "variable_fillet",
+            "planar_face_fillet",
+            "split_line"
+          ],
+          "generation": "53577-1791774661670829000-1",
+          "part_file_version": 3,
+          "protocol_version": 3,
+          "revision": 0,
+          "scene_version": 3
+        }
+      }
+    ],
+    [
+      {
+        "fixture": "straight_spatial_sweep",
+        "repetitions": 5,
+        "volume_mm3": 4021.238596594927,
+        "expected_volume_mm3": 4021.238596594935,
+        "volume_tolerance_mm3": 0.0001,
+        "startup_open": {
+          "samples_ms": [
+            71.89495800000441,
+            73.2744160000002,
+            74.17504200000258,
+            74.11399999998685,
+            74.4089590000076
+          ],
+          "median_ms": 74.11399999998685,
+          "min_ms": 71.89495800000441,
+          "max_ms": 74.4089590000076
+        },
+        "feature_rebuild_rpc": {
+          "samples_ms": [
+            3.395750000010594,
+            3.1315840000024764,
+            3.040791999999783,
+            2.916041000004043,
+            3.7029590000020107
+          ],
+          "median_ms": 3.1315840000024764,
+          "min_ms": 2.916041000004043,
+          "max_ms": 3.7029590000020107
+        },
+        "preview_rpc": {
+          "samples_ms": [
+            5.142500000001746,
+            3.2895409999910044,
+            3.695540999993682,
+            3.4762919999920996,
+            4.0092920000024606
+          ],
+          "median_ms": 3.695540999993682,
+          "min_ms": 3.2895409999910044,
+          "max_ms": 5.142500000001746
+        },
+        "peak_rss_bytes": 39141376,
+        "peak_rss_samples_bytes": [
+          37486592,
+          37453824,
+          37322752,
+          37388288,
+          37502976,
+          39141376
+        ],
+        "core_info": {
+          "capabilities": [
+            "revisioned_preview",
+            "assistant_drafts",
+            "part_v1_read",
+            "multibody",
+            "equations",
+            "configurations",
+            "cosmetic_threads",
+            "modeled_threads",
+            "curves",
+            "sketch_contour_paths",
+            "ordered_profile_contours",
+            "curve_segment_references",
+            "general_body_split",
+            "constrained_spatial_sketch",
+            "part_v2_read",
+            "sweep_loft",
+            "draft",
+            "circular_spherical_dome",
+            "elliptical_dome",
+            "noncircular_dome",
+            "step_draft",
+            "rib",
+            "cylindrical_wrap",
+            "conical_wrap",
+            "freeform_wrap",
+            "loft_centerline",
+            "loft_end_conditions",
+            "sweep_scaling_guides",
+            "interior_contour_seams",
+            "projected_curve_pieces",
+            "boundary",
+            "variable_fillet",
+            "planar_face_fillet",
+            "split_line"
+          ],
+          "generation": "53591-1791774664355350000-1",
+          "part_file_version": 3,
+          "protocol_version": 3,
+          "revision": 0,
+          "scene_version": 3
+        }
+      },
+      {
+        "fixture": "hollow_spatial_sweep",
+        "repetitions": 5,
+        "volume_mm3": 3015.9289474461966,
+        "expected_volume_mm3": 3015.928947446201,
+        "volume_tolerance_mm3": 0.0001,
+        "startup_open": {
+          "samples_ms": [
+            86.7173749999929,
+            83.47699999999895,
+            81.32670799999323,
+            82.30937500001164,
+            80.52337500000431
+          ],
+          "median_ms": 82.30937500001164,
+          "min_ms": 80.52337500000431,
+          "max_ms": 86.7173749999929
+        },
+        "feature_rebuild_rpc": {
+          "samples_ms": [
+            9.739667000001646,
+            9.178416999988258,
+            9.847041999993962,
+            10.529541999989306,
+            9.431292000008398
+          ],
+          "median_ms": 9.739667000001646,
+          "min_ms": 9.178416999988258,
+          "max_ms": 10.529541999989306
+        },
+        "preview_rpc": {
+          "samples_ms": [
+            9.885332999998354,
+            9.568041999998968,
+            9.367875000010827,
+            9.547041999991052,
+            8.972750000000815
+          ],
+          "median_ms": 9.547041999991052,
+          "min_ms": 8.972750000000815,
+          "max_ms": 9.885332999998354
+        },
+        "peak_rss_bytes": 41828352,
+        "peak_rss_samples_bytes": [
+          39337984,
+          39436288,
+          39452672,
+          39288832,
+          39567360,
+          41828352
+        ],
+        "core_info": {
+          "capabilities": [
+            "revisioned_preview",
+            "assistant_drafts",
+            "part_v1_read",
+            "multibody",
+            "equations",
+            "configurations",
+            "cosmetic_threads",
+            "modeled_threads",
+            "curves",
+            "sketch_contour_paths",
+            "ordered_profile_contours",
+            "curve_segment_references",
+            "general_body_split",
+            "constrained_spatial_sketch",
+            "part_v2_read",
+            "sweep_loft",
+            "draft",
+            "circular_spherical_dome",
+            "elliptical_dome",
+            "noncircular_dome",
+            "step_draft",
+            "rib",
+            "cylindrical_wrap",
+            "conical_wrap",
+            "freeform_wrap",
+            "loft_centerline",
+            "loft_end_conditions",
+            "sweep_scaling_guides",
+            "interior_contour_seams",
+            "projected_curve_pieces",
+            "boundary",
+            "variable_fillet",
+            "planar_face_fillet",
+            "split_line"
+          ],
+          "generation": "53606-1791774664890497000-1",
+          "part_file_version": 3,
+          "protocol_version": 3,
+          "revision": 0,
+          "scene_version": 3
+        }
+      },
+      {
+        "fixture": "spherical_cap_dome",
+        "repetitions": 5,
+        "volume_mm3": 2998.6501878514373,
+        "expected_volume_mm3": 2998.6501878514578,
+        "volume_tolerance_mm3": 0.0001,
+        "startup_open": {
+          "samples_ms": [
+            88.5637080000015,
+            91.11920899999677,
+            89.05141700000968,
+            88.8092089999991,
+            89.29158299999835
+          ],
+          "median_ms": 89.05141700000968,
+          "min_ms": 88.5637080000015,
+          "max_ms": 91.11920899999677
+        },
+        "feature_rebuild_rpc": {
+          "samples_ms": [
+            18.59329200000502,
+            19.010000000009313,
+            17.92195800000627,
+            17.96187500000815,
+            18.39245800000208
+          ],
+          "median_ms": 18.39245800000208,
+          "min_ms": 17.92195800000627,
+          "max_ms": 19.010000000009313
+        },
+        "preview_rpc": {
+          "samples_ms": [
+            17.287374999999884,
+            17.40183299999626,
+            17.348750000004657,
+            18.599792000008165,
+            18.08458399999654
+          ],
+          "median_ms": 17.40183299999626,
+          "min_ms": 17.287374999999884,
+          "max_ms": 18.599792000008165
+        },
+        "peak_rss_bytes": 44351488,
+        "peak_rss_samples_bytes": [
+          40042496,
+          40222720,
+          40189952,
+          40124416,
+          40222720,
+          44351488
+        ],
+        "core_info": {
+          "capabilities": [
+            "revisioned_preview",
+            "assistant_drafts",
+            "part_v1_read",
+            "multibody",
+            "equations",
+            "configurations",
+            "cosmetic_threads",
+            "modeled_threads",
+            "curves",
+            "sketch_contour_paths",
+            "ordered_profile_contours",
+            "curve_segment_references",
+            "general_body_split",
+            "constrained_spatial_sketch",
+            "part_v2_read",
+            "sweep_loft",
+            "draft",
+            "circular_spherical_dome",
+            "elliptical_dome",
+            "noncircular_dome",
+            "step_draft",
+            "rib",
+            "cylindrical_wrap",
+            "conical_wrap",
+            "freeform_wrap",
+            "loft_centerline",
+            "loft_end_conditions",
+            "sweep_scaling_guides",
+            "interior_contour_seams",
+            "projected_curve_pieces",
+            "boundary",
+            "variable_fillet",
+            "planar_face_fillet",
+            "split_line"
+          ],
+          "generation": "53620-1791774665528992000-1",
+          "part_file_version": 3,
+          "protocol_version": 3,
+          "revision": 0,
+          "scene_version": 3
+        }
+      },
+      {
+        "fixture": "modeled_thread",
+        "repetitions": 5,
+        "volume_mm3": 1369.8215560701458,
+        "expected_volume_mm3": 1369.8220403238106,
+        "volume_tolerance_mm3": 0.02009742864710862,
+        "startup_open": {
+          "samples_ms": [
+            1492.0650419999874,
+            1485.4610419999954,
+            1487.8945000000094,
+            1492.29579199999,
+            1489.7614579999936
+          ],
+          "median_ms": 1489.7614579999936,
+          "min_ms": 1485.4610419999954,
+          "max_ms": 1492.29579199999
+        },
+        "feature_rebuild_rpc": {
+          "samples_ms": [
+            1426.9101249999949,
+            1412.503291999994,
+            1429.4480420000036,
+            1417.0162090000085,
+            1417.1657080000004
+          ],
+          "median_ms": 1417.1657080000004,
+          "min_ms": 1412.503291999994,
+          "max_ms": 1429.4480420000036
+        },
+        "preview_rpc": {
+          "samples_ms": [
+            1422.0754580000066,
+            1412.0918329999986,
+            1420.9762079999928,
+            1447.471000000005,
+            1460.5503750000062
+          ],
+          "median_ms": 1422.0754580000066,
+          "min_ms": 1412.0918329999986,
+          "max_ms": 1460.5503750000062
+        },
+        "peak_rss_bytes": 120438784,
+        "peak_rss_samples_bytes": [
+          93847552,
+          89391104,
+          90095616,
+          90898432,
+          88276992,
+          120438784
+        ],
+        "core_info": {
+          "capabilities": [
+            "revisioned_preview",
+            "assistant_drafts",
+            "part_v1_read",
+            "multibody",
+            "equations",
+            "configurations",
+            "cosmetic_threads",
+            "modeled_threads",
+            "curves",
+            "sketch_contour_paths",
+            "ordered_profile_contours",
+            "curve_segment_references",
+            "general_body_split",
+            "constrained_spatial_sketch",
+            "part_v2_read",
+            "sweep_loft",
+            "draft",
+            "circular_spherical_dome",
+            "elliptical_dome",
+            "noncircular_dome",
+            "step_draft",
+            "rib",
+            "cylindrical_wrap",
+            "conical_wrap",
+            "freeform_wrap",
+            "loft_centerline",
+            "loft_end_conditions",
+            "sweep_scaling_guides",
+            "interior_contour_seams",
+            "projected_curve_pieces",
+            "boundary",
+            "variable_fillet",
+            "planar_face_fillet",
+            "split_line"
+          ],
+          "generation": "53642-1791774673276000000-1",
+          "part_file_version": 3,
+          "protocol_version": 3,
+          "revision": 0,
+          "scene_version": 3
+        }
+      },
+      {
+        "fixture": "housing_rib",
+        "repetitions": 5,
+        "volume_mm3": 3647.9999999999964,
+        "expected_volume_mm3": 3648,
+        "volume_tolerance_mm3": 0.0001,
+        "startup_open": {
+          "samples_ms": [
+            113.71587500000896,
+            105.39108300000953,
+            106.25320799999463,
+            109.47208300000057,
+            104.61199999999371
+          ],
+          "median_ms": 106.25320799999463,
+          "min_ms": 104.61199999999371,
+          "max_ms": 113.71587500000896
+        },
+        "feature_rebuild_rpc": {
+          "samples_ms": [
+            20.31487499999639,
+            20.616666999994777,
+            20.932375000003958,
+            20.134042000005138,
+            20.01508399999875
+          ],
+          "median_ms": 20.31487499999639,
+          "min_ms": 20.01508399999875,
+          "max_ms": 20.932375000003958
+        },
+        "preview_rpc": {
+          "samples_ms": [
+            19.7153330000001,
+            19.800208000000566,
+            20.317624999996042,
+            20.121457999994163,
+            20.575500000006286
+          ],
+          "median_ms": 20.121457999994163,
+          "min_ms": 19.7153330000001,
+          "max_ms": 20.575500000006286
+        },
+        "peak_rss_bytes": 46989312,
+        "peak_rss_samples_bytes": [
+          43974656,
+          43761664,
+          43679744,
+          43270144,
+          43663360,
+          46989312
+        ],
+        "core_info": {
+          "capabilities": [
+            "revisioned_preview",
+            "assistant_drafts",
+            "part_v1_read",
+            "multibody",
+            "equations",
+            "configurations",
+            "cosmetic_threads",
+            "modeled_threads",
+            "curves",
+            "sketch_contour_paths",
+            "ordered_profile_contours",
+            "curve_segment_references",
+            "general_body_split",
+            "constrained_spatial_sketch",
+            "part_v2_read",
+            "sweep_loft",
+            "draft",
+            "circular_spherical_dome",
+            "elliptical_dome",
+            "noncircular_dome",
+            "step_draft",
+            "rib",
+            "cylindrical_wrap",
+            "conical_wrap",
+            "freeform_wrap",
+            "loft_centerline",
+            "loft_end_conditions",
+            "sweep_scaling_guides",
+            "interior_contour_seams",
+            "projected_curve_pieces",
+            "boundary",
+            "variable_fillet",
+            "planar_face_fillet",
+            "split_line"
+          ],
+          "generation": "53686-1791774690312567000-1",
+          "part_file_version": 3,
+          "protocol_version": 3,
+          "revision": 0,
+          "scene_version": 3
+        }
+      },
+      {
+        "fixture": "cylinder_wrap",
+        "repetitions": 5,
+        "volume_mm3": 12587.370614359512,
+        "expected_volume_mm3": 12587.370614359173,
+        "volume_tolerance_mm3": 0.0001,
+        "startup_open": {
+          "samples_ms": [
+            86.51141700000153,
+            86.06637499999488,
+            85.58045799999672,
+            85.38562499999534,
+            87.02675000000454
+          ],
+          "median_ms": 86.06637499999488,
+          "min_ms": 85.38562499999534,
+          "max_ms": 87.02675000000454
+        },
+        "feature_rebuild_rpc": {
+          "samples_ms": [
+            15.222083999993629,
+            14.04116699998849,
+            14.648667000001296,
+            14.159040999991703,
+            15.056875000009313
+          ],
+          "median_ms": 14.648667000001296,
+          "min_ms": 14.04116699998849,
+          "max_ms": 15.222083999993629
+        },
+        "preview_rpc": {
+          "samples_ms": [
+            13.876041999988956,
+            13.002332999996725,
+            13.268292000007932,
+            12.64512499999546,
+            13.262915999992401
+          ],
+          "median_ms": 13.262915999992401,
+          "min_ms": 12.64512499999546,
+          "max_ms": 13.876041999988956
+        },
+        "peak_rss_bytes": 51675136,
+        "peak_rss_samples_bytes": [
+          46137344,
+          45924352,
+          45973504,
+          45727744,
+          45924352,
+          51675136
+        ],
+        "core_info": {
+          "capabilities": [
+            "revisioned_preview",
+            "assistant_drafts",
+            "part_v1_read",
+            "multibody",
+            "equations",
+            "configurations",
+            "cosmetic_threads",
+            "modeled_threads",
+            "curves",
+            "sketch_contour_paths",
+            "ordered_profile_contours",
+            "curve_segment_references",
+            "general_body_split",
+            "constrained_spatial_sketch",
+            "part_v2_read",
+            "sweep_loft",
+            "draft",
+            "circular_spherical_dome",
+            "elliptical_dome",
+            "noncircular_dome",
+            "step_draft",
+            "rib",
+            "cylindrical_wrap",
+            "conical_wrap",
+            "freeform_wrap",
+            "loft_centerline",
+            "loft_end_conditions",
+            "sweep_scaling_guides",
+            "interior_contour_seams",
+            "projected_curve_pieces",
+            "boundary",
+            "variable_fillet",
+            "planar_face_fillet",
+            "split_line"
+          ],
+          "generation": "53698-1791774691064055000-1",
+          "part_file_version": 3,
+          "protocol_version": 3,
+          "revision": 0,
+          "scene_version": 3
+        }
+      },
+      {
+        "fixture": "boundary_prism",
+        "repetitions": 5,
+        "volume_mm3": 1000.0000000000007,
+        "expected_volume_mm3": 1000,
+        "volume_tolerance_mm3": 0.0001,
+        "startup_open": {
+          "samples_ms": [
+            154.28370800000266,
+            155.47570799999812,
+            148.0545839999977,
+            150.1942080000008,
+            147.45954199999687
+          ],
+          "median_ms": 150.1942080000008,
+          "min_ms": 147.45954199999687,
+          "max_ms": 155.47570799999812
+        },
+        "feature_rebuild_rpc": {
+          "samples_ms": [
+            80.1246669999964,
+            81.65945800000918,
+            83.79945799999405,
+            78.21091599999636,
+            78.2985839999892
+          ],
+          "median_ms": 80.1246669999964,
+          "min_ms": 78.21091599999636,
+          "max_ms": 83.79945799999405
+        },
+        "preview_rpc": {
+          "samples_ms": [
+            78.68012499999895,
+            79.72137499999371,
+            78.9227499999979,
+            79.60587500000838,
+            79.93795799999498
+          ],
+          "median_ms": 79.60587500000838,
+          "min_ms": 78.68012499999895,
+          "max_ms": 79.93795799999498
+        },
+        "peak_rss_bytes": 63062016,
+        "peak_rss_samples_bytes": [
+          49315840,
+          49741824,
+          50429952,
+          50266112,
+          49332224,
+          63062016
+        ],
+        "core_info": {
+          "capabilities": [
+            "revisioned_preview",
+            "assistant_drafts",
+            "part_v1_read",
+            "multibody",
+            "equations",
+            "configurations",
+            "cosmetic_threads",
+            "modeled_threads",
+            "curves",
+            "sketch_contour_paths",
+            "ordered_profile_contours",
+            "curve_segment_references",
+            "general_body_split",
+            "constrained_spatial_sketch",
+            "part_v2_read",
+            "sweep_loft",
+            "draft",
+            "circular_spherical_dome",
+            "elliptical_dome",
+            "noncircular_dome",
+            "step_draft",
+            "rib",
+            "cylindrical_wrap",
+            "conical_wrap",
+            "freeform_wrap",
+            "loft_centerline",
+            "loft_end_conditions",
+            "sweep_scaling_guides",
+            "interior_contour_seams",
+            "projected_curve_pieces",
+            "boundary",
+            "variable_fillet",
+            "planar_face_fillet",
+            "split_line"
+          ],
+          "generation": "53712-1791774692059865000-1",
+          "part_file_version": 3,
+          "protocol_version": 3,
+          "revision": 0,
+          "scene_version": 3
+        }
+      },
+      {
+        "fixture": "scaled_guide_sweep",
+        "repetitions": 5,
+        "volume_mm3": 586.4306289400289,
+        "expected_volume_mm3": 586.4306286700947,
+        "volume_tolerance_mm3": 0.0001,
+        "startup_open": {
+          "samples_ms": [
+            102.99012499999662,
+            104.10604199999943,
+            105.25441700000374,
+            102.78900000000431,
+            105.74374999999418
+          ],
+          "median_ms": 104.10604199999943,
+          "min_ms": 102.78900000000431,
+          "max_ms": 105.74374999999418
+        },
+        "feature_rebuild_rpc": {
+          "samples_ms": [
+            33.42108400000143,
+            33.26145799999358,
+            32.80616700000246,
+            33.554375000006985,
+            33.82529199999408
+          ],
+          "median_ms": 33.42108400000143,
+          "min_ms": 32.80616700000246,
+          "max_ms": 33.82529199999408
+        },
+        "preview_rpc": {
+          "samples_ms": [
+            32.3449580000015,
+            33.69929200000479,
+            33.38212499998917,
+            33.892459000009694,
+            32.94895800000813
+          ],
+          "median_ms": 33.38212499998917,
+          "min_ms": 32.3449580000015,
+          "max_ms": 33.892459000009694
+        },
+        "peak_rss_bytes": 47939584,
+        "peak_rss_samples_bytes": [
+          40681472,
+          40828928,
+          40157184,
+          40779776,
+          40763392,
+          47939584
+        ],
+        "core_info": {
+          "capabilities": [
+            "revisioned_preview",
+            "assistant_drafts",
+            "part_v1_read",
+            "multibody",
+            "equations",
+            "configurations",
+            "cosmetic_threads",
+            "modeled_threads",
+            "curves",
+            "sketch_contour_paths",
+            "ordered_profile_contours",
+            "curve_segment_references",
+            "general_body_split",
+            "constrained_spatial_sketch",
+            "part_v2_read",
+            "sweep_loft",
+            "draft",
+            "circular_spherical_dome",
+            "elliptical_dome",
+            "noncircular_dome",
+            "step_draft",
+            "rib",
+            "cylindrical_wrap",
+            "conical_wrap",
+            "freeform_wrap",
+            "loft_centerline",
+            "loft_end_conditions",
+            "sweep_scaling_guides",
+            "interior_contour_seams",
+            "projected_curve_pieces",
+            "boundary",
+            "variable_fillet",
+            "planar_face_fillet",
+            "split_line"
+          ],
+          "generation": "53724-1791774693542237000-1",
+          "part_file_version": 3,
+          "protocol_version": 3,
+          "revision": 0,
+          "scene_version": 3
+        }
+      },
+      {
+        "fixture": "tangent_loft",
+        "repetitions": 5,
+        "volume_mm3": 659.4285714285718,
+        "expected_volume_mm3": 659.4285714285717,
+        "volume_tolerance_mm3": 0.001,
+        "startup_open": {
+          "samples_ms": [
+            158.63929199999257,
+            154.81670799999847,
+            155.3764999999985,
+            156.72925000000396,
+            158.90087499999208
+          ],
+          "median_ms": 156.72925000000396,
+          "min_ms": 154.81670799999847,
+          "max_ms": 158.90087499999208
+        },
+        "feature_rebuild_rpc": {
+          "samples_ms": [
+            83.17483399999037,
+            83.2267920000013,
+            81.77425000000221,
+            82.94608300000255,
+            82.83762500000012
+          ],
+          "median_ms": 82.94608300000255,
+          "min_ms": 81.77425000000221,
+          "max_ms": 83.2267920000013
+        },
+        "preview_rpc": {
+          "samples_ms": [
+            83.26870800000324,
+            82.94704199999978,
+            84.0207500000106,
+            82.98291700000118,
+            85.63487499998882
+          ],
+          "median_ms": 83.26870800000324,
+          "min_ms": 82.94704199999978,
+          "max_ms": 85.63487499998882
+        },
+        "peak_rss_bytes": 53149696,
+        "peak_rss_samples_bytes": [
+          45957120,
+          46022656,
+          46088192,
+          46039040,
+          46104576,
+          53149696
+        ],
+        "core_info": {
+          "capabilities": [
+            "revisioned_preview",
+            "assistant_drafts",
+            "part_v1_read",
+            "multibody",
+            "equations",
+            "configurations",
+            "cosmetic_threads",
+            "modeled_threads",
+            "curves",
+            "sketch_contour_paths",
+            "ordered_profile_contours",
+            "curve_segment_references",
+            "general_body_split",
+            "constrained_spatial_sketch",
+            "part_v2_read",
+            "sweep_loft",
+            "draft",
+            "circular_spherical_dome",
+            "elliptical_dome",
+            "noncircular_dome",
+            "step_draft",
+            "rib",
+            "cylindrical_wrap",
+            "conical_wrap",
+            "freeform_wrap",
+            "loft_centerline",
+            "loft_end_conditions",
+            "sweep_scaling_guides",
+            "interior_contour_seams",
+            "projected_curve_pieces",
+            "boundary",
+            "variable_fillet",
+            "planar_face_fillet",
+            "split_line"
+          ],
+          "generation": "53740-1791774695140813000-1",
+          "part_file_version": 3,
+          "protocol_version": 3,
+          "revision": 0,
+          "scene_version": 3
+        }
+      },
+      {
+        "fixture": "centerline_loft",
+        "repetitions": 5,
+        "volume_mm3": 653.3333333333333,
+        "expected_volume_mm3": 653.3333333333334,
+        "volume_tolerance_mm3": 0.0001,
+        "startup_open": {
+          "samples_ms": [
+            79.6647920000105,
+            78.32295799998974,
+            78.87816599999496,
+            78.14683399999922,
+            79.18745800000033
+          ],
+          "median_ms": 78.87816599999496,
+          "min_ms": 78.14683399999922,
+          "max_ms": 79.6647920000105
+        },
+        "feature_rebuild_rpc": {
+          "samples_ms": [
+            6.64245800000208,
+            6.706124999996973,
+            6.663249999997788,
+            7.2693750000034925,
+            7.514790999994148
+          ],
+          "median_ms": 6.706124999996973,
+          "min_ms": 6.64245800000208,
+          "max_ms": 7.514790999994148
+        },
+        "preview_rpc": {
+          "samples_ms": [
+            6.808541000005789,
+            6.656084000002011,
+            7.016416999991634,
+            6.58491600000707,
+            6.876166000001831
+          ],
+          "median_ms": 6.808541000005789,
+          "min_ms": 6.58491600000707,
+          "max_ms": 7.016416999991634
+        },
+        "peak_rss_bytes": 41189376,
+        "peak_rss_samples_bytes": [
+          38879232,
+          39141376,
+          38895616,
+          39010304,
+          38944768,
+          41189376
+        ],
+        "core_info": {
+          "capabilities": [
+            "revisioned_preview",
+            "assistant_drafts",
+            "part_v1_read",
+            "multibody",
+            "equations",
+            "configurations",
+            "cosmetic_threads",
+            "modeled_threads",
+            "curves",
+            "sketch_contour_paths",
+            "ordered_profile_contours",
+            "curve_segment_references",
+            "general_body_split",
+            "constrained_spatial_sketch",
+            "part_v2_read",
+            "sweep_loft",
+            "draft",
+            "circular_spherical_dome",
+            "elliptical_dome",
+            "noncircular_dome",
+            "step_draft",
+            "rib",
+            "cylindrical_wrap",
+            "conical_wrap",
+            "freeform_wrap",
+            "loft_centerline",
+            "loft_end_conditions",
+            "sweep_scaling_guides",
+            "interior_contour_seams",
+            "projected_curve_pieces",
+            "boundary",
+            "variable_fillet",
+            "planar_face_fillet",
+            "split_line"
+          ],
+          "generation": "53754-1791774696551104000-1",
+          "part_file_version": 3,
+          "protocol_version": 3,
+          "revision": 0,
+          "scene_version": 3
+        }
+      },
+      {
+        "fixture": "dome_geodesic_wrap",
+        "repetitions": 5,
+        "volume_mm3": 13423.742552882632,
+        "expected_volume_mm3": 13423.742552911748,
+        "volume_tolerance_mm3": 0.0001,
+        "startup_open": {
+          "samples_ms": [
+            276.855166999987,
+            290.7640839999949,
+            274.4780829999945,
+            274.84991699999955,
+            272.07037500001024
+          ],
+          "median_ms": 274.84991699999955,
+          "min_ms": 272.07037500001024,
+          "max_ms": 290.7640839999949
+        },
+        "feature_rebuild_rpc": {
+          "samples_ms": [
+            190.10187499999302,
+            193.31837500000256,
+            192.5870830000058,
+            190.4443339999998,
+            191.39424999999756
+          ],
+          "median_ms": 191.39424999999756,
+          "min_ms": 190.10187499999302,
+          "max_ms": 193.31837500000256
+        },
+        "preview_rpc": {
+          "samples_ms": [
+            193.1197919999977,
+            190.2347080000036,
+            190.5738330000022,
+            191.5910409999924,
+            192.82495799999742
+          ],
+          "median_ms": 191.5910409999924,
+          "min_ms": 190.2347080000036,
+          "max_ms": 193.1197919999977
+        },
+        "peak_rss_bytes": 57311232,
+        "peak_rss_samples_bytes": [
+          51757056,
+          49479680,
+          49872896,
+          50380800,
+          50577408,
+          57311232
+        ],
+        "core_info": {
+          "capabilities": [
+            "revisioned_preview",
+            "assistant_drafts",
+            "part_v1_read",
+            "multibody",
+            "equations",
+            "configurations",
+            "cosmetic_threads",
+            "modeled_threads",
+            "curves",
+            "sketch_contour_paths",
+            "ordered_profile_contours",
+            "curve_segment_references",
+            "general_body_split",
+            "constrained_spatial_sketch",
+            "part_v2_read",
+            "sweep_loft",
+            "draft",
+            "circular_spherical_dome",
+            "elliptical_dome",
+            "noncircular_dome",
+            "step_draft",
+            "rib",
+            "cylindrical_wrap",
+            "conical_wrap",
+            "freeform_wrap",
+            "loft_centerline",
+            "loft_end_conditions",
+            "sweep_scaling_guides",
+            "interior_contour_seams",
+            "projected_curve_pieces",
+            "boundary",
+            "variable_fillet",
+            "planar_face_fillet",
+            "split_line"
+          ],
+          "generation": "53806-1791774698104359000-1",
+          "part_file_version": 3,
+          "protocol_version": 3,
+          "revision": 0,
+          "scene_version": 3
+        }
+      }
+    ]
+  ],
+  "results": [
+    {
+      "fixture": "straight_spatial_sweep",
+      "repetitions": 5,
+      "volume_mm3": 4021.238596594927,
+      "expected_volume_mm3": 4021.238596594935,
+      "volume_tolerance_mm3": 0.0001,
+      "startup_open": {
+        "samples_ms": [
+          71.89495800000441,
+          73.2744160000002,
+          74.17504200000258,
+          74.11399999998685,
+          74.4089590000076
+        ],
+        "median_ms": 74.11399999998685,
+        "min_ms": 71.89495800000441,
+        "max_ms": 74.4089590000076
+      },
+      "feature_rebuild_rpc": {
+        "samples_ms": [
+          3.395750000010594,
+          3.1315840000024764,
+          3.040791999999783,
+          2.916041000004043,
+          3.7029590000020107
+        ],
+        "median_ms": 3.1315840000024764,
+        "min_ms": 2.916041000004043,
+        "max_ms": 3.7029590000020107
+      },
+      "preview_rpc": {
+        "samples_ms": [
+          5.142500000001746,
+          3.2895409999910044,
+          3.695540999993682,
+          3.4762919999920996,
+          4.0092920000024606
+        ],
+        "median_ms": 3.695540999993682,
+        "min_ms": 3.2895409999910044,
+        "max_ms": 5.142500000001746
+      },
+      "peak_rss_bytes": 39141376,
+      "peak_rss_samples_bytes": [
+        37486592,
+        37453824,
+        37322752,
+        37388288,
+        37502976,
+        39141376
+      ],
+      "core_info": {
+        "capabilities": [
+          "revisioned_preview",
+          "assistant_drafts",
+          "part_v1_read",
+          "multibody",
+          "equations",
+          "configurations",
+          "cosmetic_threads",
+          "modeled_threads",
+          "curves",
+          "sketch_contour_paths",
+          "ordered_profile_contours",
+          "curve_segment_references",
+          "general_body_split",
+          "constrained_spatial_sketch",
+          "part_v2_read",
+          "sweep_loft",
+          "draft",
+          "circular_spherical_dome",
+          "elliptical_dome",
+          "noncircular_dome",
+          "step_draft",
+          "rib",
+          "cylindrical_wrap",
+          "conical_wrap",
+          "freeform_wrap",
+          "loft_centerline",
+          "loft_end_conditions",
+          "sweep_scaling_guides",
+          "interior_contour_seams",
+          "projected_curve_pieces",
+          "boundary",
+          "variable_fillet",
+          "planar_face_fillet",
+          "split_line"
+        ],
+        "generation": "53591-1791774664355350000-1",
+        "part_file_version": 3,
+        "protocol_version": 3,
+        "revision": 0,
+        "scene_version": 3
+      }
+    },
+    {
+      "fixture": "hollow_spatial_sweep",
+      "repetitions": 5,
+      "volume_mm3": 3015.9289474461966,
+      "expected_volume_mm3": 3015.928947446201,
+      "volume_tolerance_mm3": 0.0001,
+      "startup_open": {
+        "samples_ms": [
+          86.7173749999929,
+          83.47699999999895,
+          81.32670799999323,
+          82.30937500001164,
+          80.52337500000431
+        ],
+        "median_ms": 82.30937500001164,
+        "min_ms": 80.52337500000431,
+        "max_ms": 86.7173749999929
+      },
+      "feature_rebuild_rpc": {
+        "samples_ms": [
+          9.739667000001646,
+          9.178416999988258,
+          9.847041999993962,
+          10.529541999989306,
+          9.431292000008398
+        ],
+        "median_ms": 9.739667000001646,
+        "min_ms": 9.178416999988258,
+        "max_ms": 10.529541999989306
+      },
+      "preview_rpc": {
+        "samples_ms": [
+          9.885332999998354,
+          9.568041999998968,
+          9.367875000010827,
+          9.547041999991052,
+          8.972750000000815
+        ],
+        "median_ms": 9.547041999991052,
+        "min_ms": 8.972750000000815,
+        "max_ms": 9.885332999998354
+      },
+      "peak_rss_bytes": 41828352,
+      "peak_rss_samples_bytes": [
+        39337984,
+        39436288,
+        39452672,
+        39288832,
+        39567360,
+        41828352
+      ],
+      "core_info": {
+        "capabilities": [
+          "revisioned_preview",
+          "assistant_drafts",
+          "part_v1_read",
+          "multibody",
+          "equations",
+          "configurations",
+          "cosmetic_threads",
+          "modeled_threads",
+          "curves",
+          "sketch_contour_paths",
+          "ordered_profile_contours",
+          "curve_segment_references",
+          "general_body_split",
+          "constrained_spatial_sketch",
+          "part_v2_read",
+          "sweep_loft",
+          "draft",
+          "circular_spherical_dome",
+          "elliptical_dome",
+          "noncircular_dome",
+          "step_draft",
+          "rib",
+          "cylindrical_wrap",
+          "conical_wrap",
+          "freeform_wrap",
+          "loft_centerline",
+          "loft_end_conditions",
+          "sweep_scaling_guides",
+          "interior_contour_seams",
+          "projected_curve_pieces",
+          "boundary",
+          "variable_fillet",
+          "planar_face_fillet",
+          "split_line"
+        ],
+        "generation": "53606-1791774664890497000-1",
+        "part_file_version": 3,
+        "protocol_version": 3,
+        "revision": 0,
+        "scene_version": 3
+      }
+    },
+    {
+      "fixture": "spherical_cap_dome",
+      "repetitions": 5,
+      "volume_mm3": 2998.6501878514373,
+      "expected_volume_mm3": 2998.6501878514578,
+      "volume_tolerance_mm3": 0.0001,
+      "startup_open": {
+        "samples_ms": [
+          88.5637080000015,
+          91.11920899999677,
+          89.05141700000968,
+          88.8092089999991,
+          89.29158299999835
+        ],
+        "median_ms": 89.05141700000968,
+        "min_ms": 88.5637080000015,
+        "max_ms": 91.11920899999677
+      },
+      "feature_rebuild_rpc": {
+        "samples_ms": [
+          18.59329200000502,
+          19.010000000009313,
+          17.92195800000627,
+          17.96187500000815,
+          18.39245800000208
+        ],
+        "median_ms": 18.39245800000208,
+        "min_ms": 17.92195800000627,
+        "max_ms": 19.010000000009313
+      },
+      "preview_rpc": {
+        "samples_ms": [
+          17.287374999999884,
+          17.40183299999626,
+          17.348750000004657,
+          18.599792000008165,
+          18.08458399999654
+        ],
+        "median_ms": 17.40183299999626,
+        "min_ms": 17.287374999999884,
+        "max_ms": 18.599792000008165
+      },
+      "peak_rss_bytes": 44351488,
+      "peak_rss_samples_bytes": [
+        40042496,
+        40222720,
+        40189952,
+        40124416,
+        40222720,
+        44351488
+      ],
+      "core_info": {
+        "capabilities": [
+          "revisioned_preview",
+          "assistant_drafts",
+          "part_v1_read",
+          "multibody",
+          "equations",
+          "configurations",
+          "cosmetic_threads",
+          "modeled_threads",
+          "curves",
+          "sketch_contour_paths",
+          "ordered_profile_contours",
+          "curve_segment_references",
+          "general_body_split",
+          "constrained_spatial_sketch",
+          "part_v2_read",
+          "sweep_loft",
+          "draft",
+          "circular_spherical_dome",
+          "elliptical_dome",
+          "noncircular_dome",
+          "step_draft",
+          "rib",
+          "cylindrical_wrap",
+          "conical_wrap",
+          "freeform_wrap",
+          "loft_centerline",
+          "loft_end_conditions",
+          "sweep_scaling_guides",
+          "interior_contour_seams",
+          "projected_curve_pieces",
+          "boundary",
+          "variable_fillet",
+          "planar_face_fillet",
+          "split_line"
+        ],
+        "generation": "53620-1791774665528992000-1",
+        "part_file_version": 3,
+        "protocol_version": 3,
+        "revision": 0,
+        "scene_version": 3
+      }
+    },
+    {
+      "fixture": "modeled_thread",
+      "repetitions": 5,
+      "volume_mm3": 1369.8215560701458,
+      "expected_volume_mm3": 1369.8220403238106,
+      "volume_tolerance_mm3": 0.02009742864710862,
+      "startup_open": {
+        "samples_ms": [
+          1492.0650419999874,
+          1485.4610419999954,
+          1487.8945000000094,
+          1492.29579199999,
+          1489.7614579999936
+        ],
+        "median_ms": 1489.7614579999936,
+        "min_ms": 1485.4610419999954,
+        "max_ms": 1492.29579199999
+      },
+      "feature_rebuild_rpc": {
+        "samples_ms": [
+          1426.9101249999949,
+          1412.503291999994,
+          1429.4480420000036,
+          1417.0162090000085,
+          1417.1657080000004
+        ],
+        "median_ms": 1417.1657080000004,
+        "min_ms": 1412.503291999994,
+        "max_ms": 1429.4480420000036
+      },
+      "preview_rpc": {
+        "samples_ms": [
+          1422.0754580000066,
+          1412.0918329999986,
+          1420.9762079999928,
+          1447.471000000005,
+          1460.5503750000062
+        ],
+        "median_ms": 1422.0754580000066,
+        "min_ms": 1412.0918329999986,
+        "max_ms": 1460.5503750000062
+      },
+      "peak_rss_bytes": 120438784,
+      "peak_rss_samples_bytes": [
+        93847552,
+        89391104,
+        90095616,
+        90898432,
+        88276992,
+        120438784
+      ],
+      "core_info": {
+        "capabilities": [
+          "revisioned_preview",
+          "assistant_drafts",
+          "part_v1_read",
+          "multibody",
+          "equations",
+          "configurations",
+          "cosmetic_threads",
+          "modeled_threads",
+          "curves",
+          "sketch_contour_paths",
+          "ordered_profile_contours",
+          "curve_segment_references",
+          "general_body_split",
+          "constrained_spatial_sketch",
+          "part_v2_read",
+          "sweep_loft",
+          "draft",
+          "circular_spherical_dome",
+          "elliptical_dome",
+          "noncircular_dome",
+          "step_draft",
+          "rib",
+          "cylindrical_wrap",
+          "conical_wrap",
+          "freeform_wrap",
+          "loft_centerline",
+          "loft_end_conditions",
+          "sweep_scaling_guides",
+          "interior_contour_seams",
+          "projected_curve_pieces",
+          "boundary",
+          "variable_fillet",
+          "planar_face_fillet",
+          "split_line"
+        ],
+        "generation": "53642-1791774673276000000-1",
+        "part_file_version": 3,
+        "protocol_version": 3,
+        "revision": 0,
+        "scene_version": 3
+      }
+    },
+    {
+      "fixture": "housing_rib",
+      "repetitions": 5,
+      "volume_mm3": 3647.9999999999964,
+      "expected_volume_mm3": 3648,
+      "volume_tolerance_mm3": 0.0001,
+      "startup_open": {
+        "samples_ms": [
+          113.71587500000896,
+          105.39108300000953,
+          106.25320799999463,
+          109.47208300000057,
+          104.61199999999371
+        ],
+        "median_ms": 106.25320799999463,
+        "min_ms": 104.61199999999371,
+        "max_ms": 113.71587500000896
+      },
+      "feature_rebuild_rpc": {
+        "samples_ms": [
+          20.31487499999639,
+          20.616666999994777,
+          20.932375000003958,
+          20.134042000005138,
+          20.01508399999875
+        ],
+        "median_ms": 20.31487499999639,
+        "min_ms": 20.01508399999875,
+        "max_ms": 20.932375000003958
+      },
+      "preview_rpc": {
+        "samples_ms": [
+          19.7153330000001,
+          19.800208000000566,
+          20.317624999996042,
+          20.121457999994163,
+          20.575500000006286
+        ],
+        "median_ms": 20.121457999994163,
+        "min_ms": 19.7153330000001,
+        "max_ms": 20.575500000006286
+      },
+      "peak_rss_bytes": 46989312,
+      "peak_rss_samples_bytes": [
+        43974656,
+        43761664,
+        43679744,
+        43270144,
+        43663360,
+        46989312
+      ],
+      "core_info": {
+        "capabilities": [
+          "revisioned_preview",
+          "assistant_drafts",
+          "part_v1_read",
+          "multibody",
+          "equations",
+          "configurations",
+          "cosmetic_threads",
+          "modeled_threads",
+          "curves",
+          "sketch_contour_paths",
+          "ordered_profile_contours",
+          "curve_segment_references",
+          "general_body_split",
+          "constrained_spatial_sketch",
+          "part_v2_read",
+          "sweep_loft",
+          "draft",
+          "circular_spherical_dome",
+          "elliptical_dome",
+          "noncircular_dome",
+          "step_draft",
+          "rib",
+          "cylindrical_wrap",
+          "conical_wrap",
+          "freeform_wrap",
+          "loft_centerline",
+          "loft_end_conditions",
+          "sweep_scaling_guides",
+          "interior_contour_seams",
+          "projected_curve_pieces",
+          "boundary",
+          "variable_fillet",
+          "planar_face_fillet",
+          "split_line"
+        ],
+        "generation": "53686-1791774690312567000-1",
+        "part_file_version": 3,
+        "protocol_version": 3,
+        "revision": 0,
+        "scene_version": 3
+      }
+    },
+    {
+      "fixture": "cylinder_wrap",
+      "repetitions": 5,
+      "volume_mm3": 12587.370614359512,
+      "expected_volume_mm3": 12587.370614359173,
+      "volume_tolerance_mm3": 0.0001,
+      "startup_open": {
+        "samples_ms": [
+          86.51141700000153,
+          86.06637499999488,
+          85.58045799999672,
+          85.38562499999534,
+          87.02675000000454
+        ],
+        "median_ms": 86.06637499999488,
+        "min_ms": 85.38562499999534,
+        "max_ms": 87.02675000000454
+      },
+      "feature_rebuild_rpc": {
+        "samples_ms": [
+          15.222083999993629,
+          14.04116699998849,
+          14.648667000001296,
+          14.159040999991703,
+          15.056875000009313
+        ],
+        "median_ms": 14.648667000001296,
+        "min_ms": 14.04116699998849,
+        "max_ms": 15.222083999993629
+      },
+      "preview_rpc": {
+        "samples_ms": [
+          13.876041999988956,
+          13.002332999996725,
+          13.268292000007932,
+          12.64512499999546,
+          13.262915999992401
+        ],
+        "median_ms": 13.262915999992401,
+        "min_ms": 12.64512499999546,
+        "max_ms": 13.876041999988956
+      },
+      "peak_rss_bytes": 51675136,
+      "peak_rss_samples_bytes": [
+        46137344,
+        45924352,
+        45973504,
+        45727744,
+        45924352,
+        51675136
+      ],
+      "core_info": {
+        "capabilities": [
+          "revisioned_preview",
+          "assistant_drafts",
+          "part_v1_read",
+          "multibody",
+          "equations",
+          "configurations",
+          "cosmetic_threads",
+          "modeled_threads",
+          "curves",
+          "sketch_contour_paths",
+          "ordered_profile_contours",
+          "curve_segment_references",
+          "general_body_split",
+          "constrained_spatial_sketch",
+          "part_v2_read",
+          "sweep_loft",
+          "draft",
+          "circular_spherical_dome",
+          "elliptical_dome",
+          "noncircular_dome",
+          "step_draft",
+          "rib",
+          "cylindrical_wrap",
+          "conical_wrap",
+          "freeform_wrap",
+          "loft_centerline",
+          "loft_end_conditions",
+          "sweep_scaling_guides",
+          "interior_contour_seams",
+          "projected_curve_pieces",
+          "boundary",
+          "variable_fillet",
+          "planar_face_fillet",
+          "split_line"
+        ],
+        "generation": "53698-1791774691064055000-1",
+        "part_file_version": 3,
+        "protocol_version": 3,
+        "revision": 0,
+        "scene_version": 3
+      }
+    },
+    {
+      "fixture": "boundary_prism",
+      "repetitions": 5,
+      "volume_mm3": 1000.0000000000007,
+      "expected_volume_mm3": 1000,
+      "volume_tolerance_mm3": 0.0001,
+      "startup_open": {
+        "samples_ms": [
+          154.28370800000266,
+          155.47570799999812,
+          148.0545839999977,
+          150.1942080000008,
+          147.45954199999687
+        ],
+        "median_ms": 150.1942080000008,
+        "min_ms": 147.45954199999687,
+        "max_ms": 155.47570799999812
+      },
+      "feature_rebuild_rpc": {
+        "samples_ms": [
+          80.1246669999964,
+          81.65945800000918,
+          83.79945799999405,
+          78.21091599999636,
+          78.2985839999892
+        ],
+        "median_ms": 80.1246669999964,
+        "min_ms": 78.21091599999636,
+        "max_ms": 83.79945799999405
+      },
+      "preview_rpc": {
+        "samples_ms": [
+          78.68012499999895,
+          79.72137499999371,
+          78.9227499999979,
+          79.60587500000838,
+          79.93795799999498
+        ],
+        "median_ms": 79.60587500000838,
+        "min_ms": 78.68012499999895,
+        "max_ms": 79.93795799999498
+      },
+      "peak_rss_bytes": 63062016,
+      "peak_rss_samples_bytes": [
+        49315840,
+        49741824,
+        50429952,
+        50266112,
+        49332224,
+        63062016
+      ],
+      "core_info": {
+        "capabilities": [
+          "revisioned_preview",
+          "assistant_drafts",
+          "part_v1_read",
+          "multibody",
+          "equations",
+          "configurations",
+          "cosmetic_threads",
+          "modeled_threads",
+          "curves",
+          "sketch_contour_paths",
+          "ordered_profile_contours",
+          "curve_segment_references",
+          "general_body_split",
+          "constrained_spatial_sketch",
+          "part_v2_read",
+          "sweep_loft",
+          "draft",
+          "circular_spherical_dome",
+          "elliptical_dome",
+          "noncircular_dome",
+          "step_draft",
+          "rib",
+          "cylindrical_wrap",
+          "conical_wrap",
+          "freeform_wrap",
+          "loft_centerline",
+          "loft_end_conditions",
+          "sweep_scaling_guides",
+          "interior_contour_seams",
+          "projected_curve_pieces",
+          "boundary",
+          "variable_fillet",
+          "planar_face_fillet",
+          "split_line"
+        ],
+        "generation": "53712-1791774692059865000-1",
+        "part_file_version": 3,
+        "protocol_version": 3,
+        "revision": 0,
+        "scene_version": 3
+      }
+    },
+    {
+      "fixture": "scaled_guide_sweep",
+      "repetitions": 5,
+      "volume_mm3": 586.4306289400289,
+      "expected_volume_mm3": 586.4306286700947,
+      "volume_tolerance_mm3": 0.0001,
+      "startup_open": {
+        "samples_ms": [
+          102.99012499999662,
+          104.10604199999943,
+          105.25441700000374,
+          102.78900000000431,
+          105.74374999999418
+        ],
+        "median_ms": 104.10604199999943,
+        "min_ms": 102.78900000000431,
+        "max_ms": 105.74374999999418
+      },
+      "feature_rebuild_rpc": {
+        "samples_ms": [
+          33.42108400000143,
+          33.26145799999358,
+          32.80616700000246,
+          33.554375000006985,
+          33.82529199999408
+        ],
+        "median_ms": 33.42108400000143,
+        "min_ms": 32.80616700000246,
+        "max_ms": 33.82529199999408
+      },
+      "preview_rpc": {
+        "samples_ms": [
+          32.3449580000015,
+          33.69929200000479,
+          33.38212499998917,
+          33.892459000009694,
+          32.94895800000813
+        ],
+        "median_ms": 33.38212499998917,
+        "min_ms": 32.3449580000015,
+        "max_ms": 33.892459000009694
+      },
+      "peak_rss_bytes": 47939584,
+      "peak_rss_samples_bytes": [
+        40681472,
+        40828928,
+        40157184,
+        40779776,
+        40763392,
+        47939584
+      ],
+      "core_info": {
+        "capabilities": [
+          "revisioned_preview",
+          "assistant_drafts",
+          "part_v1_read",
+          "multibody",
+          "equations",
+          "configurations",
+          "cosmetic_threads",
+          "modeled_threads",
+          "curves",
+          "sketch_contour_paths",
+          "ordered_profile_contours",
+          "curve_segment_references",
+          "general_body_split",
+          "constrained_spatial_sketch",
+          "part_v2_read",
+          "sweep_loft",
+          "draft",
+          "circular_spherical_dome",
+          "elliptical_dome",
+          "noncircular_dome",
+          "step_draft",
+          "rib",
+          "cylindrical_wrap",
+          "conical_wrap",
+          "freeform_wrap",
+          "loft_centerline",
+          "loft_end_conditions",
+          "sweep_scaling_guides",
+          "interior_contour_seams",
+          "projected_curve_pieces",
+          "boundary",
+          "variable_fillet",
+          "planar_face_fillet",
+          "split_line"
+        ],
+        "generation": "53724-1791774693542237000-1",
+        "part_file_version": 3,
+        "protocol_version": 3,
+        "revision": 0,
+        "scene_version": 3
+      }
+    },
+    {
+      "fixture": "tangent_loft",
+      "repetitions": 5,
+      "volume_mm3": 659.4285714285718,
+      "expected_volume_mm3": 659.4285714285717,
+      "volume_tolerance_mm3": 0.001,
+      "startup_open": {
+        "samples_ms": [
+          158.63929199999257,
+          154.81670799999847,
+          155.3764999999985,
+          156.72925000000396,
+          158.90087499999208
+        ],
+        "median_ms": 156.72925000000396,
+        "min_ms": 154.81670799999847,
+        "max_ms": 158.90087499999208
+      },
+      "feature_rebuild_rpc": {
+        "samples_ms": [
+          83.17483399999037,
+          83.2267920000013,
+          81.77425000000221,
+          82.94608300000255,
+          82.83762500000012
+        ],
+        "median_ms": 82.94608300000255,
+        "min_ms": 81.77425000000221,
+        "max_ms": 83.2267920000013
+      },
+      "preview_rpc": {
+        "samples_ms": [
+          83.26870800000324,
+          82.94704199999978,
+          84.0207500000106,
+          82.98291700000118,
+          85.63487499998882
+        ],
+        "median_ms": 83.26870800000324,
+        "min_ms": 82.94704199999978,
+        "max_ms": 85.63487499998882
+      },
+      "peak_rss_bytes": 53149696,
+      "peak_rss_samples_bytes": [
+        45957120,
+        46022656,
+        46088192,
+        46039040,
+        46104576,
+        53149696
+      ],
+      "core_info": {
+        "capabilities": [
+          "revisioned_preview",
+          "assistant_drafts",
+          "part_v1_read",
+          "multibody",
+          "equations",
+          "configurations",
+          "cosmetic_threads",
+          "modeled_threads",
+          "curves",
+          "sketch_contour_paths",
+          "ordered_profile_contours",
+          "curve_segment_references",
+          "general_body_split",
+          "constrained_spatial_sketch",
+          "part_v2_read",
+          "sweep_loft",
+          "draft",
+          "circular_spherical_dome",
+          "elliptical_dome",
+          "noncircular_dome",
+          "step_draft",
+          "rib",
+          "cylindrical_wrap",
+          "conical_wrap",
+          "freeform_wrap",
+          "loft_centerline",
+          "loft_end_conditions",
+          "sweep_scaling_guides",
+          "interior_contour_seams",
+          "projected_curve_pieces",
+          "boundary",
+          "variable_fillet",
+          "planar_face_fillet",
+          "split_line"
+        ],
+        "generation": "53740-1791774695140813000-1",
+        "part_file_version": 3,
+        "protocol_version": 3,
+        "revision": 0,
+        "scene_version": 3
+      }
+    },
+    {
+      "fixture": "centerline_loft",
+      "repetitions": 5,
+      "volume_mm3": 653.3333333333333,
+      "expected_volume_mm3": 653.3333333333334,
+      "volume_tolerance_mm3": 0.0001,
+      "startup_open": {
+        "samples_ms": [
+          79.6647920000105,
+          78.32295799998974,
+          78.87816599999496,
+          78.14683399999922,
+          79.18745800000033
+        ],
+        "median_ms": 78.87816599999496,
+        "min_ms": 78.14683399999922,
+        "max_ms": 79.6647920000105
+      },
+      "feature_rebuild_rpc": {
+        "samples_ms": [
+          6.64245800000208,
+          6.706124999996973,
+          6.663249999997788,
+          7.2693750000034925,
+          7.514790999994148
+        ],
+        "median_ms": 6.706124999996973,
+        "min_ms": 6.64245800000208,
+        "max_ms": 7.514790999994148
+      },
+      "preview_rpc": {
+        "samples_ms": [
+          6.808541000005789,
+          6.656084000002011,
+          7.016416999991634,
+          6.58491600000707,
+          6.876166000001831
+        ],
+        "median_ms": 6.808541000005789,
+        "min_ms": 6.58491600000707,
+        "max_ms": 7.016416999991634
+      },
+      "peak_rss_bytes": 41189376,
+      "peak_rss_samples_bytes": [
+        38879232,
+        39141376,
+        38895616,
+        39010304,
+        38944768,
+        41189376
+      ],
+      "core_info": {
+        "capabilities": [
+          "revisioned_preview",
+          "assistant_drafts",
+          "part_v1_read",
+          "multibody",
+          "equations",
+          "configurations",
+          "cosmetic_threads",
+          "modeled_threads",
+          "curves",
+          "sketch_contour_paths",
+          "ordered_profile_contours",
+          "curve_segment_references",
+          "general_body_split",
+          "constrained_spatial_sketch",
+          "part_v2_read",
+          "sweep_loft",
+          "draft",
+          "circular_spherical_dome",
+          "elliptical_dome",
+          "noncircular_dome",
+          "step_draft",
+          "rib",
+          "cylindrical_wrap",
+          "conical_wrap",
+          "freeform_wrap",
+          "loft_centerline",
+          "loft_end_conditions",
+          "sweep_scaling_guides",
+          "interior_contour_seams",
+          "projected_curve_pieces",
+          "boundary",
+          "variable_fillet",
+          "planar_face_fillet",
+          "split_line"
+        ],
+        "generation": "53754-1791774696551104000-1",
+        "part_file_version": 3,
+        "protocol_version": 3,
+        "revision": 0,
+        "scene_version": 3
+      }
+    },
+    {
+      "fixture": "dome_geodesic_wrap",
+      "repetitions": 5,
+      "volume_mm3": 13423.742552882632,
+      "expected_volume_mm3": 13423.742552911748,
+      "volume_tolerance_mm3": 0.0001,
+      "startup_open": {
+        "samples_ms": [
+          276.855166999987,
+          290.7640839999949,
+          274.4780829999945,
+          274.84991699999955,
+          272.07037500001024
+        ],
+        "median_ms": 274.84991699999955,
+        "min_ms": 272.07037500001024,
+        "max_ms": 290.7640839999949
+      },
+      "feature_rebuild_rpc": {
+        "samples_ms": [
+          190.10187499999302,
+          193.31837500000256,
+          192.5870830000058,
+          190.4443339999998,
+          191.39424999999756
+        ],
+        "median_ms": 191.39424999999756,
+        "min_ms": 190.10187499999302,
+        "max_ms": 193.31837500000256
+      },
+      "preview_rpc": {
+        "samples_ms": [
+          193.1197919999977,
+          190.2347080000036,
+          190.5738330000022,
+          191.5910409999924,
+          192.82495799999742
+        ],
+        "median_ms": 191.5910409999924,
+        "min_ms": 190.2347080000036,
+        "max_ms": 193.1197919999977
+      },
+      "peak_rss_bytes": 57311232,
+      "peak_rss_samples_bytes": [
+        51757056,
+        49479680,
+        49872896,
+        50380800,
+        50577408,
+        57311232
+      ],
+      "core_info": {
+        "capabilities": [
+          "revisioned_preview",
+          "assistant_drafts",
+          "part_v1_read",
+          "multibody",
+          "equations",
+          "configurations",
+          "cosmetic_threads",
+          "modeled_threads",
+          "curves",
+          "sketch_contour_paths",
+          "ordered_profile_contours",
+          "curve_segment_references",
+          "general_body_split",
+          "constrained_spatial_sketch",
+          "part_v2_read",
+          "sweep_loft",
+          "draft",
+          "circular_spherical_dome",
+          "elliptical_dome",
+          "noncircular_dome",
+          "step_draft",
+          "rib",
+          "cylindrical_wrap",
+          "conical_wrap",
+          "freeform_wrap",
+          "loft_centerline",
+          "loft_end_conditions",
+          "sweep_scaling_guides",
+          "interior_contour_seams",
+          "projected_curve_pieces",
+          "boundary",
+          "variable_fillet",
+          "planar_face_fillet",
+          "split_line"
+        ],
+        "generation": "53806-1791774698104359000-1",
+        "part_file_version": 3,
+        "protocol_version": 3,
+        "revision": 0,
+        "scene_version": 3
+      }
+    }
+  ]
+}

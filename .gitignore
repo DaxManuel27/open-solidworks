@@ -14,3 +14,8 @@ node_modules/
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# Benchmark run output (scripts/bench.mjs)
+/bench/results/*
+# The recorded transcript that `pnpm bench` replays in CI.
+!/bench/results/reference.json

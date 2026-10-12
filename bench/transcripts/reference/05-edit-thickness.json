@@ -1,0 +1,44 @@
+{
+  "task": "05-edit-thickness",
+  "source": "reference: hand-written against the current catalog",
+  "steps": [
+    {
+      "calls": [
+        {
+          "name": "part_info",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "set_parameter",
+          "args": {
+            "key": "f2.end1.depth",
+            "value": 12
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "mass_properties",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "finish_task",
+          "args": {
+            "summary": "Changed the extrusion depth to 12 mm.",
+            "preview_only": false
+          }
+        }
+      ]
+    }
+  ]
+}

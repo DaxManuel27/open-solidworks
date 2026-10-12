@@ -11,6 +11,7 @@ repository.workspace = true
 of-kernel-sys.workspace = true
 cxx.workspace = true
 glam.workspace = true
+schemars.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 

@@ -1,0 +1,64 @@
+{
+  "task": "04-fillet-edges",
+  "source": "reference: hand-written against the current catalog",
+  "steps": [
+    {
+      "calls": [
+        {
+          "name": "topology",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "add_feature",
+          "args": {
+            "feature": {
+              "type": "fillet",
+              "edges": [
+                {
+                  "type": "edge",
+                  "name": "E(2.s5|2.s8)"
+                },
+                {
+                  "type": "edge",
+                  "name": "E(2.s5|2.s6)"
+                },
+                {
+                  "type": "edge",
+                  "name": "E(2.s6|2.s7)"
+                },
+                {
+                  "type": "edge",
+                  "name": "E(2.s7|2.s8)"
+                }
+              ],
+              "radius": 3
+            }
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "mass_properties",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "finish_task",
+          "args": {
+            "summary": "Added 3 mm fillets to the four Z edges.",
+            "preview_only": false
+          }
+        }
+      ]
+    }
+  ]
+}

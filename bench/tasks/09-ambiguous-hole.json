@@ -1,0 +1,9 @@
+{
+  "id": "09-ambiguous-hole",
+  "title": "Ambiguous request",
+  "prompt": "Add a hole to the plate.",
+  "start": "../fixtures/plate.ofp",
+  "expect": {
+    "outcome": "no_change"
+  }
+}

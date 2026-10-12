@@ -13,6 +13,8 @@ of-io.workspace = true
 of-protocol.workspace = true
 anyhow.workspace = true
 clap.workspace = true
+jsonschema.workspace = true
+schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 

@@ -143,6 +143,9 @@ fn push_point(out: &mut Vec<Value>, prefix: &str, p: DVec3) {
 }
 
 fn sub_shape(state: &State, r: &Resolved) -> Option<of_geom::Shape> {
+    if let Resolved::Body { id, .. } = r {
+        return Some(state.solid(id).ok()?.geometry.shape.clone());
+    }
     let body = state.body.as_ref()?;
     let (kind, i) = match r {
         Resolved::Face { index, .. } => (Kind::Face, *index),
@@ -182,6 +185,8 @@ pub struct MassProperties {
 }
 
 pub fn mass_properties(doc: &Document, state: &State) -> Result<MassProperties, String> {
+    let effective = crate::configurations::resolve(doc)?;
+    let doc = &effective;
     let body = state.body.as_ref().ok_or("there's no body")?;
     let m = body.shape.mass_props().map_err(|e| e.0)?;
     let density = doc

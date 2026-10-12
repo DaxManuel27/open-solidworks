@@ -10,7 +10,18 @@
 //! [`Ref`]s with stable names (see [`naming`]) that are resolved against the
 //! model as it is at that feature during every rebuild.
 
+pub mod bodies;
 mod build;
+pub mod configurations;
+pub mod cosmetic_thread;
+pub use cosmetic_thread::{CosmeticThread, Thread};
+pub mod curves;
+pub use curves::{
+    Boundary, CompositeCurve, ContourSelection, CurveSelection, Helix, HelixInput, HelixPitch,
+    Loft, LoftEnd, OrderedFloat, ProfileSelection, ProjectedCurve, ProjectionMode, Sweep,
+    SweepOrientation,
+};
+pub mod equations;
 mod features;
 pub mod file;
 pub mod materials;
@@ -20,10 +31,11 @@ mod ops;
 mod resolve;
 pub mod units;
 
+pub use bodies::{BodyDisplay, BodyId, Combine, KeepSide, MoveBody, SolidBody, SplitBody};
 pub use build::{Body, Datum, FeatureStatus, Model, State};
 pub use features::*;
 pub use naming::Naming;
-pub use ops::{HoleDims, convert_edges, hole_dims};
+pub use ops::{CUT_REMOVES_NOTHING, HoleDims, convert_edges, hole_dims};
 pub use resolve::{Resolved, resolve};
 pub use units::Units;
 
@@ -31,35 +43,55 @@ pub use of_geom as geom;
 pub use of_sketch as sketch;
 
 use of_geom::DVec3;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 pub type FeatureId = u32;
 
 /// A reference to geometry, by stable name rather than kernel index.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Ref {
+    /// A whole solid body, by its stable ID from `doc.info` `bodies`.
+    Body { id: BodyId },
+    /// A face, edge or vertex of one body, as returned by selection.
+    BodyTopology {
+        body: BodyId,
+        kind: of_geom::Kind,
+        /// Stable topology name, such as `2.end` or `E(2.end|2.s5)`.
+        name: String,
+    },
+    /// The model origin point.
     Origin,
+    /// The XY plane.
     FrontPlane,
+    /// The XZ plane.
     TopPlane,
+    /// The YZ plane.
     RightPlane,
-    Face {
-        name: String,
-    },
-    Edge {
-        name: String,
-    },
-    Vertex {
-        name: String,
-    },
+    /// A face by stable name, such as `2.end`, from `doc.topology`.
+    Face { name: String },
+    /// An edge by stable name, such as `E(2.end|2.s5)`, from `doc.topology`.
+    Edge { name: String },
+    /// A vertex by stable name, from `doc.topology`.
+    Vertex { name: String },
     /// A reference plane, axis, point, coordinate system or sketch.
-    Feature {
-        id: FeatureId,
-    },
+    Feature { id: FeatureId },
     /// A point or line in a sketch.
     SketchEntity {
         sketch: FeatureId,
         entity: of_sketch::Id,
+    },
+    /// A generated segment with an unambiguous source-derived identity from the scene.
+    CurveSegment { curve: FeatureId, segment: String },
+    /// A complete contour with explicit direction and start/seam entity.
+    OrderedSketchContour(ContourSelection),
+    /// One complete sketch loop or open chain, identified by its member entity
+    /// IDs rather than a contour array index. Order does not affect identity.
+    SketchContour {
+        sketch: FeatureId,
+        #[schemars(length(min = 1))]
+        entities: Vec<of_sketch::Id>,
     },
 }
 
@@ -70,27 +102,97 @@ pub struct Feature {
     pub name: String,
     #[serde(default)]
     pub suppressed: bool,
+    /// None preserves legacy whole-part behavior; Some selects explicit bodies.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<Vec<BodyId>>,
     #[serde(flatten)]
     pub kind: FeatureKind,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+impl Feature {
+    pub fn depends_on(&self) -> Vec<FeatureId> {
+        let mut ids = self.kind.depends_on();
+        if let Some(scope) = &self.scope {
+            ids.extend(scope.iter().filter_map(BodyId::creator));
+        }
+        ids.sort_unstable();
+        ids.dedup();
+        ids
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum FeatureKind {
+    /// Replace a planar circular disk face with an exact spherical cap.
+    Dome(Dome),
+    /// A thin web from an open sketch, extended until it meets material.
+    Rib(Rib),
+    /// Wrap closed sketch regions onto a cylindrical face: emboss, deboss or scribe.
+    Wrap(Wrap),
+    /// Persistent thread annotation on a cylindrical face; does not change geometry.
+    CosmeticThread(CosmeticThread),
+    /// A modeled ISO-profile thread cut into a cylindrical face.
+    Thread(Thread),
+    /// A constrained spatial sketch, with independent XYZ points and curves.
+    Sketch3d(of_sketch::spatial::Sketch3D),
+    /// Split a face along a curve projected onto it.
+    SplitLine(ProjectedCurve),
+    /// Taper faces by `angle` about a neutral plane.
+    Draft(Draft),
+    /// Fillet one edge with radii varying between stations.
+    VariableFillet(VariableFillet),
+    /// Blend two sets of planar faces with a rolling-ball radius.
+    FaceFillet(FaceFillet),
+    /// A helical construction curve, usable as a sweep path.
+    Helix(Helix),
+    /// Join connected curves into one path.
+    CompositeCurve(CompositeCurve),
+    /// Project a sketch or curve onto a face along `direction`.
+    ProjectedCurve(ProjectedCurve),
+    /// Sweep a closed profile along a path; `cut` removes material.
+    Sweep(Sweep),
+    /// Loft through two or more closed profiles in order.
+    Loft(Loft),
+    /// A solid bounded by sections in one direction and crossing curves in the other.
+    Boundary(Boundary),
+    /// Boolean of bodies: fuse, cut (from the first) or common.
+    Combine(Combine),
+    /// Move, rotate or copy bodies.
+    MoveBody(MoveBody),
+    /// Split bodies with a plane.
+    SplitBody(SplitBody),
+    /// Sketches are created with `sketch.new` and edited with `sketch.edit`.
+    #[schemars(skip)]
     Sketch(SketchFeature),
+    /// A reference plane, defined by `mode`.
     Plane(PlaneDef),
+    /// A reference axis, defined by `mode`.
     Axis(AxisDef),
+    /// A reference point, defined by `mode`.
     Point(PointDef),
+    /// A coordinate system at a point.
     CoordSys(CoordSysDef),
+    /// Extrude a sketch's closed profiles: a boss, or a cut with `cut: true`.
     Extrude(Extrude),
+    /// Revolve a sketch's closed profiles about an axis.
     Revolve(Revolve),
+    /// Round edges, or every edge of the given faces, with a constant radius.
     Fillet(Fillet),
+    /// Bevel edges, or every edge of the given faces.
     Chamfer(Chamfer),
+    /// Hollow the part to `thickness`, removing the given faces.
     Shell(ShellDef),
+    /// Standard holes at each standalone point of a sketch.
     Hole(Hole),
+    /// Repeat features along one or two directions.
     LinearPattern(LinearPattern),
+    /// Repeat features around an axis.
     CircularPattern(CircularPattern),
+    /// Mirror features, or the whole body, about a plane.
     Mirror(MirrorDef),
+    /// Imported bodies come from the `import` method.
+    #[schemars(skip)]
     Import(Import),
 }
 
@@ -98,6 +200,29 @@ impl FeatureKind {
     /// Base for default feature names ("Boss-Extrude1", "Fillet2", ...).
     pub fn base_name(&self) -> &'static str {
         match self {
+            FeatureKind::Dome(_) => "Dome",
+            FeatureKind::Rib(_) => "Rib",
+            FeatureKind::Wrap(_) => "Wrap",
+            FeatureKind::CosmeticThread(_) => "Cosmetic Thread",
+            FeatureKind::Thread(_) => "Thread",
+            FeatureKind::Sketch3d(_) => "3D Sketch",
+            FeatureKind::SplitLine(_) => "Split Line",
+            FeatureKind::Draft(_) => "Draft",
+            FeatureKind::VariableFillet(_) => "Variable Fillet",
+            FeatureKind::FaceFillet(_) => "Face Fillet",
+            FeatureKind::Helix(_) => "Helix",
+            FeatureKind::CompositeCurve(_) => "Composite Curve",
+            FeatureKind::ProjectedCurve(_) => "Projected Curve",
+            FeatureKind::Sweep(p) if p.cut => "Swept Cut",
+            FeatureKind::Sweep(_) => "Sweep",
+            FeatureKind::Loft(p) if p.cut => "Lofted Cut",
+            FeatureKind::Loft(_) => "Loft",
+            FeatureKind::Boundary(p) if p.cut => "Boundary-Cut",
+            FeatureKind::Boundary(_) => "Boundary",
+            FeatureKind::Combine(_) => "Combine",
+            FeatureKind::MoveBody(p) if p.copy => "Copy Bodies",
+            FeatureKind::MoveBody(_) => "Move Bodies",
+            FeatureKind::SplitBody(_) => "Split Bodies",
             FeatureKind::Sketch(_) => "Sketch",
             FeatureKind::Plane(_) => "Plane",
             FeatureKind::Axis(_) => "Axis",
@@ -123,6 +248,61 @@ impl FeatureKind {
         let mut out = Vec::new();
         let mut refs: Vec<&Ref> = Vec::new();
         match self {
+            FeatureKind::Dome(p) => refs.push(&p.face),
+            FeatureKind::Thread(p) => refs.push(&p.face),
+            FeatureKind::CosmeticThread(p) => {
+                refs.push(&p.face);
+                // Legacy single-body cylinder faces carry the creating feature
+                // in their persistent topology name, such as "2.s1".
+                if let Ref::Face { name } = &p.face {
+                    out.extend(
+                        name.split('.')
+                            .next()
+                            .and_then(|prefix| prefix.parse::<FeatureId>().ok()),
+                    );
+                }
+            }
+            FeatureKind::Draft(p) => {
+                refs.extend(&p.faces);
+                refs.extend(&p.parting_line);
+                refs.push(&p.neutral_plane);
+                refs.extend(&p.direction);
+            }
+            FeatureKind::VariableFillet(p) => refs.push(&p.edge),
+            FeatureKind::FaceFillet(p) => refs.extend(p.faces1.iter().chain(&p.faces2)),
+            FeatureKind::Helix(p) => refs.push(&p.plane),
+            FeatureKind::CompositeCurve(p) => refs.extend(p.segments.iter().map(|s| &s.reference)),
+            FeatureKind::ProjectedCurve(p) | FeatureKind::SplitLine(p) => {
+                refs.extend([&p.source, &p.target])
+            }
+            FeatureKind::Sweep(p) => {
+                out.extend(p.profile.as_ref().map(ProfileSelection::sketch));
+                refs.extend(&p.guide);
+                refs.extend(&p.guide2);
+                out.extend(p.inner_profiles.iter().map(|profile| profile.sketch));
+                refs.push(&p.path);
+            }
+            FeatureKind::Loft(p) => {
+                out.extend(p.profiles.iter().map(ProfileSelection::sketch));
+                refs.extend(&p.guides);
+                refs.extend(&p.centerline);
+                for end in [&p.start, &p.end] {
+                    if let LoftEnd::Direction { direction, .. } = end {
+                        refs.push(direction);
+                    }
+                }
+            }
+            FeatureKind::Boundary(p) => {
+                out.extend(p.sections.iter().map(ProfileSelection::sketch));
+                refs.extend(&p.curves);
+            }
+            FeatureKind::Combine(p) => out.extend(p.bodies.iter().filter_map(BodyId::creator)),
+            FeatureKind::MoveBody(p) => out.extend(p.bodies.iter().filter_map(BodyId::creator)),
+            FeatureKind::SplitBody(p) => {
+                out.extend(p.bodies.iter().filter_map(BodyId::creator));
+                refs.push(&p.plane);
+                refs.extend(&p.tools);
+            }
             FeatureKind::Sketch(s) => refs.push(&s.plane),
             FeatureKind::Extrude(e) => {
                 out.push(e.sketch);
@@ -137,6 +317,14 @@ impl FeatureKind {
                 refs.extend(r.end2.as_ref().and_then(RevolveAngle::target));
             }
             FeatureKind::Hole(h) => out.push(h.sketch),
+            FeatureKind::Rib(r) => out.push(r.sketch),
+            FeatureKind::Wrap(w) => {
+                out.push(w.sketch);
+                refs.push(&w.face);
+            }
+            FeatureKind::Fillet(f) => refs.extend(f.edges.iter().chain(&f.faces)),
+            FeatureKind::Chamfer(c) => refs.extend(c.edges.iter().chain(&c.faces)),
+            FeatureKind::Shell(s) => refs.extend(&s.faces),
             FeatureKind::LinearPattern(p) => {
                 out.extend(&p.features);
                 refs.push(&p.direction1.reference);
@@ -163,7 +351,12 @@ impl FeatureKind {
         }
         for r in refs {
             match r {
-                Ref::Feature { id } | Ref::SketchEntity { sketch: id, .. } => out.push(*id),
+                Ref::Body { id } | Ref::BodyTopology { body: id, .. } => out.extend(id.creator()),
+                Ref::Feature { id }
+                | Ref::SketchEntity { sketch: id, .. }
+                | Ref::SketchContour { sketch: id, .. }
+                | Ref::CurveSegment { curve: id, .. }
+                | Ref::OrderedSketchContour(ContourSelection { sketch: id, .. }) => out.push(*id),
                 _ => {}
             }
         }
@@ -174,6 +367,14 @@ impl FeatureKind {
 /// The part document.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Document {
+    #[serde(default)]
+    pub configurations: configurations::Configurations,
+    #[serde(default)]
+    pub variables: std::collections::BTreeMap<String, String>,
+    #[serde(default)]
+    pub equations: std::collections::BTreeMap<String, String>,
+    #[serde(default)]
+    pub body_display: std::collections::BTreeMap<BodyId, BodyDisplay>,
     pub units: Units,
     /// Material name from [`materials::LIBRARY`], or a custom density.
     #[serde(default)]
@@ -188,6 +389,10 @@ pub struct Document {
 impl Default for Document {
     fn default() -> Self {
         Document {
+            configurations: Default::default(),
+            variables: Default::default(),
+            equations: Default::default(),
+            body_display: Default::default(),
             units: Units::default(),
             material: None,
             features: Vec::new(),
@@ -206,6 +411,34 @@ pub enum ModelError {
 }
 
 impl Document {
+    /// Validate persistent identity before any geometry is rebuilt.
+    pub fn validate(&self) -> Result<(), String> {
+        self.configurations.validate()?;
+        if self
+            .variables
+            .keys()
+            .any(|name| !equations::valid_variable(name))
+        {
+            return Err("invalid or reserved global variable name".into());
+        }
+        let mut ids = std::collections::HashSet::new();
+        for f in &self.features {
+            if f.id == 0 || f.id == FeatureId::MAX || !ids.insert(f.id) {
+                return Err(format!("invalid or duplicate feature id {}", f.id));
+            }
+        }
+        if self.next_id == 0
+            || self.next_id == FeatureId::MAX
+            || self.features.iter().any(|f| f.id >= self.next_id)
+        {
+            return Err("next feature id must be greater than existing ids".into());
+        }
+        if self.rollback.is_some_and(|r| r > self.features.len()) {
+            return Err("rollback position is outside the feature tree".into());
+        }
+        Ok(())
+    }
+
     pub fn new() -> Document {
         Document::default()
     }
@@ -247,6 +480,7 @@ impl Document {
                 id,
                 name,
                 suppressed: false,
+                scope: None,
                 kind,
             },
         );
@@ -264,7 +498,7 @@ impl Document {
                 .features
                 .iter()
                 .filter(|f| !doomed.contains(&f.id))
-                .filter(|f| f.kind.depends_on().iter().any(|d| doomed.contains(d)))
+                .filter(|f| f.depends_on().iter().any(|d| doomed.contains(d)))
                 .map(|f| f.id)
                 .collect();
             if more.is_empty() {
@@ -280,6 +514,17 @@ impl Document {
             *r -= before;
         }
         self.features.retain(|f| !doomed.contains(&f.id));
+        for config in &mut self.configurations.items {
+            config.suppressed.retain(|id, _| !doomed.contains(id));
+            config
+                .parameters
+                .retain(|key, _| !doomed.iter().any(|id| key.starts_with(&format!("f{id}."))));
+            config
+                .equations
+                .retain(|key, _| !doomed.iter().any(|id| key.starts_with(&format!("f{id}."))));
+        }
+        self.equations
+            .retain(|key, _| !doomed.iter().any(|id| key.starts_with(&format!("f{id}."))));
         doomed
     }
 
@@ -291,7 +536,7 @@ impl Document {
         let f = trial.remove(from);
         trial.insert(to.min(trial.len()), f);
         for (i, f) in trial.iter().enumerate() {
-            for d in f.kind.depends_on() {
+            for d in f.depends_on() {
                 if !trial[..i].iter().any(|g| g.id == d) {
                     return Err(ModelError::Invalid(format!(
                         "{} must come after the features it uses",

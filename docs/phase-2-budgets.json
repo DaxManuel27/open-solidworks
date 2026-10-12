@@ -1,0 +1,261 @@
+{
+  "recorded_at_utc": "2026-10-12T03:09:47.275Z",
+  "machine": "Apple M3 Max, darwin arm64",
+  "build_profile": "debug",
+  "rule": "Each budget is three times the slowest of three five-sample medians (at least 50 ms); memory is one and a half times the largest peak RSS. Scale with OPENFORGE_BUDGET_SCALE on slower machines.",
+  "budgets": {
+    "straight_spatial_sweep": {
+      "startup_open_ms": 230,
+      "feature_rebuild_rpc_ms": 50,
+      "preview_rpc_ms": 50,
+      "peak_rss_mib": 60,
+      "observed_median_ms": {
+        "startup_open": [
+          72.43,
+          76.47,
+          74.11
+        ],
+        "feature_rebuild_rpc": [
+          2.92,
+          2.95,
+          3.13
+        ],
+        "preview_rpc": [
+          2.66,
+          2.88,
+          3.7
+        ]
+      }
+    },
+    "hollow_spatial_sweep": {
+      "startup_open_ms": 250,
+      "feature_rebuild_rpc_ms": 50,
+      "preview_rpc_ms": 50,
+      "peak_rss_mib": 60,
+      "observed_median_ms": {
+        "startup_open": [
+          80.94,
+          82.62,
+          82.31
+        ],
+        "feature_rebuild_rpc": [
+          9.48,
+          9.3,
+          9.74
+        ],
+        "preview_rpc": [
+          9.45,
+          9.41,
+          9.55
+        ]
+      }
+    },
+    "spherical_cap_dome": {
+      "startup_open_ms": 280,
+      "feature_rebuild_rpc_ms": 60,
+      "preview_rpc_ms": 60,
+      "peak_rss_mib": 70,
+      "observed_median_ms": {
+        "startup_open": [
+          87.27,
+          90.95,
+          89.05
+        ],
+        "feature_rebuild_rpc": [
+          17.93,
+          19.24,
+          18.39
+        ],
+        "preview_rpc": [
+          17.16,
+          18.37,
+          17.4
+        ]
+      }
+    },
+    "modeled_thread": {
+      "startup_open_ms": 4560,
+      "feature_rebuild_rpc_ms": 4280,
+      "preview_rpc_ms": 4300,
+      "peak_rss_mib": 190,
+      "observed_median_ms": {
+        "startup_open": [
+          1479.55,
+          1517.77,
+          1489.76
+        ],
+        "feature_rebuild_rpc": [
+          1424,
+          1423.2,
+          1417.17
+        ],
+        "preview_rpc": [
+          1432.75,
+          1421.76,
+          1422.08
+        ]
+      }
+    },
+    "housing_rib": {
+      "startup_open_ms": 320,
+      "feature_rebuild_rpc_ms": 70,
+      "preview_rpc_ms": 70,
+      "peak_rss_mib": 70,
+      "observed_median_ms": {
+        "startup_open": [
+          105.62,
+          104.59,
+          106.25
+        ],
+        "feature_rebuild_rpc": [
+          20.3,
+          21.04,
+          20.31
+        ],
+        "preview_rpc": [
+          20.48,
+          20.43,
+          20.12
+        ]
+      }
+    },
+    "cylinder_wrap": {
+      "startup_open_ms": 270,
+      "feature_rebuild_rpc_ms": 50,
+      "preview_rpc_ms": 50,
+      "peak_rss_mib": 80,
+      "observed_median_ms": {
+        "startup_open": [
+          88.95,
+          86.2,
+          86.07
+        ],
+        "feature_rebuild_rpc": [
+          15.42,
+          13.92,
+          14.65
+        ],
+        "preview_rpc": [
+          14.04,
+          13.76,
+          13.26
+        ]
+      }
+    },
+    "boundary_prism": {
+      "startup_open_ms": 480,
+      "feature_rebuild_rpc_ms": 250,
+      "preview_rpc_ms": 250,
+      "peak_rss_mib": 100,
+      "observed_median_ms": {
+        "startup_open": [
+          157.33,
+          150.98,
+          150.19
+        ],
+        "feature_rebuild_rpc": [
+          81.11,
+          79.52,
+          80.12
+        ],
+        "preview_rpc": [
+          81.16,
+          79.89,
+          79.61
+        ]
+      }
+    },
+    "scaled_guide_sweep": {
+      "startup_open_ms": 330,
+      "feature_rebuild_rpc_ms": 110,
+      "preview_rpc_ms": 110,
+      "peak_rss_mib": 70,
+      "observed_median_ms": {
+        "startup_open": [
+          107.31,
+          104.42,
+          104.11
+        ],
+        "feature_rebuild_rpc": [
+          34.7,
+          33.82,
+          33.42
+        ],
+        "preview_rpc": [
+          33.23,
+          32.72,
+          33.38
+        ]
+      }
+    },
+    "tangent_loft": {
+      "startup_open_ms": 480,
+      "feature_rebuild_rpc_ms": 290,
+      "preview_rpc_ms": 300,
+      "peak_rss_mib": 80,
+      "observed_median_ms": {
+        "startup_open": [
+          158.98,
+          155.93,
+          156.73
+        ],
+        "feature_rebuild_rpc": [
+          96.08,
+          83.25,
+          82.95
+        ],
+        "preview_rpc": [
+          98.68,
+          83.01,
+          83.27
+        ]
+      }
+    },
+    "centerline_loft": {
+      "startup_open_ms": 240,
+      "feature_rebuild_rpc_ms": 50,
+      "preview_rpc_ms": 50,
+      "peak_rss_mib": 60,
+      "observed_median_ms": {
+        "startup_open": [
+          79.56,
+          78.79,
+          78.88
+        ],
+        "feature_rebuild_rpc": [
+          7.47,
+          7.14,
+          6.71
+        ],
+        "preview_rpc": [
+          7.14,
+          6.57,
+          6.81
+        ]
+      }
+    },
+    "dome_geodesic_wrap": {
+      "startup_open_ms": 830,
+      "feature_rebuild_rpc_ms": 590,
+      "preview_rpc_ms": 580,
+      "peak_rss_mib": 90,
+      "observed_median_ms": {
+        "startup_open": [
+          276.49,
+          274.31,
+          274.85
+        ],
+        "feature_rebuild_rpc": [
+          193.39,
+          191.89,
+          191.39
+        ],
+        "preview_rpc": [
+          191.61,
+          190.54,
+          191.59
+        ]
+      }
+    }
+  }
+}

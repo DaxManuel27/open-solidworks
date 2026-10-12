@@ -9,6 +9,7 @@ mod constraint;
 pub mod geom2;
 mod profile;
 mod solver;
+pub mod spatial;
 pub mod tools;
 
 pub use constraint::{Constraint, ConstraintKind};
