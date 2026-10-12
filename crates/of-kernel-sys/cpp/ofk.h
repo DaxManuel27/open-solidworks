@@ -39,12 +39,30 @@ struct BBox;
 struct FaceInfo;
 struct EdgeInfo;
 struct Distance;
+struct StepNode;
 
 class Shape {
 public:
   Shape() = default;
   explicit Shape(TopoDS_Shape s) : shape(std::move(s)) {}
   TopoDS_Shape shape;
+};
+
+// Assembly STEP writer and reader; their XCAF state lives in assembly.cpp.
+class StepAssembly {
+public:
+  struct Impl;
+  StepAssembly();
+  ~StepAssembly();
+  std::unique_ptr<Impl> impl;
+};
+
+class StepRead {
+public:
+  struct Impl;
+  StepRead();
+  ~StepRead();
+  std::unique_ptr<Impl> impl;
 };
 
 std::unique_ptr<Shape> null_shape();
@@ -138,5 +156,19 @@ std::unique_ptr<Shape> read_step(rust::Str path);
 void write_iges(const Shape &s, rust::Str path);
 std::unique_ptr<Shape> read_iges(rust::Str path);
 void write_stl(const Shape &s, rust::Str path, double linear, double angular, bool ascii);
+
+std::unique_ptr<Shape> located(const Shape &s, rust::Slice<const double> m);
+double common_volume(const Shape &a, const Shape &b);
+std::unique_ptr<Shape> common_shape(const Shape &a, const Shape &b);
+std::unique_ptr<StepAssembly> step_assembly_new(rust::Str name);
+uint32_t step_assembly_part(StepAssembly &a, rust::Str name, const Shape &s);
+uint32_t step_assembly_node(StepAssembly &a, rust::Str name);
+void step_assembly_place(StepAssembly &a, uint32_t parent, uint32_t child, rust::Str name,
+                         rust::Slice<const double> m);
+void step_assembly_write(StepAssembly &a, rust::Str path);
+std::unique_ptr<StepRead> step_read(rust::Str path);
+uint32_t step_read_count(const StepRead &r);
+StepNode step_read_node(const StepRead &r, uint32_t i);
+std::unique_ptr<Shape> step_read_shape(const StepRead &r, uint32_t i);
 
 } // namespace ofk

@@ -55,6 +55,18 @@ pub mod ffi {
     /// Triangles grouped by face and polylines grouped by edge.
     /// `face_tri_start[i]..face_tri_start[i + 1]` are face i's triangles;
     /// `edge_start[i]..edge_start[i + 1]` are edge i's points.
+    /// One instance in a STEP product structure: its parent node (-1 for a
+    /// root), instance name, definition name, whether it is an assembly and
+    /// its row-major 3x4 placement in the parent.
+    #[derive(Debug, Clone)]
+    struct StepNode {
+        parent: i64,
+        name: String,
+        part: String,
+        assembly: bool,
+        matrix: Vec<f64>,
+    }
+
     #[derive(Debug, Clone, Default)]
     struct Mesh {
         positions: Vec<f32>,
@@ -391,6 +403,37 @@ pub mod ffi {
         fn write_iges(s: &Shape, path: &str) -> Result<()>;
         fn read_iges(path: &str) -> Result<UniquePtr<Shape>>;
         fn write_stl(s: &Shape, path: &str, linear: f64, angular: f64, ascii: bool) -> Result<()>;
+
+        /// The shape placed by a row-major 3x4 rigid transform, sharing its
+        /// geometry (no copy): for interference checks and assembly export.
+        fn located(s: &Shape, matrix: &[f64]) -> Result<UniquePtr<Shape>>;
+        /// Volume shared by two solids (0 when their boxes don't overlap).
+        fn common_volume(a: &Shape, b: &Shape) -> Result<f64>;
+        fn common_shape(a: &Shape, b: &Shape) -> Result<UniquePtr<Shape>>;
+
+        /// A STEP file with product structure. Label 0 is the root assembly.
+        type StepAssembly;
+        fn step_assembly_new(name: &str) -> Result<UniquePtr<StepAssembly>>;
+        /// Add a part definition; returns its label.
+        fn step_assembly_part(a: Pin<&mut StepAssembly>, name: &str, s: &Shape) -> Result<u32>;
+        /// Add an (empty) subassembly definition; returns its label.
+        fn step_assembly_node(a: Pin<&mut StepAssembly>, name: &str) -> Result<u32>;
+        /// Place `child` inside `parent` by a row-major 3x4 transform.
+        fn step_assembly_place(
+            a: Pin<&mut StepAssembly>,
+            parent: u32,
+            child: u32,
+            name: &str,
+            matrix: &[f64],
+        ) -> Result<()>;
+        fn step_assembly_write(a: Pin<&mut StepAssembly>, path: &str) -> Result<()>;
+
+        /// A STEP file read with its product structure, as instance nodes.
+        type StepRead;
+        fn step_read(path: &str) -> Result<UniquePtr<StepRead>>;
+        fn step_read_count(r: &StepRead) -> u32;
+        fn step_read_node(r: &StepRead, i: u32) -> Result<StepNode>;
+        fn step_read_shape(r: &StepRead, i: u32) -> Result<UniquePtr<Shape>>;
     }
 }
 

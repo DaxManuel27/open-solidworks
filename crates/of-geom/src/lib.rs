@@ -6,10 +6,12 @@
 //! shape; `of-model` maps them to stable names across rebuilds using the
 //! [`History`] every operation returns.
 
+mod assembly;
 mod curves;
 mod plane;
 mod profile;
 
+pub use assembly::{STEP_ROOT, StepAssemblyWriter, StepInstance, read_step_assembly};
 pub use curves::{Curve3, EndTangent};
 pub use glam::{DAffine3, DMat3, DVec2, DVec3};
 pub use plane::Plane;

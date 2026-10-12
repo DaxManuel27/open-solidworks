@@ -145,3 +145,53 @@ pub fn r(component: &str, entity: Ref) -> CompRef {
 pub fn assert_close(a: f64, b: f64, tol: f64) {
     assert!((a - b).abs() <= tol, "{a} vs {b}");
 }
+
+/// A block with a through slot from `c0` to `c1` (centers) of `width`.
+pub fn slot_plate_doc(
+    w: f64,
+    d: f64,
+    h: f64,
+    c0: (f64, f64),
+    c1: (f64, f64),
+    width: f64,
+) -> Document {
+    let mut doc = block_doc(w, d, h);
+    let mut sk = Sketch::new();
+    tools::straight_slot(
+        &mut sk,
+        DVec2::new(c0.0, c0.1),
+        DVec2::new(c1.0, c1.1),
+        width,
+    )
+    .unwrap();
+    let s = doc.add(FeatureKind::Sketch(SketchFeature {
+        plane: Ref::FrontPlane,
+        sketch: sk,
+    }));
+    doc.add(extrude(s, 0.0, true));
+    doc
+}
+
+/// A plate with a hole at (x, y) repeated `count` times along X by `spacing`
+/// with a linear pattern feature. Returns the document and the pattern ID.
+pub fn patterned_plate_doc(
+    x: f64,
+    y: f64,
+    r: f64,
+    spacing: f64,
+    count: u32,
+) -> (Document, FeatureId) {
+    let mut doc = plate_doc(200.0, 60.0, 10.0, &[(x, y, r)]);
+    let cut = doc.features.last().unwrap().id;
+    let id = doc.add(FeatureKind::LinearPattern(LinearPattern {
+        features: vec![cut],
+        direction1: PatternDirection {
+            reference: Ref::RightPlane,
+            spacing,
+            count,
+            reverse: false,
+        },
+        direction2: None,
+    }));
+    (doc, id)
+}

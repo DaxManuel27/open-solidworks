@@ -3,9 +3,13 @@
 //! materials. Parts are loaded from their `.ofp` files and built once per
 //! configuration; mates are solved by `of-mate`.
 
+pub mod analysis;
 mod assembly;
+pub mod bom;
 pub mod cache;
 pub mod document;
+pub mod exchange;
+pub mod explode;
 pub mod file;
 pub mod geometry;
 pub mod mates;

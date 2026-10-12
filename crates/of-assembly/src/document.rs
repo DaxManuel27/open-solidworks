@@ -575,6 +575,9 @@ pub struct AssemblyDocument {
     /// Assembly custom properties (`Description`, `PartNo`, ...).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub properties: BTreeMap<String, String>,
+    /// Interferences the user chose to ignore, as sorted component key paths.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ignored_interferences: Vec<[String; 2]>,
     pub next_id: u32,
 }
 
@@ -590,6 +593,7 @@ impl Default for AssemblyDocument {
             active_configuration: 1,
             reference: Document::default(),
             properties: BTreeMap::new(),
+            ignored_interferences: Vec::new(),
             next_id: 1,
         }
     }

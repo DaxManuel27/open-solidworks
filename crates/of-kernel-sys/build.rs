@@ -27,6 +27,10 @@ const CORE_LIBS: &[&str] = &[
     "TKMesh",
     "TKFeat",
     "TKXSBase",
+    "TKCDF",
+    "TKLCAF",
+    "TKCAF",
+    "TKXCAF",
 ];
 const DE_LIBS: &[&str] = &["TKDE", "TKDESTEP", "TKDEIGES", "TKDESTL"];
 const LEGACY_DE_LIBS: &[&str] = &[
@@ -36,6 +40,7 @@ const LEGACY_DE_LIBS: &[&str] = &[
     "TKSTEP209",
     "TKIGES",
     "TKSTL",
+    "TKXDESTEP",
 ];
 
 fn main() {
@@ -63,6 +68,7 @@ fn main() {
         .file("cpp/boundary.cpp")
         .file("cpp/thread.cpp")
         .file("cpp/skin.cpp")
+        .file("cpp/assembly.cpp")
         .include(&include)
         .std("c++17")
         .flag_if_supported("-Wno-unused-parameter")
@@ -93,6 +99,7 @@ fn main() {
     println!("cargo:rerun-if-changed=cpp/boundary.cpp");
     println!("cargo:rerun-if-changed=cpp/thread.cpp");
     println!("cargo:rerun-if-changed=cpp/skin.cpp");
+    println!("cargo:rerun-if-changed=cpp/assembly.cpp");
     println!("cargo:rerun-if-changed=src/lib.rs");
     println!("cargo:rerun-if-changed=src/probes.rs");
     println!("cargo:rerun-if-changed=cpp/probes.h");
