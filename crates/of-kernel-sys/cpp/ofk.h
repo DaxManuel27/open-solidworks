@@ -40,6 +40,7 @@ struct FaceInfo;
 struct EdgeInfo;
 struct Distance;
 struct StepNode;
+struct HlrEdge;
 
 class Shape {
 public:
@@ -170,5 +171,8 @@ std::unique_ptr<StepRead> step_read(rust::Str path);
 uint32_t step_read_count(const StepRead &r);
 StepNode step_read_node(const StepRead &r, uint32_t i);
 std::unique_ptr<Shape> step_read_shape(const StepRead &r, uint32_t i);
+rust::Vec<HlrEdge> hlr(const Shape &s, const Frame &view, bool exact, bool hidden,
+                       double deflection);
+rust::Vec<uint32_t> seam_edges(const Shape &s, const Vec3 &view);
 
 } // namespace ofk

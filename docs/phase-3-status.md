@@ -86,5 +86,9 @@ isolate, hole alignment, assembly visualization, save assembly as part, motion s
 
 ## Hosted CI
 
-Not yet run for `phase-3`. The workflow adds the assembly performance budget step; the
-existing steps run the new tests, conformance checks and the assembly smoke scenario.
+`phase-3` was merged into `main` as PR #4 (merge `bfd9a03`). Its run (38297867137)
+stopped at clippy on all three platforms: clippy 1.99 reports `clone_on_copy` in the
+code cxx generates for `StepNode` in `of-kernel-sys`. Commit `229da3b` on `main`
+allows the lint there, as was already done for `MassProps`, and run 38327262287 on
+that commit passed every step (tests, conformance, budgets and the desktop smoke
+including the assembly scenario) on macOS, Windows and Linux.

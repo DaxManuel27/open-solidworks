@@ -52,9 +52,6 @@ pub mod ffi {
         to: u32,
     }
 
-    /// Triangles grouped by face and polylines grouped by edge.
-    /// `face_tri_start[i]..face_tri_start[i + 1]` are face i's triangles;
-    /// `edge_start[i]..edge_start[i + 1]` are edge i's points.
     /// One instance in a STEP product structure: its parent node (-1 for a
     /// root), instance name, definition name, whether it is an assembly and
     /// its row-major 3x4 placement in the parent.
@@ -69,6 +66,9 @@ pub mod ffi {
         matrix: Vec<f64>,
     }
 
+    /// Triangles grouped by face and polylines grouped by edge.
+    /// `face_tri_start[i]..face_tri_start[i + 1]` are face i's triangles;
+    /// `edge_start[i]..edge_start[i + 1]` are edge i's points.
     #[derive(Debug, Clone, Default)]
     struct Mesh {
         positions: Vec<f32>,
@@ -126,6 +126,21 @@ pub mod ffi {
         axis: Vec3,
         radius: f64,
         closed: bool,
+    }
+
+    /// One edge of a hidden-line projection, in the view plane's 2D
+    /// coordinates. Categories: 0 sharp, 1 smooth (tangent), 2 seam or other
+    /// higher-continuity edge, 3 outline (silhouette). Kinds: 0 line
+    /// `[x0 y0 x1 y1]`, 1 counter-clockwise arc `[cx cy r a0 a1]` with
+    /// `a1 > a0`, 2 polyline `[x0 y0 x1 y1 ...]`.
+    // cxx 1.0.198 clones every field in non-Copy structs, including Copy fields.
+    #[allow(clippy::clone_on_copy)]
+    #[derive(Debug, Clone, PartialEq)]
+    struct HlrEdge {
+        visible: bool,
+        category: u8,
+        kind: u8,
+        data: Vec<f64>,
     }
 
     #[derive(Debug, Clone, Copy, Default)]
@@ -399,6 +414,15 @@ pub mod ffi {
         fn edge_info(s: &Shape, edge: u32) -> Result<EdgeInfo>;
         fn vertex_point(s: &Shape, vertex: u32) -> Result<Vec3>;
         fn distance(a: &Shape, b: &Shape) -> Result<Distance>;
+        /// Hidden-line removal looking along `-view.normal` (the normal points
+        /// at the viewer), with `view.x_dir` to the right on paper. `exact`
+        /// uses the analytic algorithm, otherwise the polygonal one on a mesh
+        /// of `deflection`. Hidden edges are returned only when `hidden`.
+        fn hlr(s: &Shape, view: &Frame, exact: bool, hidden: bool, deflection: f64)
+        -> Result<Vec<HlrEdge>>;
+        /// Edges a face meets itself along (cylinder seams), possibly
+        /// repeated, except those on the silhouette seen along `view`.
+        fn seam_edges(s: &Shape, view: &Vec3) -> Vec<u32>;
 
         fn write_step(s: &Shape, path: &str) -> Result<()>;
         fn read_step(path: &str) -> Result<UniquePtr<Shape>>;
