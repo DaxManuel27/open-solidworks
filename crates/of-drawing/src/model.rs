@@ -9,7 +9,7 @@ use std::rc::Rc;
 use of_assembly::cache::{Cache, Part, canonical};
 use of_assembly::{Assembly, CompRef, Loaded, Pose};
 use of_model::geom::{DAffine3, Kind, Shape};
-use of_model::{Ref, State};
+use of_model::Ref;
 
 /// One part placed in a view's model: a part view has one piece with an
 /// empty component path.
@@ -57,13 +57,6 @@ impl Scene {
         let p = self.piece(&r.component)?;
         let (kind, i) = p.part.state().index_of(&r.entity).ok()?;
         (kind == Kind::Edge).then_some(p.first_edge + i)
-    }
-
-    /// Edge reference resolved to world space: the piece's pose and the
-    /// part state.
-    pub fn locate(&self, r: &CompRef) -> Option<(&State, Pose)> {
-        let p = self.piece(&r.component)?;
-        Some((p.part.state(), p.pose))
     }
 }
 
@@ -243,6 +236,41 @@ impl Sources {
             is_assembly: true,
             explode_lines: lines,
         })
+    }
+
+    /// The part an entity reference points into and where it sits, without
+    /// combining the model's shapes.
+    pub fn locate(
+        &mut self,
+        path: &Path,
+        configuration: Option<u32>,
+        exploded: bool,
+        r: &CompRef,
+    ) -> Result<(Rc<Part>, Pose), String> {
+        if !is_assembly(path) {
+            if !r.component.is_empty() {
+                return Err("a part view has no components".into());
+            }
+            return Ok((self.part(path, configuration)?, Pose::IDENTITY));
+        }
+        let asm = self.assembly(path, configuration)?;
+        let instances = asm.instances();
+        let i = instances
+            .iter()
+            .find(|i| i.key == r.component)
+            .ok_or("the component is not in the assembly")?;
+        let Loaded::Part(part) = &i.loaded else {
+            return Err("the component is not a part".into());
+        };
+        let mut pose = i.pose;
+        if exploded {
+            let steps = asm.doc.active().explode.clone();
+            let e = of_assembly::explode::explode(&instances, &steps, None);
+            if let Some(p) = e.poses.get(&i.key) {
+                pose = *p;
+            }
+        }
+        Ok((part.clone(), pose))
     }
 
     /// Forget a file so it reloads on next use.

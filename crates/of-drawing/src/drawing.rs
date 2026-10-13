@@ -141,11 +141,11 @@ impl Drawing {
     }
 
     /// Follow a view's parent chain to its frame, scale and model.
-    pub fn resolve(&self, sheet: &Sheet, id: u32) -> Result<Resolved, String> {
+    pub fn resolve(&mut self, sheet: &Sheet, id: u32) -> Result<Resolved, String> {
         self.resolve_depth(sheet, id, 0)
     }
 
-    fn resolve_depth(&self, sheet: &Sheet, id: u32, depth: usize) -> Result<Resolved, String> {
+    fn resolve_depth(&mut self, sheet: &Sheet, id: u32, depth: usize) -> Result<Resolved, String> {
         if depth > sheet.views.len() {
             return Err("views form a cycle".into());
         }
@@ -259,17 +259,16 @@ impl Drawing {
 
     /// Paper direction of a straight model edge seen in a view.
     fn edge_direction(
-        &self,
+        &mut self,
         view: &Resolved,
         edge: &of_assembly::CompRef,
     ) -> Result<DVec2, String> {
-        // Needs the model loaded; resolving is read-only on the cache.
         let path = self.model_path(&view.model);
-        let mut sources = Sources::default();
-        let scene = sources.scene(&path, view.model.configuration, view.exploded, &[])?;
-        let (state, pose) = scene
-            .locate(edge)
-            .ok_or("the auxiliary view's edge is not in the model")?;
+        let (part, pose) = self
+            .sources
+            .locate(&path, view.model.configuration, view.exploded, edge)
+            .map_err(|e| format!("the auxiliary view's edge: {e}"))?;
+        let state = part.state();
         let (_, i) = state.index_of(&edge.entity).map_err(|e| e.to_string())?;
         let body = state
             .body
@@ -544,7 +543,7 @@ impl Drawing {
     }
 
     /// Sheet position of an anchor.
-    pub fn anchor_point(&self, sheet: &Sheet, a: &Anchor) -> Option<P2> {
+    pub fn anchor_point(&mut self, sheet: &Sheet, a: &Anchor) -> Option<P2> {
         match a {
             Anchor::Sheet { at } => Some(*at),
             Anchor::Model { target, at } => {

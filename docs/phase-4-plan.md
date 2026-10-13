@@ -94,7 +94,7 @@ given with the plan):
 | DWG export | DXF only for now. DWG is deferred | No open-source DWG writer is compatible with Apache-2.0/MIT: LibreDWG is GPL-3.0 and the ODA SDK is proprietary. DXF is readable by every tool that reads DWG |
 | PDF writer | Native Rust (`pdf-writer`, MIT/Apache) from the sheet display list | Works headless from CLI/MCP; vector output with embedded fonts; avoids Chromium print differences between platforms |
 | Drafting font | DejaVu Sans Condensed (Bitstream Vera licence, permissive) for text; drafting and GD&T symbols drawn as OpenForge strokes, since no permissive font has them all | Output must be identical on every platform and embeddable in PDF/DXF |
-| Hidden-line removal | OCCT exact `HLRBRep_Algo` for final output and polygonal `HLRBRep_PolyAlgo` for interactive preview if exact misses the budget, settled by P4.0 measurements | Exact HLR is the main performance risk of this phase |
+| Hidden-line removal | OCCT exact `HLRBRep_Algo` for every view. Measured in P4.0 (below): exact is faster than polygonal `HLRBRep_PolyAlgo` on every fixture view and gives far fewer curves, so no preview mode is used; `HlrQuality::Preview` stays available in `of-geom` | Exact HLR was the main performance risk of this phase |
 | Driving dimensions | Editing an imported model dimension changes the part through the part's own document and saves it, reloading dependants as Phase 3 does | Matches the spec's associativity without a second editing path |
 
 ## Milestones and dependencies
@@ -149,6 +149,30 @@ record results:
 | Traceability | Every output curve maps back to a model edge name or is marked silhouette |
 | Speed | Single part view and full gearbox view, debug and release; preview (interactive) and final quality |
 | Caching | Results keyed by (model cache key, configuration, orientation, quality), so moving a view never recomputes it |
+
+**HLR measurements** (Apple M3 Max, `cargo test -p of-drawing --test
+hlr_timing -- --ignored --nocapture`; times include source tracing and covered-line
+removal; hidden lines on). The fixtures stand in for the Phase 3 gearbox, which
+exists only as a plan scenario: a 240 × 120 × 90 shelled housing with filleted
+edges, three shaft bores and 16 bolt holes (29 faces, 77 edges), and an assembly of
+it with three shafts, three gear blanks and 16 bolts (23 parts, 143 edges).
+Preview uses a 0.1 mm mesh deflection.
+
+| Model, view | Exact debug | Preview debug | Exact release | Preview release | Curves exact / preview |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Housing, front | 19 ms | 113 ms | 11 ms | 30 ms | 26 / 726 |
+| Housing, top | 12 ms | 90 ms | 8 ms | 16 ms | 34 / 93 |
+| Housing, right | 28 ms | 253 ms | 17 ms | 32 ms | 15 / 57 |
+| Housing, isometric | 25 ms | 66 ms | 9 ms | 22 ms | 173 / 1278 |
+| Gearbox, front | 53 ms | 359 ms | 18 ms | 63 ms | 48 / 1104 |
+| Gearbox, top | 30 ms | 197 ms | 22 ms | 36 ms | 117 / 577 |
+| Gearbox, right | 66 ms | 535 ms | 38 ms | 71 ms | 67 / 349 |
+| Gearbox, isometric | 85 ms | 206 ms | 30 ms | 48 ms | 379 / 2772 |
+
+Budgets for `docs/phase-4-budgets.json` (debug, before the CI scale factor): a
+single part view under 100 ms, an assembly view under 250 ms. Results are cached
+per scene, direction and accuracy, so moving a view never recomputes it (tested in
+`of-drawing/tests/render.rs`).
 
 **Section prototype.** Cut the shape with a half-space (`BRepAlgoAPI_Cut`), take the
 cut faces for hatching, and run HLR on the remainder; confirm aligned and offset

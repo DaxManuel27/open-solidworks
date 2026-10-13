@@ -533,3 +533,46 @@ fn a_rendered_sheet_exports_to_pdf_and_dxf() {
         .count();
     assert!(circles >= 1, "{circles}");
 }
+
+#[test]
+fn auxiliary_views_fold_about_a_parent_edge() {
+    let dir = Scratch::new("aux");
+    let path = plate(&dir);
+    let mut d = drawing(vec![sheet(
+        Projection::First,
+        vec![model_view(FRONT, &path, Orientation::Front, [150.0, 180.0])],
+    )]);
+    let r = d.render(SHEET).unwrap();
+    // The plate's bottom edge, a horizontal line at y = 180.
+    let edge = of_view(&r.graphics.items, FRONT)
+        .into_iter()
+        .find_map(|i| match (&i.prim, &i.owner) {
+            (Prim::Line { a, b }, Owner::View { entity, .. })
+                if (a[1] - 180.0).abs() < 1e-6 && (b[1] - 180.0).abs() < 1e-6 =>
+            {
+                entity.clone()
+            }
+            _ => None,
+        })
+        .expect("the bottom edge");
+    // Placed below the front view and folded about that edge, it looks the
+    // way a projected view below does: in first angle, down from the top.
+    d.doc.sheets[0].views.push(View::new(
+        RIGHT,
+        "Auxiliary".into(),
+        ViewKind::Auxiliary {
+            parent: FRONT,
+            edge,
+            flip: false,
+        },
+        [170.0, 120.0],
+    ));
+    let r = d.render(SHEET).unwrap();
+    let aux = r.views.iter().find(|v| v.id == RIGHT).unwrap();
+    assert_eq!(aux.error, None);
+    assert!(toward(&r, RIGHT).abs_diff_eq(DVec3::Y, 1e-9));
+    // Aligned: it keeps the parent's x range.
+    let b = extent(&of_view(&r.graphics.items, RIGHT));
+    assert_close(b[0][0], 150.0, 1e-6);
+    assert_close(b[1][0], 250.0, 1e-6);
+}
