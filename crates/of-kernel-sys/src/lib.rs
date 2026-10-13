@@ -58,6 +58,8 @@ pub mod ffi {
     /// One instance in a STEP product structure: its parent node (-1 for a
     /// root), instance name, definition name, whether it is an assembly and
     /// its row-major 3x4 placement in the parent.
+    // cxx 1.0.198 clones every field in non-Copy structs, including Copy fields.
+    #[allow(clippy::clone_on_copy)]
     #[derive(Debug, Clone)]
     struct StepNode {
         parent: i64,
