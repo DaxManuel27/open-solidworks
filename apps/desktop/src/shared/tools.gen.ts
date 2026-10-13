@@ -5,6 +5,28 @@
 /** Direction sense for mates between oriented entities. */
 export type Alignment = 'aligned' | 'anti_aligned' | 'closest'
 
+/** Where an annotation is attached. */
+export type Anchor =
+  | {
+    type: 'sheet'
+    at: [number, number]
+  }
+  | {
+    type: 'model'
+    target: ViewRef
+    at: [number, number]
+  }
+
+export type AnnotationKind =
+  | {
+    type: 'note'
+    /** Where the text's bottom-left corner sits. */
+    at: [number, number]
+    text: string
+    height?: number | null
+    leader?: Anchor | null
+  }
+
 export type Axis3 = 'x' | 'y' | 'z'
 
 export type BomType = 'top_level' | 'parts_only' | 'indented'
@@ -344,6 +366,21 @@ export type CurveSelection = {
   reference: Ref
   reverse?: boolean
 }
+
+/**
+ * The cutting line of a section view, in the parent view's model plane:
+ * points are model coordinates projected into the parent (view-plane mm,
+ * relative to the model origin, unscaled). Two points make a straight cut;
+ * more make an offset (jogged) or aligned cut.
+ */
+export type CuttingLine = {
+  points: ([number, number])[]
+}
+
+export type DetailStyle = 'standard' | 'broken' | 'leader' | 'no_leader' | 'connected'
+
+/** Line display of a view. */
+export type DisplayStyle = 'hidden_removed' | 'hidden_visible' | 'wireframe' | 'shaded_edges' | 'shaded'
 
 export type DragPhase = 'start' | 'move' | 'end'
 
@@ -1320,6 +1357,19 @@ export type MirrorItem = {
 
 export type MirrorPosition = 'center_of_mass' | 'bounding_box' | 'origin'
 
+/** A model file shown in a view. */
+export type ModelSource = {
+  /**
+   * `.ofp` or `.ofa` file, relative to the drawing (forward slashes) or
+   * absolute while the drawing is unsaved.
+   */
+  path: string
+  /** Part or assembly configuration ID; `None` uses the file's active one. */
+  configuration?: number | null
+  /** Content hash of the file when it was last loaded. */
+  hash?: string | null
+}
+
 /** How to move a component. */
 export type Motion =
   | {
@@ -1357,6 +1407,41 @@ export type Motion =
 
 /** A finite number that compares and hashes by value. */
 export type OrderedFloat = number
+
+/** A view direction. */
+export type Orientation =
+  | {
+    type: 'front'
+  }
+  | {
+    type: 'back'
+  }
+  | {
+    type: 'left'
+  }
+  | {
+    type: 'right'
+  }
+  | {
+    type: 'top'
+  }
+  | {
+    type: 'bottom'
+  }
+  | {
+    type: 'isometric'
+  }
+  | {
+    type: 'dimetric'
+  }
+  | {
+    type: 'trimetric'
+  }
+  | {
+    type: 'custom'
+    toward: [number, number, number]
+    up: [number, number, number]
+  }
 
 export type PatternDirection = {
   /** A straight edge, sketch line, axis, or plane/face (its normal). */
@@ -1404,6 +1489,9 @@ export type PatternKind =
     tangent?: boolean
   }
 
+/** Where a projected view sits relative to its parent on the sheet. */
+export type Placement = 'left' | 'right' | 'above' | 'below' | 'above_left' | 'above_right' | 'below_left' | 'below_right'
+
 /** A point given by sketch entity ID, or a new point at a position. */
 export type PointArg =
   | {
@@ -1413,8 +1501,26 @@ export type PointArg =
     at: [number, number]
   }
 
+/**
+ * A closed profile on a parent view (view-plane mm relative to the model
+ * origin, unscaled), used by detail, broken-out section and crop views.
+ */
+export type Profile =
+  | {
+    type: 'circle'
+    center: [number, number]
+    radius: number
+  }
+  | {
+    type: 'polygon'
+    points: ([number, number])[]
+  }
+
 /** Legacy sketch IDs retain their original whole-sketch behavior. */
 export type ProfileSelection = number | ContourSelection
+
+/** How projected views are arranged around their parent. */
+export type Projection = 'first' | 'third'
 
 export type ProjectionMode = 'onto_face' | 'sketch_on_sketch' | 'intersection' | 'silhouette'
 
@@ -1548,6 +1654,52 @@ export type Roll = {
   axis: CompRef
   up: CompRef
 }
+
+/** A drawing scale `num:den`; 1:2 draws the model at half size. */
+export type Scale = {
+  num: number
+  den: number
+}
+
+export type SectionKind = 'full' | 'half' | 'aligned'
+
+/** Paper sizes. Standard sizes are landscape unless the sheet says portrait. */
+export type SheetSize =
+  | {
+    type: 'a0'
+  }
+  | {
+    type: 'a1'
+  }
+  | {
+    type: 'a2'
+  }
+  | {
+    type: 'a3'
+  }
+  | {
+    type: 'a4'
+  }
+  | {
+    type: 'ansi_a'
+  }
+  | {
+    type: 'ansi_b'
+  }
+  | {
+    type: 'ansi_c'
+  }
+  | {
+    type: 'ansi_d'
+  }
+  | {
+    type: 'ansi_e'
+  }
+  | {
+    type: 'custom'
+    width: number
+    height: number
+  }
 
 export type Sketch3D = {
   /** Monotonically increasing; deleted entity IDs must never be reused. */
@@ -1714,7 +1866,12 @@ export type SpatialDrag = {
   to: [number, number, number]
 }
 
+export type StandardBase = 'iso' | 'ansi'
+
 export type SweepOrientation = 'minimum_twist' | 'frenet' | 'fixed'
+
+/** How edges between tangent faces are drawn. */
+export type TangentEdges = 'visible' | 'removed' | 'font'
 
 /** A thin feature: the sketch contour thickened into a wall. */
 export type Thin = {
@@ -1763,6 +1920,62 @@ export type TravelConstraint =
     percent: number
     flip?: boolean
   }
+
+/** What a view shows. */
+export type ViewKind =
+  | {
+    type: 'model'
+    model: ModelSource
+    orientation: Orientation
+    /** Assemblies: show the active configuration's explode steps. */
+    exploded?: boolean
+  }
+  | {
+    type: 'projected'
+    parent: number
+    placement: Placement
+  }
+  | {
+    type: 'auxiliary'
+    parent: number
+    edge: CompRef
+    flip?: boolean
+  }
+  | {
+    type: 'section'
+    parent: number
+    line: CuttingLine
+    /**
+     * Section depth in mm beyond the cut (partial section); `None`
+     * shows everything behind it.
+     */
+    depth?: number | null
+    /** Leave hardware library parts uncut. */
+    exclude_fasteners?: boolean
+    /** Assembly components not cut (drawn whole), by key path. */
+    excluded?: string[][]
+    /** Look the other way along the cut. */
+    flip?: boolean
+    kind?: SectionKind
+    /** Show only the cut faces. */
+    slice?: boolean
+  }
+  | {
+    type: 'detail'
+    parent: number
+    profile: Profile
+    full_outline?: boolean
+    style?: DetailStyle
+  }
+
+/**
+ * Model geometry seen in a view: an edge, face, vertex or reference entity
+ * of the view's model (a part: empty component path).
+ */
+export type ViewRef = {
+  view: number
+  entity: CompRef
+}
 
 export type Warning = {
   code: WarningCode
@@ -2039,7 +2252,7 @@ export interface ToolArgs {
     /** Omitted saves to the path the part was opened from. */
     path?: string | null
   }
-  /** Export a configuration (default: active) to STEP, IGES or STL, chosen by extension. Fails while active features have errors. Hidden bodies are included. */
+  /** Export a configuration (default: active) to STEP, IGES or STL, chosen by extension. Fails while active features have errors. Hidden bodies are included. An open drawing exports every sheet to .pdf or .dxf. */
   export: {
     /** `.step`, `.stp`, `.iges`, `.igs` or `.stl`; the extension picks the format. */
     path: string
@@ -2239,6 +2452,139 @@ export interface ToolArgs {
      */
     folder?: string | null
   }
+  /** Replace the open document with a drawing of one empty sheet (ISO: A3, first angle; ANSI: B, third angle). Add views of saved parts or assemblies with add_drawing_view; export writes every sheet to PDF or DXF. */
+  new_drawing: {
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+    /** Omitted uses first angle (ISO) or third angle (ANSI). */
+    projection?: Projection | null
+    /** First sheet's paper; omitted uses A3 (ISO) or ANSI B. */
+    size?: SheetSize | null
+    /** Drafting standard; omitted uses ISO. */
+    standard?: StandardBase | null
+  }
+  /** The open drawing: standard, drawing properties, and each sheet's ID, size, scale, projection and format with its views (IDs, kinds, parents, model files, positions) and annotations. */
+  drawing_info: {
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+  }
+  /** Draw a sheet. Returns each view's sheet box, scale, paper axes and error; without `summary` also the display list: lines, arcs, polylines, fills and text in sheet mm, each naming its view and the model edge it shows. */
+  render_sheet: {
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+    /** Omitted renders the first sheet. */
+    sheet?: number | null
+    /** Only view boxes, scales and errors, without the display list. */
+    summary?: boolean
+  }
+  /** Add a sheet after the last one; omitted fields copy the last sheet. Returns its ID as `id`. */
+  add_sheet: {
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+    name?: string | null
+    portrait?: boolean | null
+    projection?: Projection | null
+    scale?: Scale | null
+    /** Omitted fields copy the last sheet. */
+    size?: SheetSize | null
+    /** Sheet format: `iso`, `ansi` or an `.ofdt` file. */
+    template?: string | null
+  }
+  /** Rename, resize, rescale or reorder a sheet, change its projection or format, or pick the view whose model fills the title block. */
+  update_sheet: {
+    id: number
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+    /** Show the border and title block. */
+    format_visible?: boolean | null
+    /** New position in the sheet order, from 0. */
+    index?: number | null
+    name?: string | null
+    portrait?: boolean | null
+    projection?: Projection | null
+    /**
+     * View whose model fills `$PRP` title block fields; null uses the first
+     * view.
+     */
+    properties_view?: number | null
+    scale?: Scale | null
+    size?: SheetSize | null
+    template?: string | null
+  }
+  /** Delete sheets with everything on them. A drawing keeps at least one sheet. */
+  delete_sheets: {
+    ids: number[]
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+  }
+  /** Add a view to a sheet: a model view of an .ofp or .ofa file in a named or custom orientation (model Y is up; front looks along -Z), or a view projected or folded from another view. `origin` is where the model origin lands on the sheet, mm. Returns its ID as `id`. */
+  add_drawing_view: {
+    sheet: number
+    /** What the view shows. Model paths are `.ofp` or `.ofa` files. */
+    view: ViewKind
+    /**
+     * Sheet position of the model origin, mm. Projected and auxiliary
+     * views stay aligned with their parent along the fold.
+     */
+    origin: [number, number]
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+    display?: DisplayStyle | null
+    name?: string | null
+    /** Omitted uses the sheet scale (model views) or the parent's. */
+    scale?: Scale | null
+    tangent?: TangentEdges | null
+  }
+  /** Move, rescale, rename or restyle a view, hide model edges or components in it, or replace what it shows. */
+  update_drawing_view: {
+    id: number
+    aligned?: boolean | null
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+    /** Null follows the parent view. */
+    display?: DisplayStyle | null
+    /** Assembly components not drawn, by key path (replaces the list). */
+    hidden_components?: string[][] | null
+    /** Model edges not drawn (replaces the list). */
+    hidden_edges?: CompRef[] | null
+    label?: string | null
+    name?: string | null
+    origin?: [number, number] | null
+    /** Null returns to the sheet or parent scale. */
+    scale?: Scale | null
+    tangent?: TangentEdges | null
+    view?: ViewKind | null
+  }
+  /** Delete views and every view projected or folded from them. Returns all deleted IDs as `deleted`. */
+  delete_drawing_views: {
+    ids: number[]
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+  }
+  /** Add a note at a sheet position (its bottom-left corner), optionally with a leader to a point of a view's model. Text may hold ⌀ ⌴ ⌵ ↧ ± ° and fields such as $PRP:"PartNo". Returns its ID as `id`. */
+  add_note: {
+    sheet: number
+    annotation: AnnotationKind
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+  }
+  /** Delete notes and other annotations by ID. */
+  delete_annotations: {
+    ids: number[]
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+  }
+  /** Set drawing properties shown by $PRPSHEET title block fields (DrawnBy, CheckedBy, Revision, Company, Tolerance, Date); null removes one. */
+  set_drawing_properties: {
+    /**
+     * Drawing properties for `$PRPSHEET` fields (`DrawnBy`, `Revision`,
+     * ...); null removes one.
+     */
+    properties: Record<string, string | null>
+    additionalProperties?: unknown
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+  }
 }
 
 export type ToolName = keyof ToolArgs
@@ -2294,6 +2640,18 @@ export const TOOL_METHODS = {
   clearance: 'asm.clearance',
   bill_of_materials: 'asm.bom',
   import_step_assembly: 'asm.import_step',
+  new_drawing: 'drawing.new',
+  drawing_info: 'drawing.info',
+  render_sheet: 'drawing.render',
+  add_sheet: 'drawing.sheet.add',
+  update_sheet: 'drawing.sheet.update',
+  delete_sheets: 'drawing.sheet.delete',
+  add_drawing_view: 'drawing.view.add',
+  update_drawing_view: 'drawing.view.update',
+  delete_drawing_views: 'drawing.view.delete',
+  add_note: 'drawing.annotation.add',
+  delete_annotations: 'drawing.annotation.delete',
+  set_drawing_properties: 'drawing.properties.set',
 } as const satisfies Record<ToolName, string>
 
 /** Schema examples, validated and replayed on the core in CI. */
@@ -2347,4 +2705,16 @@ export const TOOL_EXAMPLES: { [K in ToolName]: ToolArgs[K][] } = {
   clearance: [{"minimum":50}],
   bill_of_materials: [{"type":"parts_only"}],
   import_step_assembly: [{"path":"assembly.step"}],
+  new_drawing: [{}, {"standard":"ansi"}],
+  drawing_info: [{}],
+  render_sheet: [{"sheet":1,"summary":true}],
+  add_sheet: [{}, {"scale":{"den":2,"num":1},"size":{"type":"a2"}}],
+  update_sheet: [{"id":1,"scale":{"den":2,"num":1}}, {"id":1,"name":"Plate","properties_view":2}],
+  delete_sheets: [{"ids":[4]}],
+  add_drawing_view: [{"origin":[300,200],"sheet":1,"view":{"model":{"path":"part.ofp"},"orientation":{"type":"isometric"},"type":"model"}}, {"origin":[150,250],"sheet":1,"view":{"parent":2,"placement":"above","type":"projected"}}],
+  update_drawing_view: [{"id":2,"origin":[120,160]}, {"display":"hidden_visible","id":3}],
+  delete_drawing_views: [{"ids":[3]}],
+  add_note: [{"annotation":{"at":[40,60],"text":"BREAK ALL EDGES 0.5","type":"note"},"sheet":1}],
+  delete_annotations: [{"ids":[5]}],
+  set_drawing_properties: [{"properties":{"DrawnBy":"AK","Revision":"B"}}],
 }

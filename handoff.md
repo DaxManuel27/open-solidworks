@@ -1,3 +1,72 @@
+# Handoff: Phase 4 drawings (2026-10-12, session 7)
+
+Read this first. Earlier sections below are history (session 6 has the of-drawing
+module map, still accurate).
+
+## State
+
+- Branch `phase-4`, nothing pushed. This session's commits on top of `bb7ff18`:
+  `4208046` render integration tests, `8225bd3` HLR timings + auxiliary-view fix, and
+  the P4.1 core commit (drawing session, methods, CLI, catalog, protocol v5).
+- P4.0 is done except **part file v5** (per-dimension "show in drawing" flag and
+  display names), which is not started. HLR decision is final: exact `HLRBRep_Algo`
+  only (measurements and budgets in `docs/phase-4-plan.md` → P4.0).
+- P4.1 core is done; P4.1 desktop is not started.
+
+## Done this session
+
+| Area | Where | Notes |
+| --- | --- | --- |
+| Render tests | `of-drawing/tests/render.rs`, helpers in `tests/common/mod.rs` | 3-view first/third angle with alignment, edge refs, hidden lines, title block fields (incl. mass/material), cache hits, hidden edges/components, note leaders, assembly + exploded views, auxiliary views, PDF/DXF of a rendered sheet |
+| HLR timings | `of-drawing/tests/hlr_timing.rs` (ignored; run with `--ignored --nocapture`, add `--release`) | Shelled, filleted housing and a 23-part gearbox stand-in (no gearbox fixture existed in the repo). Exact beats preview everywhere |
+| Aux view fix | `of-drawing/src/model.rs` `Sources::locate`; `Drawing::resolve`/`anchor_point` now take `&mut self` | Auxiliary views use the drawing's model cache instead of loading a fresh `Sources` per resolve |
+| Core session | `openforge/src/drawing.rs` (`DrawSession`), routing in `session.rs` (`drawing.new`, `.ofd` `doc.open`, `for_drawing`) | Undo/redo of whole documents; model paths checked and stored relative once saved; view delete cascades to derived views and drops leaders to them |
+| Methods | `drawing.info/render/sheet.*/view.*/annotation.*/properties.set`, `export` to `.pdf`/`.dxf` | Documented in `docs/protocol.md` → Drawings |
+| Catalog/MCP | `tools/drawing_params.rs`, 12 tools in `tools/mod.rs`; fixture `example_drawing` + `example_for` | Every example replays; envelopes trim drawing snapshots like part snapshots |
+| CLI | `main.rs` `drawing_info`; `export` works for `.ofd` | `openforge info x.ofd`, `openforge export x.ofd out.pdf` |
+| Protocol | `PROTOCOL_VERSION` 5 (scene stays 4), `CoreInfo.drawing_file_version`, capability `drawings` | Desktop check in `store.ts` updated to 5/4 |
+| Tests | `openforge/tests/drawing.rs` (serve + CLI) | |
+
+## Verified on this tree
+
+`cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test --workspace`,
+`openforge generate --check` (via the generate test), `pnpm format:check`, `lint`,
+`typecheck`, `build`, `test:assistant`, `conformance` (76/76). Not rerun: `perf:*`,
+desktop smoke.
+Hosted CI has not run for `phase-4`.
+
+## Known gaps
+
+- Silhouette lines of curved faces have no `entity` (HLR outlines carry no source),
+  so in assembly views they cannot be picked to a component. P4.1 desktop picking
+  needs either a face trace for outlines in `of-geom/src/hlr.rs` or an owner
+  component on `Owner::View`.
+- Section and detail views still return "not drawn yet" (P4.3); breaks, crop,
+  broken-out, view labels and shaded styles are not drawn.
+- No "Make Drawing from Part" (standard 3 views in one call) yet: P4.2.
+- Conformance area 15 and `docs/phase-4-budgets.json` do not exist yet.
+- `docs/phase-4-status.md` does not exist yet.
+
+## Next steps
+
+1. P4.1 desktop: `.ofd` windows (open/save dialogs accept `.ofd`; a drawing window
+   runs its own core), sheet tabs, drawing tree, 2D canvas rendering
+   `drawing.render` graphics (DejaVu via `@font-face` from
+   `crates/of-drawing/assets/fonts/`; text items carry em size and width), pan/zoom,
+   picking by `owner`, and reload on part save. Decide the outline-ownership gap
+   first.
+2. Part file v5 (P4.0 leftover).
+3. P4.2 → P4.8 per `docs/phase-4-plan.md`.
+
+## Gotchas
+
+- Session 6 gotchas still apply (HLR frame, seams on silhouettes, em vs cap height).
+- A cylinder's silhouette that coincides with its seam is traced to the seam edge;
+  the opposite silhouette has no source. Tests allow either.
+- `Drawing::render` rehashes model files on every call, so edits on disk show up
+  without a reload method; the HLR cache key includes the part hash.
+- The ISO title block has no `$FILENAME` cell.
+
 # Handoff: Phase 4 drawings (2026-10-13, session 6)
 
 Read this first. Earlier sections below are history.

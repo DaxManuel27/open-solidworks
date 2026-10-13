@@ -3,6 +3,7 @@
 //! are validated against them and replayed on the core by the tests.
 
 pub mod asm_params;
+pub mod drawing_params;
 pub mod envelope;
 pub mod generate;
 pub mod params;
@@ -15,6 +16,7 @@ use schemars::{JsonSchema, SchemaGenerator};
 use serde_json::{Map, Value, json};
 
 use asm_params::*;
+use drawing_params::*;
 use params::*;
 
 /// One catalog entry.
@@ -165,7 +167,7 @@ pub const TOOLS: &[Tool] = &[
         "Save the part as an .ofp file.",
         [{"path": "part.ofp"}]),
     tool!("export", "export", Export, read_only: false, draft: false,
-        "Export a configuration (default: active) to STEP, IGES or STL, chosen by extension. Fails while active features have errors. Hidden bodies are included.",
+        "Export a configuration (default: active) to STEP, IGES or STL, chosen by extension. Fails while active features have errors. Hidden bodies are included. An open drawing exports every sheet to .pdf or .dxf.",
         [{"path": "part.step"}, {"path": "part.stl", "configuration": 2}]),
     tool!("import", "import", FilePath, read_only: false, draft: false,
         "Import a .step or .iges file as a new body feature.",
@@ -233,6 +235,43 @@ pub const TOOLS: &[Tool] = &[
     tool!("import_step_assembly", "asm.import_step", ImportStep, read_only: false, draft: false,
         "Read a STEP file with several parts into a new assembly: one .ofp per distinct part in `folder`, each instance placed and fixed where the file had it.",
         [{"path": "assembly.step"}]),
+    tool!("new_drawing", "drawing.new", NewDrawing, read_only: false, draft: false,
+        "Replace the open document with a drawing of one empty sheet (ISO: A3, first angle; ANSI: B, third angle). Add views of saved parts or assemblies with add_drawing_view; export writes every sheet to PDF or DXF.",
+        [{}, {"standard": "ansi"}]),
+    tool!("drawing_info", "drawing.info", Empty, read_only: true, draft: false,
+        "The open drawing: standard, drawing properties, and each sheet's ID, size, scale, projection and format with its views (IDs, kinds, parents, model files, positions) and annotations.",
+        [{}]),
+    tool!("render_sheet", "drawing.render", RenderSheet, read_only: true, draft: false,
+        "Draw a sheet. Returns each view's sheet box, scale, paper axes and error; without `summary` also the display list: lines, arcs, polylines, fills and text in sheet mm, each naming its view and the model edge it shows.",
+        [{"sheet": 1, "summary": true}]),
+    tool!("add_sheet", "drawing.sheet.add", AddSheet, read_only: false, draft: false,
+        "Add a sheet after the last one; omitted fields copy the last sheet. Returns its ID as `id`.",
+        [{}, {"size": {"type": "a2"}, "scale": {"num": 1, "den": 2}}]),
+    tool!("update_sheet", "drawing.sheet.update", UpdateSheet, read_only: false, draft: false,
+        "Rename, resize, rescale or reorder a sheet, change its projection or format, or pick the view whose model fills the title block.",
+        [{"id": 1, "scale": {"num": 1, "den": 2}}, {"id": 1, "name": "Plate", "properties_view": 2}]),
+    tool!("delete_sheets", "drawing.sheet.delete", ItemIds, read_only: false, draft: false,
+        "Delete sheets with everything on them. A drawing keeps at least one sheet.",
+        [{"ids": [4]}]),
+    tool!("add_drawing_view", "drawing.view.add", AddView, read_only: false, draft: false,
+        "Add a view to a sheet: a model view of an .ofp or .ofa file in a named or custom orientation (model Y is up; front looks along -Z), or a view projected or folded from another view. `origin` is where the model origin lands on the sheet, mm. Returns its ID as `id`.",
+        [{"sheet": 1, "view": {"type": "model", "model": {"path": "part.ofp"}, "orientation": {"type": "isometric"}}, "origin": [300, 200]},
+         {"sheet": 1, "view": {"type": "projected", "parent": 2, "placement": "above"}, "origin": [150, 250]}]),
+    tool!("update_drawing_view", "drawing.view.update", UpdateView, read_only: false, draft: false,
+        "Move, rescale, rename or restyle a view, hide model edges or components in it, or replace what it shows.",
+        [{"id": 2, "origin": [120, 160]}, {"id": 3, "display": "hidden_visible"}]),
+    tool!("delete_drawing_views", "drawing.view.delete", ItemIds, read_only: false, draft: false,
+        "Delete views and every view projected or folded from them. Returns all deleted IDs as `deleted`.",
+        [{"ids": [3]}]),
+    tool!("add_note", "drawing.annotation.add", AddAnnotation, read_only: false, draft: false,
+        "Add a note at a sheet position (its bottom-left corner), optionally with a leader to a point of a view's model. Text may hold ⌀ ⌴ ⌵ ↧ ± ° and fields such as $PRP:\"PartNo\". Returns its ID as `id`.",
+        [{"sheet": 1, "annotation": {"type": "note", "at": [40, 60], "text": "BREAK ALL EDGES 0.5"}}]),
+    tool!("delete_annotations", "drawing.annotation.delete", ItemIds, read_only: false, draft: false,
+        "Delete notes and other annotations by ID.",
+        [{"ids": [5]}]),
+    tool!("set_drawing_properties", "drawing.properties.set", DrawingProperties, read_only: false, draft: false,
+        "Set drawing properties shown by $PRPSHEET title block fields (DrawnBy, CheckedBy, Revision, Company, Tolerance, Date); null removes one.",
+        [{"properties": {"DrawnBy": "AK", "Revision": "B"}}]),
 ];
 
 /// Inline `{"$ref", "properties"}` pairs (serde's internally tagged newtype
@@ -703,6 +742,74 @@ mod tests {
         s
     }
 
+    /// The drawing drawing examples run on, saved as `drawing.ofd` next to
+    /// the example part (`part.ofp`): sheet 1 with front view 2 at (150, 180)
+    /// and view 3 projected to its right, sheet 4, and note 5 on sheet 1 with
+    /// a leader to view 2.
+    pub(crate) fn example_drawing(dir: &std::path::Path) -> Session {
+        let mut s = example_part();
+        let part = dir.join("part.ofp");
+        s.handle("doc.save", json!({ "path": part })).unwrap();
+        let mut ok = |method: &str, params: Value| {
+            s.handle(method, params)
+                .unwrap_or_else(|e| panic!("{method}: {}", e.message))
+        };
+        ok("drawing.new", json!({}));
+        let front = json!({ "type": "model", "model": { "path": part }, "orientation": { "type": "front" } });
+        ok(
+            "drawing.view.add",
+            json!({ "sheet": 1, "view": front, "origin": [150, 180] }),
+        );
+        let right = json!({ "type": "projected", "parent": 2, "placement": "right" });
+        ok(
+            "drawing.view.add",
+            json!({ "sheet": 1, "view": right, "origin": [260, 180] }),
+        );
+        ok("drawing.sheet.add", json!({}));
+        let leader = json!({ "type": "model", "target": { "view": 2, "entity": { "component": [], "entity": { "type": "front_plane" } } }, "at": [30, 20] });
+        let note = json!({ "type": "note", "at": [100, 250], "text": "$PRP:\"PartNo\"", "leader": leader });
+        ok(
+            "drawing.annotation.add",
+            json!({ "sheet": 1, "annotation": note }),
+        );
+        ok("doc.save", json!({ "path": dir.join("drawing.ofd") }));
+        s
+    }
+
+    /// The fixture a catalog example runs on.
+    pub(crate) fn example_for(method: &str, dir: &std::path::Path) -> Session {
+        if method.starts_with("asm.") && method != "asm.new" {
+            example_assembly(dir)
+        } else if method.starts_with("drawing.") && method != "drawing.new" {
+            example_drawing(dir)
+        } else {
+            example_part()
+        }
+    }
+
+    #[test]
+    fn example_drawing_matches_its_description() {
+        let dir =
+            std::env::temp_dir().join(format!("openforge-drawing-example-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut s = example_drawing(&dir);
+        let info = s.handle("drawing.info", json!({})).unwrap();
+        let sheets = info["drawing"]["sheets"].as_array().unwrap();
+        assert_eq!(sheets.len(), 2);
+        assert_eq!(sheets[1]["id"], 4);
+        assert_eq!(sheets[0]["views"][1]["id"], 3);
+        assert_eq!(sheets[0]["annotations"][0]["id"], 5);
+        // Saved model paths are relative to the drawing.
+        assert_eq!(sheets[0]["views"][0]["kind"]["model"]["path"], "part.ofp");
+        let r = s
+            .handle("drawing.render", json!({ "sheet": 1, "summary": true }))
+            .unwrap();
+        for v in r["views"].as_array().unwrap() {
+            assert!(v.get("error").is_none(), "{v}");
+        }
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
     #[test]
     fn example_assembly_matches_its_description() {
         let dir =
@@ -717,6 +824,9 @@ mod tests {
     }
 
     fn errors(s: &mut Session) -> Vec<(u64, String)> {
+        if s.drawing().is_some() {
+            return Vec::new();
+        }
         let info = s.handle("doc.info", json!({})).unwrap();
         info["features"]
             .as_array()
@@ -763,12 +873,11 @@ mod tests {
                     *folder = json!(dir.join("hardware"));
                 }
                 let method = entry.tool.method;
-                let mut s = if method.starts_with("asm.") && method != "asm.new" {
-                    example_assembly(&dir)
-                } else {
-                    example_part()
-                };
+                let mut s = example_for(method, &dir);
                 let volume = |s: &mut Session| {
+                    if s.drawing().is_some() {
+                        return 0.0;
+                    }
                     s.handle("mass_properties", json!({})).unwrap()["volume"]
                         .as_f64()
                         .unwrap()

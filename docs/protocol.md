@@ -8,11 +8,13 @@ per line on stdout. Lengths are millimetres, angles radians and density kg/m³.
 {"jsonrpc":"2.0","id":1,"method":"core.info","params":{}}
 ```
 
-Call `core.info` before consuming scenes. The current protocol and scene versions
-are both **2**, and the current `.ofp` writer version is **2**. The reader accepts
-versions 1 and 2. The desktop rejects mismatched protocol/scene versions with an
-instruction to rebuild both components. Capability flags describe implemented
-operations, not the entire Phase 2 roadmap.
+Call `core.info` before consuming scenes. The current protocol version is **5**
+and the scene version **4**; `core.info` also reports the `.ofp`, `.ofa` and `.ofd`
+writer versions (`part_file_version`, `assembly_file_version`,
+`drawing_file_version`). The desktop rejects mismatched protocol/scene versions
+with an instruction to rebuild both components. Capability flags describe
+implemented operations, not the roadmap; `drawings` marks the drawing methods
+below.
 
 ## State and transactions
 
@@ -73,6 +75,49 @@ snapshot's `features[].error`, allowing the feature to remain editable. Catalog 
 (MCP and `draft.apply`) report it as `ok: false` instead.
 Exports reject active unsuppressed feature errors to avoid exporting a partial
 failed configuration as though it were complete.
+
+## Drawings
+
+`drawing.new` (`{standard?, size?, projection?}`) or `doc.open` of an `.ofd` file
+replaces the open document with a drawing, as `asm.new` does for assemblies. While
+a drawing is open it answers `drawing.*`, `doc.info`, `doc.save`, `doc.undo`,
+`doc.redo` and `export`; part and assembly methods fail with `E_NOT_ALLOWED`.
+Snapshots are `{kind: "drawing", drawing, path, dirty, can_undo, can_redo,
+revision, generation}`, where `drawing` is the `.ofd` document. Every change is
+one undo step.
+
+| Methods | Parameters / behavior |
+| --- | --- |
+| `drawing.info` | Snapshot |
+| `drawing.render` | `{sheet?, summary?}`; `{sheet, graphics, views, frame, title_block}`, or `{sheet, views, items}` with `summary` |
+| `drawing.sheet.add` | `{name?, size?, portrait?, scale?, projection?, template?}`; omitted fields copy the last sheet; returns `id` |
+| `drawing.sheet.update` | `{id, name?, size?, portrait?, scale?, projection?, template?, format_visible?, properties_view?, index?}` |
+| `drawing.sheet.delete` | `{ids}`; one sheet always remains |
+| `drawing.view.add` | `{sheet, view, origin, name?, scale?, display?, tangent?}`; returns `id` |
+| `drawing.view.update` | `{id, name?, view?, origin?, scale?, display?, tangent?, label?, aligned?, hidden_edges?, hidden_components?}`; null resets optional values |
+| `drawing.view.delete` | `{ids}`; also deletes views derived from them; returns `deleted` |
+| `drawing.annotation.add`, `drawing.annotation.delete` | `{sheet, annotation}` (returns `id`) or `{ids}` |
+| `drawing.properties.set` | `{properties}`; `$PRPSHEET` values, null removes |
+| `export` | `{path}`; every sheet to `.pdf` (one page per sheet, true size) or `.dxf` (R12, sheets side by side) |
+
+Sheet coordinates are mm of paper from the bottom-left corner, y up. A view's
+`origin` is the sheet position of its model origin; projected and auxiliary views
+stay aligned with their parent unless `aligned` is false. Model paths are stored
+relative to a saved drawing and absolute while it is unsaved; the files are
+reloaded whenever they change on disk, so renders always show saved geometry.
+
+`render` draws a display list: `graphics.items[]` are `{prim, pen, layer, owner}`
+with `prim` one of `line {a, b}`, `arc {center, radius, start, end}` (CCW,
+radians), `polyline {points, closed}`, `fill {loops}` and `text {at, height (em
+size), angle, text, width}`. `owner` is `format`, `annotation {id}` or `view
+{view, entity?}`, where `entity` is the model edge (`CompRef`) the curve shows;
+silhouettes of curved faces have none. `views[]` give each view's sheet `bbox`,
+`scale`, paper axes `x`/`y`, view direction `toward` and `error` when it could not
+be drawn. A failed view does not fail the render; `export` refuses to write a
+drawing with failed views.
+
+`openforge info drawing.ofd` lists sheets and views with their errors;
+`openforge export drawing.ofd out.pdf|out.dxf` writes it.
 
 ## Bodies, references and scenes
 
@@ -288,6 +333,18 @@ run `cargo run -p openforge -- generate` instead. -->
 | `clearance` | `asm.clearance` | read | `minimum`, `components?`, `detail?` |
 | `bill_of_materials` | `asm.bom` | read | `csv?`, `detail?`, `type?` |
 | `import_step_assembly` | `asm.import_step` | file/session (not in drafts) | `path`, `detail?`, `folder?` |
+| `new_drawing` | `drawing.new` | file/session (not in drafts) | `detail?`, `projection?`, `size?`, `standard?` |
+| `drawing_info` | `drawing.info` | read | `detail?` |
+| `render_sheet` | `drawing.render` | read | `detail?`, `sheet?`, `summary?` |
+| `add_sheet` | `drawing.sheet.add` | file/session (not in drafts) | `detail?`, `name?`, `portrait?`, `projection?`, `scale?`, `size?`, `template?` |
+| `update_sheet` | `drawing.sheet.update` | file/session (not in drafts) | `id`, `detail?`, `format_visible?`, `index?`, `name?`, `portrait?`, `projection?`, `properties_view?`, `scale?`, `size?`, `template?` |
+| `delete_sheets` | `drawing.sheet.delete` | file/session (not in drafts) | `ids`, `detail?` |
+| `add_drawing_view` | `drawing.view.add` | file/session (not in drafts) | `sheet`, `view`, `origin`, `detail?`, `display?`, `name?`, `scale?`, `tangent?` |
+| `update_drawing_view` | `drawing.view.update` | file/session (not in drafts) | `id`, `aligned?`, `detail?`, `display?`, `hidden_components?`, `hidden_edges?`, `label?`, `name?`, `origin?`, `scale?`, `tangent?`, `view?` |
+| `delete_drawing_views` | `drawing.view.delete` | file/session (not in drafts) | `ids`, `detail?` |
+| `add_note` | `drawing.annotation.add` | file/session (not in drafts) | `sheet`, `annotation`, `detail?` |
+| `delete_annotations` | `drawing.annotation.delete` | file/session (not in drafts) | `ids`, `detail?` |
+| `set_drawing_properties` | `drawing.properties.set` | file/session (not in drafts) | `properties`, `additionalProperties?`, `detail?` |
 
 #### Sketch operations (`edit_sketch` `op`)
 

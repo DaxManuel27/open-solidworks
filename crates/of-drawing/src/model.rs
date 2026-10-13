@@ -8,8 +8,8 @@ use std::rc::Rc;
 
 use of_assembly::cache::{Cache, Part, canonical};
 use of_assembly::{Assembly, CompRef, Loaded, Pose};
-use of_model::geom::{DAffine3, Kind, Shape};
 use of_model::Ref;
+use of_model::geom::{DAffine3, Kind, Shape};
 
 /// One part placed in a view's model: a part view has one piece with an
 /// empty component path.

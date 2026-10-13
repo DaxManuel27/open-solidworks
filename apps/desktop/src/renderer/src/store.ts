@@ -341,7 +341,7 @@ export const useStore = create<State & Actions>((set, get) => ({
   async init() {
     try {
       const info = await call<CoreInfo>('core.info')
-      if (info.protocol_version !== 4 || info.scene_version !== 4)
+      if (info.protocol_version !== 5 || info.scene_version !== 4)
         throw new Error(
           'The core and desktop versions do not match. Rebuild both before opening a part.',
         )

@@ -3,6 +3,7 @@
 
 mod asm;
 mod bench;
+mod drawing;
 mod mcp;
 mod session;
 mod tools;
@@ -32,10 +33,11 @@ enum Command {
         /// Part to open at start.
         part: Option<PathBuf>,
     },
-    /// Rebuild a part (or solve an assembly) and print its features or
-    /// components, errors and mass properties.
+    /// Rebuild a part (or solve an assembly, or draw a drawing) and print its
+    /// features, components or views with their errors.
     Info { part: PathBuf },
-    /// Rebuild a part or assembly and export it to STEP, IGES or STL (chosen by extension).
+    /// Export a part or assembly to STEP, IGES or STL, or a drawing to PDF or
+    /// DXF (chosen by extension).
     Export {
         part: PathBuf,
         output: PathBuf,
@@ -146,6 +148,9 @@ fn serve() -> anyhow::Result<()> {
 
 fn info(part: PathBuf) -> anyhow::Result<()> {
     let mut s = Session::open(part).map_err(anyhow::Error::msg)?;
+    if s.drawing().is_some() {
+        return drawing_info(&mut s);
+    }
     if let Some(a) = s.assembly() {
         let doc = a.doc();
         let d = &a.asm.diagnostics;
@@ -197,6 +202,44 @@ fn info(part: PathBuf) -> anyhow::Result<()> {
         println!("Volume  {:.3} mm³", mp["volume"].as_f64().unwrap_or(0.0));
         println!("Area    {:.3} mm²", mp["area"].as_f64().unwrap_or(0.0));
         println!("Mass    {:.4} kg", mp["mass"].as_f64().unwrap_or(0.0));
+    }
+    Ok(())
+}
+
+/// Sheets and views of a drawing, each view drawn to report its errors.
+fn drawing_info(s: &mut Session) -> anyhow::Result<()> {
+    let doc = s.drawing().expect("checked").doc().clone();
+    let mut failed = false;
+    for sheet in &doc.sheets {
+        let (w, h) = sheet.paper();
+        println!(
+            "{:>4}  {:<24} {} ({w} x {h} mm), {}",
+            sheet.id,
+            sheet.name,
+            sheet.size.name(),
+            sheet.scale.label()
+        );
+        let r = s
+            .handle(
+                "drawing.render",
+                serde_json::json!({ "sheet": sheet.id, "summary": true }),
+            )
+            .map_err(|e| anyhow::Error::msg(e.message))?;
+        for v in &sheet.views {
+            let status = r["views"]
+                .as_array()
+                .and_then(|vs| vs.iter().find(|x| x["id"] == v.id))
+                .and_then(|x| x["error"].as_str())
+                .map(|e| {
+                    failed = true;
+                    format!("ERROR: {e}")
+                })
+                .unwrap_or_else(|| "ok".into());
+            println!("{:>8}  {:<20} {status}", v.id, v.name);
+        }
+    }
+    if failed {
+        bail!("some views could not be drawn");
     }
     Ok(())
 }

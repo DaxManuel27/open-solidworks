@@ -853,6 +853,7 @@ dependencies = [
  "clap",
  "jsonschema",
  "of-assembly",
+ "of-drawing",
  "of-io",
  "of-model",
  "of-protocol",
