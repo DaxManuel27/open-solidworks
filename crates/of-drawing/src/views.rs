@@ -89,6 +89,8 @@ pub fn orientation(o: &Orientation) -> Frame {
         Orientation::Custom { toward, up } => {
             Frame::looking(DVec3::from(*toward), DVec3::from(*up))
         }
+        // Needs the model; `Drawing::resolve` works it out.
+        Orientation::Relative { .. } => Frame::looking(DVec3::Z, up),
     }
 }
 

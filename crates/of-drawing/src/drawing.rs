@@ -1,20 +1,22 @@
 //! A drawing being edited: the document, its loaded models, and the sheet
 //! display lists rebuilt from them.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use of_model::geom::{Curve2d, DVec2, EdgeClass, HlrEdge, HlrQuality};
+use of_model::geom::{DVec2, HlrEdge, HlrQuality, Shape};
 use schemars::JsonSchema;
 use serde::Serialize;
 
 use crate::annotations::AnnotationKind;
+use crate::clip::Gap;
 use crate::document::*;
 use crate::formats::{self, Fields, Format};
-use crate::graphics::{Graphics, HAlign, LineStyle, Owner, P2, Pen, Prim, layers};
-use crate::model::{Scene, Sources};
+use crate::graphics::{Graphics, HAlign, LineStyle, Owner, P2, Pen, layers};
+use crate::model::Sources;
 use crate::text;
+use crate::viewdraw::gaps;
 use crate::views::{self, Frame};
 
 /// How a view looks at its model, after following its parent chain.
@@ -29,12 +31,24 @@ pub struct Resolved {
     pub exploded: bool,
     pub display: DisplayStyle,
     pub tangent: TangentEdges,
+    /// Break view bands (view-plane mm), highest first.
+    pub breaks: Vec<Gap>,
 }
 
 impl Resolved {
-    /// Sheet position of a point in view-plane coordinates (model mm).
+    /// Sheet position of a point in view-plane coordinates (model mm),
+    /// with break bands closed up.
     pub fn to_sheet(&self, p: DVec2) -> P2 {
-        let q = self.origin + p * self.scale;
+        let mut q = [p.x, p.y];
+        for g in &self.breaks {
+            q = g.shift_clamped(q);
+        }
+        self.place([q[0], q[1]])
+    }
+
+    /// Sheet position of a view-plane point already moved for breaks.
+    pub fn place(&self, p: P2) -> P2 {
+        let q = self.origin + DVec2::from(p) * self.scale;
         [q.x, q.y]
     }
 
@@ -58,6 +72,9 @@ pub struct ViewInfo {
     /// Why the view could not be drawn.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// The model changed on disk since the drawing last recorded it.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub stale: bool,
 }
 
 /// A rendered sheet.
@@ -68,15 +85,27 @@ pub struct SheetRender {
     /// The format's inner border and title block.
     pub frame: [P2; 2],
     pub title_block: [P2; 2],
+    /// Annotations whose model anchor no longer resolves; they are drawn at
+    /// their last sheet position.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub dangling: Vec<Dangling>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
+pub struct Dangling {
+    pub annotation: u32,
+    pub reason: String,
 }
 
 pub struct Drawing {
     pub doc: DrawingDocument,
     path: Option<PathBuf>,
     pub sources: Sources,
-    hlr: HashMap<String, Rc<Vec<HlrEdge>>>,
+    pub(crate) hlr: HashMap<String, Rc<Vec<HlrEdge>>>,
     /// Number of hidden-line computations run, for cache tests.
     pub hlr_runs: usize,
+    /// Sheet boxes of the views drawn by the last render.
+    pub(crate) boxes: HashMap<u32, [P2; 2]>,
 }
 
 impl Default for Drawing {
@@ -93,6 +122,7 @@ impl Drawing {
             sources: Sources::default(),
             hlr: HashMap::new(),
             hlr_runs: 0,
+            boxes: HashMap::new(),
         }
     }
 
@@ -151,19 +181,25 @@ impl Drawing {
         }
         let v = sheet.view(id).ok_or_else(|| format!("no view {id}"))?;
         let own = DVec2::from(v.origin);
-        Ok(match &v.kind {
+        let mut r = match &v.kind {
             ViewKind::Model {
                 model,
                 orientation,
                 exploded,
             } => Resolved {
-                frame: views::orientation(orientation),
+                frame: match orientation {
+                    Orientation::Relative { front, top } => {
+                        self.relative_frame(model, *exploded, front, top)?
+                    }
+                    o => views::orientation(o),
+                },
                 scale: v.scale.unwrap_or(sheet.scale).factor(),
                 origin: own,
                 model: model.clone(),
                 exploded: *exploded,
                 display: v.display.unwrap_or_default(),
                 tangent: v.tangent.unwrap_or_default(),
+                breaks: Vec::new(),
             },
             ViewKind::Projected { parent, placement } => {
                 let p = self.resolve_depth(sheet, *parent, depth + 1)?;
@@ -254,7 +290,46 @@ impl Drawing {
                     ..p
                 }
             }
-        })
+        };
+        r.breaks = gaps(v, r.scale);
+        Ok(r)
+    }
+
+    /// Frame of a relative-to-model view: `front` faces the viewer, `top`
+    /// faces up.
+    fn relative_frame(
+        &mut self,
+        model: &ModelSource,
+        exploded: bool,
+        front: &of_assembly::CompRef,
+        top: &of_assembly::CompRef,
+    ) -> Result<Frame, String> {
+        let path = self.model_path(model);
+        let mut normal = |r: &of_assembly::CompRef| -> Result<of_model::geom::DVec3, String> {
+            let (part, pose) = self
+                .sources
+                .locate(&path, model.configuration, exploded, r)?;
+            let state = part.state();
+            let (kind, i) = state.index_of(&r.entity).map_err(|e| e.to_string())?;
+            if kind != of_model::geom::Kind::Face {
+                return Err("a relative view needs two faces".into());
+            }
+            let body = state
+                .body
+                .as_ref()
+                .ok_or("the part has no solid geometry")?;
+            let info = body.shape.face_info(i).map_err(|e| e.to_string())?;
+            if info.kind != of_model::geom::SurfaceKind::Plane {
+                return Err("a relative view needs planar faces".into());
+            }
+            Ok(pose.rotation * info.normal)
+        };
+        let t = normal(front)?;
+        let u = normal(top)?;
+        if t.cross(u).length() < 1e-6 {
+            return Err("the two faces of a relative view are parallel".into());
+        }
+        Ok(Frame::looking(t, u))
     }
 
     /// Paper direction of a straight model edge seen in a view.
@@ -282,11 +357,12 @@ impl Drawing {
             .ok_or_else(|| "the edge is seen end-on in the parent view".to_string())
     }
 
-    /// Hidden-line edges of a scene seen in a frame, cached by geometry,
+    /// Hidden-line edges of a shape seen in a frame, cached by geometry,
     /// direction and accuracy.
-    fn projection(
+    pub(crate) fn projection(
         &mut self,
-        scene: &Scene,
+        key: &str,
+        shape: &Shape,
         frame: &Frame,
         hidden: bool,
         scale: f64,
@@ -294,8 +370,7 @@ impl Drawing {
         // 0.01 mm on paper.
         let deflection = (0.01 / scale).max(1e-4);
         let key = format!(
-            "{}|{:.12?}|{:.12?}|{hidden}|{deflection:.6}",
-            scene.key,
+            "{key}|{:.12?}|{:.12?}|{hidden}|{deflection:.6}",
             frame.x.to_array(),
             frame.toward.to_array()
         );
@@ -303,8 +378,7 @@ impl Drawing {
             return Ok(e.clone());
         }
         self.hlr_runs += 1;
-        let edges = scene
-            .shape
+        let edges = shape
             .hidden_lines(&frame.plane(), HlrQuality::Exact, hidden, deflection)
             .map_err(|e| e.to_string())?;
         let edges = Rc::new(edges);
@@ -381,6 +455,40 @@ impl Drawing {
         f
     }
 
+    /// Whether a view's model changed since the drawing recorded its hash.
+    fn is_stale(&mut self, r: &Resolved) -> bool {
+        let Some(saved) = r.model.hash.clone() else {
+            return false;
+        };
+        let path = self.model_path(&r.model);
+        self.sources.hash(&path).is_ok_and(|h| h != saved)
+    }
+
+    /// Record the current hash of every model shown, so views stop being
+    /// stale. Returns whether anything changed.
+    pub fn record_hashes(&mut self) -> bool {
+        let base = self.base_dir();
+        let mut changed = false;
+        for si in 0..self.doc.sheets.len() {
+            for vi in 0..self.doc.sheets[si].views.len() {
+                let path = match &self.doc.sheets[si].views[vi].kind {
+                    ViewKind::Model { model, .. } => of_assembly::resolve_file(&base, &model.path),
+                    _ => continue,
+                };
+                let Ok(h) = self.sources.hash(&path) else {
+                    continue;
+                };
+                if let ViewKind::Model { model, .. } = &mut self.doc.sheets[si].views[vi].kind
+                    && model.hash.as_deref() != Some(&h)
+                {
+                    model.hash = Some(h);
+                    changed = true;
+                }
+            }
+        }
+        changed
+    }
+
     /// Draw a sheet.
     pub fn render(&mut self, sheet_id: u32) -> Result<SheetRender, String> {
         let sheet = self
@@ -402,11 +510,15 @@ impl Drawing {
             );
         }
         let mut infos = Vec::new();
+        self.boxes.clear();
         for v in &sheet.views {
-            let start = g.items.len();
             let result = self.draw_view(&sheet, v, &mut g);
             let resolved = self.resolve(&sheet, v.id).ok();
-            let bbox = bounds(&g.items[start..]);
+            let bbox = result.as_ref().ok().copied().flatten();
+            if let Some(b) = bbox {
+                self.boxes.insert(v.id, b);
+            }
+            let stale = resolved.as_ref().is_some_and(|r| self.is_stale(r));
             infos.push(ViewInfo {
                 id: v.id,
                 bbox,
@@ -421,88 +533,30 @@ impl Drawing {
                     .as_ref()
                     .map_or([0.0, 0.0, 1.0], |r| r.frame.toward.to_array()),
                 error: result.err(),
+                stale,
             });
         }
+        for v in &sheet.views {
+            if v.parent().is_some_and(|p| self.boxes.contains_key(&p)) {
+                self.draw_marks(&sheet, v, &mut g);
+            }
+        }
+        let mut dangling = Vec::new();
         for a in &sheet.annotations {
-            self.draw_annotation(&sheet, a, &mut g);
+            if let Err(reason) = self.draw_annotation(&sheet, a, &mut g) {
+                dangling.push(Dangling {
+                    annotation: a.id,
+                    reason,
+                });
+            }
         }
         Ok(SheetRender {
             graphics: g,
             views: infos,
             frame: format.frame,
             title_block: format.title_block,
+            dangling,
         })
-    }
-
-    fn draw_view(&mut self, sheet: &Sheet, v: &View, g: &mut Graphics) -> Result<(), String> {
-        let r = self.resolve(sheet, v.id)?;
-        match &v.kind {
-            ViewKind::Section { .. } => return Err("section views are not drawn yet".into()),
-            ViewKind::Detail { .. } => return Err("detail views are not drawn yet".into()),
-            _ => {}
-        }
-        let path = self.model_path(&r.model);
-        let scene = self.sources.scene(
-            &path,
-            r.model.configuration,
-            r.exploded,
-            &v.hidden_components,
-        )?;
-        let show_hidden = matches!(
-            r.display,
-            DisplayStyle::HiddenVisible | DisplayStyle::Wireframe
-        );
-        let edges = self.projection(&scene, &r.frame, show_hidden, r.scale)?;
-        let hidden_edges: HashSet<u32> = v
-            .hidden_edges
-            .iter()
-            .filter_map(|e| scene.edge_index(e))
-            .collect();
-        let std = &self.doc.standard;
-        let thick = Pen::new(LineStyle::Continuous, std.thick_line());
-        let thin = Pen::new(LineStyle::Continuous, std.thin_line());
-        for e in edges.iter() {
-            if e.source.is_some_and(|s| hidden_edges.contains(&s)) {
-                continue;
-            }
-            let (pen, layer) = match (e.visible, e.class) {
-                (_, EdgeClass::Seam) => continue,
-                (true, EdgeClass::Smooth) | (false, EdgeClass::Smooth)
-                    if r.tangent == TangentEdges::Removed =>
-                {
-                    continue;
-                }
-                (true, EdgeClass::Smooth) => match r.tangent {
-                    TangentEdges::Font => (
-                        Pen::new(LineStyle::Phantom, std.thin_line()),
-                        layers::TANGENT,
-                    ),
-                    _ => (thin, layers::TANGENT),
-                },
-                (true, _) => (thick, layers::VISIBLE),
-                (false, _) if r.display == DisplayStyle::Wireframe => (thick, layers::VISIBLE),
-                (false, _) => (Pen::new(LineStyle::Hidden, std.thin_line()), layers::HIDDEN),
-            };
-            let owner = Owner::View {
-                view: v.id,
-                entity: e.source.and_then(|s| scene.edge_ref(s)),
-            };
-            g.push(to_prim(&e.curve, &r), pen, layer, &owner);
-        }
-        if r.exploded {
-            let pen = Pen::new(LineStyle::Phantom, std.thin_line());
-            let owner = Owner::View {
-                view: v.id,
-                entity: None,
-            };
-            for [a, b] in &scene.explode_lines {
-                let (a, b) = (r.frame.project(*a), r.frame.project(*b));
-                if a.distance(b) * r.scale > 0.5 {
-                    g.line(r.to_sheet(a), r.to_sheet(b), pen, "EXPLODE", &owner);
-                }
-            }
-        }
-        Ok(())
     }
 
     fn draw_annotation(
@@ -510,7 +564,7 @@ impl Drawing {
         sheet: &Sheet,
         a: &crate::annotations::Annotation,
         g: &mut Graphics,
-    ) {
+    ) -> Result<(), String> {
         let std = self.doc.standard;
         let owner = Owner::Annotation { id: a.id };
         let thin = Pen::new(LineStyle::Continuous, std.thin_line());
@@ -527,7 +581,14 @@ impl Drawing {
                 for p in text::layout(&value, *at, h, 0.0, HAlign::Left) {
                     g.push(p, thin, layers::NOTES, &owner);
                 }
-                if let Some(target) = leader.as_ref().and_then(|l| self.anchor_point(sheet, l)) {
+                let target = match leader {
+                    Some(l) => Some(
+                        self.anchor_point(sheet, l)
+                            .ok_or("the leader's view is gone")?,
+                    ),
+                    None => None,
+                };
+                if let Some(target) = target {
                     let (w, bh) = text::block_size(&value, h);
                     // Leave from the nearer end of the first line.
                     let start = if target[0] < at[0] + w / 2.0 {
@@ -540,6 +601,7 @@ impl Drawing {
                 }
             }
         }
+        Ok(())
     }
 
     /// Sheet position of an anchor.
@@ -554,32 +616,7 @@ impl Drawing {
     }
 }
 
-/// A projected curve placed on the sheet.
-fn to_prim(c: &Curve2d, r: &Resolved) -> Prim {
-    match c {
-        Curve2d::Line(a, b) => Prim::Line {
-            a: r.to_sheet(*a),
-            b: r.to_sheet(*b),
-        },
-        Curve2d::Arc {
-            center,
-            radius,
-            start,
-            end,
-        } => Prim::Arc {
-            center: r.to_sheet(*center),
-            radius: radius * r.scale,
-            start: *start,
-            end: *end,
-        },
-        Curve2d::Polyline(p) => Prim::Polyline {
-            points: p.iter().map(|q| r.to_sheet(*q)).collect(),
-            closed: false,
-        },
-    }
-}
-
-fn bounds(items: &[crate::graphics::Item]) -> Option<[P2; 2]> {
+pub(crate) fn bounds(items: &[crate::graphics::Item]) -> Option<[P2; 2]> {
     let g = Graphics {
         width: 0.0,
         height: 0.0,

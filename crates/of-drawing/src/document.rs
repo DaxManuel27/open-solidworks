@@ -27,6 +27,31 @@ impl Scale {
         self.num / self.den
     }
 
+    /// The simplest `num:den` within 0.1% of a factor (whole numbers on
+    /// one side when possible).
+    pub fn from_factor(f: f64) -> Scale {
+        if !(f.is_finite() && f > 0.0) {
+            return Scale::ONE;
+        }
+        for den in 1..=100u32 {
+            let num = (f * den as f64).round();
+            if num >= 1.0 && ((num / den as f64) - f).abs() <= f * 1e-3 {
+                return Scale {
+                    num,
+                    den: den as f64,
+                };
+            }
+        }
+        if f < 1.0 {
+            Scale {
+                num: 1.0,
+                den: (1.0 / f * 100.0).round() / 100.0,
+            }
+        } else {
+            Scale { num: f, den: 1.0 }
+        }
+    }
+
     pub fn is_valid(&self) -> bool {
         self.num.is_finite() && self.den.is_finite() && self.num > 0.0 && self.den > 0.0
     }
@@ -175,6 +200,12 @@ pub enum Orientation {
     Custom {
         toward: [f64; 3],
         up: [f64; 3],
+    },
+    /// Relative to model: planar face `front` faces the viewer and planar
+    /// face `top` faces up (its normal is made perpendicular).
+    Relative {
+        front: CompRef,
+        top: CompRef,
     },
 }
 
@@ -367,6 +398,10 @@ pub struct View {
     /// point of the model toward the back).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub broken_out: Vec<BrokenOut>,
+    /// Section and broken-out hatching: pattern (default: by material),
+    /// scale and angle.
+    #[serde(default, skip_serializing_if = "HatchOptions::is_default")]
+    pub hatch: HatchOptions,
     /// Model edges not drawn.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hidden_edges: Vec<CompRef>,
@@ -377,6 +412,39 @@ pub struct View {
 
 fn break_gap() -> f64 {
     10.0
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct HatchOptions {
+    /// `None` picks a pattern from each body's material.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pattern: Option<crate::hatch::Pattern>,
+    #[serde(default = "one")]
+    #[schemars(extend("exclusiveMinimum" = 0))]
+    pub scale: f64,
+    /// Radians added to the pattern's own angle.
+    #[serde(default)]
+    pub angle: f64,
+}
+
+fn one() -> f64 {
+    1.0
+}
+
+impl Default for HatchOptions {
+    fn default() -> Self {
+        HatchOptions {
+            pattern: None,
+            scale: 1.0,
+            angle: 0.0,
+        }
+    }
+}
+
+impl HatchOptions {
+    pub fn is_default(&self) -> bool {
+        *self == HatchOptions::default()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -402,6 +470,7 @@ impl View {
             break_gap: break_gap(),
             crop: None,
             broken_out: Vec::new(),
+            hatch: HatchOptions::default(),
             hidden_edges: Vec::new(),
             hidden_components: Vec::new(),
         }

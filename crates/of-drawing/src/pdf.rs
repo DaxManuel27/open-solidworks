@@ -223,10 +223,15 @@ fn page_content(
                 .properties_named(Name(format!("L{i}").as_bytes()));
             layer = Some(&item.layer);
         }
-        let [r, gr, b] = if options.monochrome {
-            [0, 0, 0]
-        } else {
+        let [r, gr, b] = if !options.monochrome {
             item.pen.color
+        } else if matches!(item.prim, Prim::Fill { .. }) {
+            // Fills keep their lightness so shading stays readable.
+            let [r, g, b] = item.pen.color;
+            let l = (0.299 * f64::from(r) + 0.587 * f64::from(g) + 0.114 * f64::from(b)) as u8;
+            [l, l, l]
+        } else {
+            [0, 0, 0]
         };
         let rgb = |v: u8| f32::from(v) / 255.0;
         c.set_stroke_rgb(rgb(r), rgb(gr), rgb(b));
@@ -277,7 +282,13 @@ fn page_content(
                         c.close_path();
                     }
                 }
-                c.fill_even_odd();
+                // A stroke in the fill colour closes hairline seams between
+                // adjacent fills (shaded faces).
+                if item.pen.weight > 0.0 {
+                    c.fill_even_odd_and_stroke();
+                } else {
+                    c.fill_even_odd();
+                }
             }
             Prim::Text {
                 at,
