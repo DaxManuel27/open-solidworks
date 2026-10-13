@@ -1,3 +1,89 @@
+# Handoff: Phase 4 drawings (2026-10-13, session 6)
+
+Read this first. Earlier sections below are history.
+
+## State
+
+- Phase 3 is merged into `main` (PR #4, `bfd9a03`). Hosted CI on `main` failed at clippy 1.99
+  (`clone_on_copy` in cxx code for `StepNode`); fixed on `main` by `229da3b` and run 38327262287
+  passed on macOS, Windows and Linux (recorded in `docs/phase-3-status.md`).
+- Branch `phase-4`, created from `main` after that fix. Nothing pushed. Commits so far:
+  `67a5e66` plan, `b028627` HLR kernel + Phase 3 CI record, then the `of-drawing` work below.
+- Uncommitted UI work found on `phase-3` was parked on a local branch `ui-parity` (`65f2da8`,
+  not pushed). It includes `docs/soliworks-ui.jpeg`, which must never be committed to a shipped
+  branch (clean-room rule); remove it before that branch goes anywhere.
+- Owner decisions (2026-10-13): **DXF only** (DWG deferred); **native Rust PDF writer**
+  (`pdf-writer` + `subsetter`); font and HLR method on the agent's recommendation. All are
+  recorded in `docs/phase-4-plan.md` → Decisions.
+- Font decision taken: DejaVu Sans Condensed (Bitstream Vera licence, permissive; bundled at
+  `crates/of-drawing/assets/fonts/` with its licence). No permissive font covers every drafting
+  symbol, so ⌀ ⌴ ⌵ ↧ □, all GD&T characteristics and circled modifiers are drawn as strokes in
+  `text.rs`.
+
+## Done (P4.0 mostly, P4.1 started)
+
+| Area          | Where                                                                                         | Notes                                                                                                                                                                                                                                                                                         |
+| ------------- | --------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| HLR kernel    | `of-kernel-sys/cpp/hlr.cpp`, `src/lib.rs` (`hlr`, `seam_edges`), `TKHLR` linked in `build.rs` | Exact `HLRBRep_Algo` or polygonal `HLRBRep_PolyAlgo`; edges by class (sharp, smooth, seam, outline) as lines, CCW arcs or polylines in view-plane coords                                                                                                                                      |
+| HLR wrapper   | `of-geom/src/hlr.rs`, tests `of-geom/tests/hlr.rs` (5)                                        | `Shape::hidden_lines`; traces each edge to its model edge (nearest-to-viewer wins); drops seams unless they are the silhouette; removes hidden lines under visible ones (splits partly covered lines); straightens edge-on curves                                                             |
+| `.ofd` schema | `of-drawing/src/document.rs`, `file.rs`                                                       | Sheets (sizes, orientation, scale, projection, format), views (model, projected, auxiliary, section, detail; origin = sheet position of the model origin; breaks, crop, broken-out, hidden edges/components), `ViewRef`/`Anchor`, shared `next_id`, `validate()`                              |
+| Standards     | `standard.rs`                                                                                 | ISO/ANSI base + overrides: text and label heights, arrows, line weights, precision, dash patterns                                                                                                                                                                                             |
+| Display list  | `graphics.rs`                                                                                 | `Graphics`/`Item`/`Prim` (line, arc, polyline, fill, text with em size), pens, layers, owners (format, view + `CompRef`, annotation)                                                                                                                                                          |
+| Text          | `text.rs`                                                                                     | Font metrics via `ttf-parser`, capital-height sizing, multi-line layout, stroked symbols                                                                                                                                                                                                      |
+| PDF           | `pdf.rs`                                                                                      | One page per sheet at true size, subset Type0/Identity-H font with ToUnicode, layers as OCGs, dashes scaled by weight, Béziers for arcs                                                                                                                                                       |
+| DXF           | `dxf.rs`                                                                                      | R12 ASCII, mm, LTYPE/LAYER/STYLE tables, SOLID fills by ear clipping, `\U+XXXX` text escapes, sheets side by side                                                                                                                                                                             |
+| Output check  | `of-drawing/tests/output.rs`                                                                  | Set `OPENFORGE_OUTPUT_DIR` to keep files. Verified by hand: MuPDF renders the PDF and extracts text, pypdf parses it, ezdxf audits the DXF with 0 errors and renders it                                                                                                                       |
+| Formats       | `formats.rs`                                                                                  | Built-in `iso` (ISO 5457 border, zones, centering marks, ISO 7200 title block) and `ansi` (ASME Y14.1, tolerance block); `.ofdt` files hold the same `Format` data; fields `$PRP`, `$PRPSHEET`, `$SHEET(S)`, `$SCALE`, `$SIZE`, `$DATE`, `$FILENAME`, `$MATERIAL`, `$MASS`; projection symbol |
+| View frames   | `views.rs` (5 tests)                                                                          | Y-up standard orientations, iso/dimetric/trimetric, first/third-angle projected views, `folded` for auxiliary/section                                                                                                                                                                         |
+| Models        | `model.rs`                                                                                    | `Sources` reuses `of_assembly::cache::Cache`; assemblies solved per configuration, reloaded on file change; `Scene` = combined compound + pieces so compound edge index → `CompRef`                                                                                                           |
+| Runtime       | `drawing.rs`                                                                                  | `Drawing` open/save (relative model paths), `resolve` (parent chains, alignment), HLR cache keyed by geometry/direction/accuracy, `render(sheet)` → `SheetRender` (graphics, view infos, frame, title block), notes with leaders                                                              |
+
+Verified on this tree: `cargo fmt`, `cargo clippy -p of-drawing -p of-geom -p of-kernel-sys
+--all-targets -D warnings`, `cargo test -p of-drawing -p of-geom` (all pass). The full workspace
+gates, JS gates and conformance have **not** been rerun since `b028627`.
+
+## Not done yet / known gaps
+
+- `Drawing::render` has **no integration test on real part/assembly files** yet. Next step:
+  add `of-drawing/tests/common` (copy the part builders from `of-assembly/tests/common`) and test
+  a standard 3 view of a plate with a hole (third and first angle), alignment, edge `CompRef`s,
+  title block fields, an assembly view (incl. exploded), cache hits (`hlr_runs`), and PDF/DXF of
+  the rendered sheet.
+- `Drawing::edge_direction` (auxiliary views) builds a fresh `Sources` each call; make `resolve`
+  take `&mut self` or cache scenes instead.
+- Section and detail views resolve their frames but `draw_view` returns "not drawn yet" (P4.3).
+  Breaks, crop, broken-out, view labels and shaded display styles are not drawn yet.
+- HLR performance has not been measured on the Phase 3 corpus (P4.0 target). Use the gearbox
+  fixture from `scripts/phase-3-performance.mjs`; record exact vs preview timings in the plan.
+- Part file v5 ("show in drawing" dimension flag + display names, P4.0) is not started.
+- Nothing is wired into the core yet: no drawing document kind in `crates/openforge/src/session.rs`,
+  no `drawing.*` RPC methods, CLI `info`/`export` for `.ofd`, MCP tools, protocol v5, or desktop
+  2D canvas (P4.1).
+- DXF is R12 only; R2000+ (lineweights, true colour, paper space) is planned for P4.7.
+- `docs/phase-4-status.md` does not exist yet.
+
+## Next steps
+
+1. Integration tests for `Drawing::render` (above), then HLR timings → finish P4.0 in the plan.
+2. P4.1 core: drawing kind in the session, `drawing.new/open/save/render/sheet.*/view.*`
+   methods, `openforge export x.ofd out.pdf|out.dxf`, protocol bump, tool catalog + `generate`.
+3. P4.1 desktop: drawing window, sheet tabs, 2D canvas rendering `Graphics` (DejaVu loaded via
+   `@font-face` from the bundled TTF; text items carry em size and width), picking by `Owner`.
+4. Continue P4.2 → P4.8 per `docs/phase-4-plan.md`.
+
+## Gotchas
+
+- HLR frame: `Plane::new(origin, x_dir, normal)` with `normal` pointing **at the viewer**; paper
+  y = normal × x. The front view looks along −Z (model Y up).
+- OCCT emits a cylinder seam instead of a duplicate silhouette when they coincide; that is why
+  `seam_edges` keeps seams lying on the silhouette.
+- `Prim::Text.height` is the **em size**; drafting heights are capital heights
+  (`text::em_for` / `text::cap_for`). DXF writes capital height.
+- Combined assembly shapes rely on each located child keeping its own edge order; two coincident
+  instances of one part merge edges, so `Sources::scene` refuses that case.
+- Python validation tools live only in the session scratchpad (venv with pymupdf, pypdf, ezdxf);
+  recreate with `python3 -m venv venv && venv/bin/pip install pymupdf pypdf ezdxf matplotlib`.
+
 # Handoff: Phase 3 assemblies (2026-10-12, session 5)
 
 Read this first. Earlier sections below are history.

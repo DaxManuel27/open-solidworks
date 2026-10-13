@@ -170,7 +170,9 @@ impl Shape {
             })
             .collect();
         let tol = trace_sources(self, view, deflection, &mut out);
-        let seams: std::collections::HashSet<u32> = ffi::seam_edges(&self.0, &v3(view.normal)).into_iter().collect();
+        let seams: std::collections::HashSet<u32> = ffi::seam_edges(&self.0, &v3(view.normal))
+            .into_iter()
+            .collect();
         out.retain(|e| e.source.is_none_or(|s| !seams.contains(&s)));
         Ok(remove_covered(out, tol))
     }
@@ -190,7 +192,9 @@ fn straighten(p: Vec<DVec2>) -> Curve2d {
     let len = a.distance(b);
     if len > 1e-9 {
         let n = (b - a).perp() / len;
-        if p.iter().all(|q| (*q - a).dot(n).abs() < 1e-7 * len.max(1.0)) {
+        if p.iter()
+            .all(|q| (*q - a).dot(n).abs() < 1e-7 * len.max(1.0))
+        {
             // Keep the extreme points: an edge-on arc may overshoot its ends.
             let d = (b - a) / len;
             let ts = p.iter().map(|q| (*q - a).dot(d));
@@ -311,10 +315,7 @@ fn remove_covered(mut edges: Vec<HlrEdge>, tol: f64) -> Vec<HlrEdge> {
         for curve in pieces {
             let pts = curve.points(0.05);
             segs.extend(pts.windows(2).map(|w| (w[0], w[1])));
-            kept.push(HlrEdge {
-                curve,
-                ..e.clone()
-            });
+            kept.push(HlrEdge { curve, ..e.clone() });
         }
     }
     kept

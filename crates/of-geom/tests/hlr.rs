@@ -141,7 +141,10 @@ fn preview_quality_matches_exact_extents() {
     };
     let (a0, a1) = extent(HlrQuality::Exact);
     let (b0, b1) = extent(HlrQuality::Preview);
-    assert!(a0.distance(b0) < 0.05 && a1.distance(b1) < 0.05, "{a0} {a1} {b0} {b1}");
+    assert!(
+        a0.distance(b0) < 0.05 && a1.distance(b1) < 0.05,
+        "{a0} {a1} {b0} {b1}"
+    );
     assert!(plate.count(Kind::Edge) > 12);
 }
 

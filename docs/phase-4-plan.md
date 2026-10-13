@@ -93,7 +93,7 @@ given with the plan):
 | --- | --- | --- |
 | DWG export | DXF only for now. DWG is deferred | No open-source DWG writer is compatible with Apache-2.0/MIT: LibreDWG is GPL-3.0 and the ODA SDK is proprietary. DXF is readable by every tool that reads DWG |
 | PDF writer | Native Rust (`pdf-writer`, MIT/Apache) from the sheet display list | Works headless from CLI/MCP; vector output with embedded fonts; avoids Chromium print differences between platforms |
-| Drafting font | Bundle one OFL-licensed font with ISO 3098-style letterforms plus a symbol set (⌀, ⌴, ⌵, ↧, ±, GD&T characters), chosen in P4.0 | Output must be identical on every platform and embeddable in PDF/DXF |
+| Drafting font | DejaVu Sans Condensed (Bitstream Vera licence, permissive) for text; drafting and GD&T symbols drawn as OpenForge strokes, since no permissive font has them all | Output must be identical on every platform and embeddable in PDF/DXF |
 | Hidden-line removal | OCCT exact `HLRBRep_Algo` for final output and polygonal `HLRBRep_PolyAlgo` for interactive preview if exact misses the budget, settled by P4.0 measurements | Exact HLR is the main performance risk of this phase |
 | Driving dimensions | Editing an imported model dimension changes the part through the part's own document and saves it, reloading dependants as Phase 3 does | Matches the spec's associativity without a second editing path |
 

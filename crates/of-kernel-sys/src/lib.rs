@@ -418,8 +418,13 @@ pub mod ffi {
         /// at the viewer), with `view.x_dir` to the right on paper. `exact`
         /// uses the analytic algorithm, otherwise the polygonal one on a mesh
         /// of `deflection`. Hidden edges are returned only when `hidden`.
-        fn hlr(s: &Shape, view: &Frame, exact: bool, hidden: bool, deflection: f64)
-        -> Result<Vec<HlrEdge>>;
+        fn hlr(
+            s: &Shape,
+            view: &Frame,
+            exact: bool,
+            hidden: bool,
+            deflection: f64,
+        ) -> Result<Vec<HlrEdge>>;
         /// Edges a face meets itself along (cylinder seams), possibly
         /// repeated, except those on the silhouette seen along `view`.
         fn seam_edges(s: &Shape, view: &Vec3) -> Vec<u32>;

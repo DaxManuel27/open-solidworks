@@ -14,8 +14,8 @@ mod profile;
 
 pub use assembly::{STEP_ROOT, StepAssemblyWriter, StepInstance, read_step_assembly};
 pub use curves::{Curve3, EndTangent};
-pub use hlr::{Curve2d, EdgeClass, HlrEdge, HlrQuality};
 pub use glam::{DAffine3, DMat3, DVec2, DVec3};
+pub use hlr::{Curve2d, EdgeClass, HlrEdge, HlrQuality};
 pub use plane::Plane;
 pub use profile::{Curve2, Profile, ProfileFace};
 
