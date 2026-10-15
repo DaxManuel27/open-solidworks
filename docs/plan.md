@@ -52,6 +52,8 @@ Phase 3: [implementation plan](phase-3-plan.md) and [current status](phase-3-sta
 
 Phase 4: [implementation plan](phase-4-plan.md) and [current status](phase-4-status.md).
 
+Phase 5: [implementation plan](phase-5-plan.md) (proposed, awaiting owner decisions).
+
 Current priority, 2026-10-13: Phase 3 (assemblies) is complete and merged into `main`
 ([status](phase-3-status.md)). Phase 4 (drawings) is complete on `phase-4`, with hosted CI passing; it merges into `main` on the owner's go-ahead. AI assistant
 development stays deferred until a separate decision to resume it.
