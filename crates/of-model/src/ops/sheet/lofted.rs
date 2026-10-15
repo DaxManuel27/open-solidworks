@@ -234,7 +234,7 @@ pub(in crate::ops) fn lofted_bend(
         shape,
     };
     let facets: Vec<String> = (0..tris.len()).map(|k| format!("{fid}.f{k}.a")).collect();
-    let fixed = facets[tris.len() / 2 & !1].clone();
+    let fixed = facets[(tris.len() / 2) & !1].clone();
     super::apply_tool(
         fid,
         state,
