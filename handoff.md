@@ -22,14 +22,14 @@ this session: `perf:check`, `perf:asm:check`, `bench`.
 
 ## Where things live
 
-| Area | Files |
-| --- | --- |
-| Annotation model | `of-drawing/src/annotations.rs` (kinds; `Annotation.attach` is the view it moves with, named apart from kinds' own `view` because kinds are flattened in) |
-| Drawing annotations | `of-drawing/src/annot.rs` (draw every kind, model items, driving dimensions, hole text, auto balloons, tables' cells), `dims.rs` (dimension model, value text, drafting), `symbols.rs`, `tables.rs`, `fits.rs` (ISO 286), `locate.rs` (`ViewRef` → model geometry) |
-| Output | `pdf.rs`, `dxf.rs` (R12 + `DxfSheet`), `dxf2018.rs` (AC1032: model space at true size, layouts, viewports) |
-| Core | `openforge/src/drawing.rs` (all `drawing.*` methods), params in `tools/drawing_params.rs`; part `doc.properties.set` / `doc.dimension_display.set` in `session.rs` |
-| Desktop | `renderer/src/drawing/` (`SheetCanvas.tsx`, `state.ts` sheet store + pick routing, `SheetTabs.tsx`, `DrawingTree.tsx`, `panels/{common,sheet,views,dimensions,annotate}.tsx`); ribbon in `toolbars/{commands,layout}.ts`; `store.ts` `adoptDrawing`, `makeDrawing`, `print`; main process `.ofd` dialogs, `window:drawing`, `print:*` |
-| Tests | `of-drawing/tests/annotations.rs`, `output.rs` (DXF 2018 structure), area 15 in `scripts/catalog-conformance.mjs`, `scripts/drawing-smoke.mjs`, `scripts/phase-4-performance.mjs` + `docs/phase-4-budgets.json` |
+| Area                | Files                                                                                                                                                                                                                                                                                                                                 |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Annotation model    | `of-drawing/src/annotations.rs` (kinds; `Annotation.attach` is the view it moves with, named apart from kinds' own `view` because kinds are flattened in)                                                                                                                                                                             |
+| Drawing annotations | `of-drawing/src/annot.rs` (draw every kind, model items, driving dimensions, hole text, auto balloons, tables' cells), `dims.rs` (dimension model, value text, drafting), `symbols.rs`, `tables.rs`, `fits.rs` (ISO 286), `locate.rs` (`ViewRef` → model geometry)                                                                    |
+| Output              | `pdf.rs`, `dxf.rs` (R12 + `DxfSheet`), `dxf2018.rs` (AC1032: model space at true size, layouts, viewports)                                                                                                                                                                                                                            |
+| Core                | `openforge/src/drawing.rs` (all `drawing.*` methods), params in `tools/drawing_params.rs`; part `doc.properties.set` / `doc.dimension_display.set` in `session.rs`                                                                                                                                                                    |
+| Desktop             | `renderer/src/drawing/` (`SheetCanvas.tsx`, `state.ts` sheet store + pick routing, `SheetTabs.tsx`, `DrawingTree.tsx`, `panels/{common,sheet,views,dimensions,annotate}.tsx`); ribbon in `toolbars/{commands,layout}.ts`; `store.ts` `adoptDrawing`, `makeDrawing`, `print`; main process `.ofd` dialogs, `window:drawing`, `print:*` |
+| Tests               | `of-drawing/tests/annotations.rs`, `output.rs` (DXF 2018 structure), area 15 in `scripts/catalog-conformance.mjs`, `scripts/drawing-smoke.mjs`, `scripts/phase-4-performance.mjs` + `docs/phase-4-budgets.json`                                                                                                                       |
 
 ## Gotchas
 
