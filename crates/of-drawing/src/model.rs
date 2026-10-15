@@ -288,3 +288,54 @@ pub fn part_ref(entity: Ref) -> CompRef {
         entity,
     }
 }
+
+/// A planar face a relative-to-model view can use.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, schemars::JsonSchema)]
+pub struct PlanarFace {
+    pub entity: CompRef,
+    /// Outward normal in the model's (assembly's) space.
+    pub normal: [f64; 3],
+    /// Area, mm².
+    pub area: f64,
+}
+
+impl Sources {
+    /// Planar faces of a part or of every visible part of an assembly,
+    /// largest first.
+    pub fn planar_faces(
+        &mut self,
+        path: &Path,
+        configuration: Option<u32>,
+    ) -> Result<Vec<PlanarFace>, String> {
+        let scene = self.scene(path, configuration, false, &[])?;
+        let mut out = Vec::new();
+        for p in &scene.pieces {
+            let state = p.part.state();
+            let Some(body) = state.body.as_ref() else {
+                continue;
+            };
+            for i in 0..body.shape.count(Kind::Face) {
+                let Ok(info) = body.shape.face_info(i) else {
+                    continue;
+                };
+                if info.kind != of_model::geom::SurfaceKind::Plane {
+                    continue;
+                }
+                let Some(r) = state.ref_for(Kind::Face, i) else {
+                    continue;
+                };
+                let n = p.pose.rotation * info.normal;
+                out.push(PlanarFace {
+                    entity: CompRef {
+                        component: p.component.clone(),
+                        entity: r,
+                    },
+                    normal: n.to_array(),
+                    area: info.area,
+                });
+            }
+        }
+        out.sort_by(|a, b| b.area.total_cmp(&a.area));
+        Ok(out)
+    }
+}

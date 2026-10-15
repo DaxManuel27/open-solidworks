@@ -342,7 +342,7 @@ fn notes_lead_to_model_points_and_fill_fields() {
     );
     s.annotations.push(Annotation {
         id: 10,
-        view: None,
+        attach: None,
         layer: None,
         kind: AnnotationKind::Note {
             at: [100.0, 250.0],

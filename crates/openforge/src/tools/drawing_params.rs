@@ -32,6 +32,14 @@ pub struct NewDrawing {
 }
 
 #[derive(Deserialize, JsonSchema)]
+pub struct ModelFaces {
+    /// `.ofp` or `.ofa` file.
+    pub model: std::path::PathBuf,
+    #[serde(default)]
+    pub configuration: Option<u32>,
+}
+
+#[derive(Deserialize, JsonSchema)]
 pub struct StandardViews {
     pub sheet: u32,
     /// `.ofp` or `.ofa` file.
@@ -142,6 +150,25 @@ pub struct UpdateView {
     /// Assembly components not drawn, by key path (replaces the list).
     #[serde(default)]
     pub hidden_components: Option<Vec<Vec<String>>>,
+    /// Break gaps in view-plane mm (replaces the list); empty removes the
+    /// break.
+    #[serde(default)]
+    pub breaks: Option<Vec<of_drawing::Break>>,
+    #[serde(default)]
+    pub break_style: Option<of_drawing::BreakStyle>,
+    /// Gap between break lines, mm of paper.
+    #[serde(default)]
+    #[schemars(range(min = 0.0))]
+    pub break_gap: Option<f64>,
+    /// Crop the view to a closed profile (view-plane mm); null removes it.
+    #[serde(default, deserialize_with = "some")]
+    pub crop: Option<Option<of_drawing::Profile>>,
+    /// Broken-out sections (replaces the list).
+    #[serde(default)]
+    pub broken_out: Option<Vec<of_drawing::BrokenOut>>,
+    /// Section hatching: pattern (null: by material), scale and angle.
+    #[serde(default)]
+    pub hatch: Option<of_drawing::HatchOptions>,
 }
 
 #[derive(Deserialize, JsonSchema)]

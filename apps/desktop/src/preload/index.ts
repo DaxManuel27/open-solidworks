@@ -32,6 +32,9 @@ const api: OpenForgeApi = {
   setDocState: (title, dirty, path) => ipcRenderer.send('doc:state', title, dirty, path),
   closeWindow: () => ipcRenderer.send('window:close'),
   openWindow: (path) => ipcRenderer.send('window:open', path),
+  openDrawing: (model) => ipcRenderer.send('window:drawing', model),
+  printPath: () => ipcRenderer.invoke('print:path') as Promise<string>,
+  openPrint: (path) => ipcRenderer.invoke('print:open', path) as Promise<void>,
   notifySaved: (path) => ipcRenderer.send('doc:saved', path),
   onFileSaved: (handler) => {
     const listener = (_e: IpcRendererEvent, path: string) => handler(path)
@@ -45,7 +48,8 @@ const api: OpenForgeApi = {
     const kind = q.get('kind')
     return {
       open: q.get('open'),
-      kind: kind === 'assembly' || kind === 'part' ? kind : null,
+      kind: kind === 'assembly' || kind === 'part' || kind === 'drawing' ? kind : null,
+      model: q.get('model'),
     }
   },
   onMenu: (handler) => {

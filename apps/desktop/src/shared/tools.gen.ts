@@ -615,6 +615,23 @@ export type BoolOp = 'fuse' | 'cut' | 'common'
 
 export type Border = 'none' | 'box' | 'circle'
 
+/**
+ * One gap of a break view, along the view's x (vertical break lines) or
+ * y axis (horizontal), in view-plane mm relative to the model origin.
+ */
+export type Break = {
+  vertical: boolean
+  from: number
+  to: number
+}
+
+export type BreakStyle = 'straight' | 'curved' | 'zig_zag' | 'small_zig_zag' | 'jagged'
+
+export type BrokenOut = {
+  profile: Profile
+  depth: number
+}
+
 export type ChamferMode =
   | {
     type: 'equal'
@@ -1777,6 +1794,14 @@ export type HardwareSpec = {
   length?: number | null
 }
 
+export type HatchOptions = {
+  /** Radians added to the pattern's own angle. */
+  angle?: number
+  /** `None` picks a pattern from each body's material. */
+  pattern?: Pattern | null
+  scale?: number
+}
+
 export type HelixInput = 'pitch_and_turns' | 'height_and_turns' | 'height_and_pitch'
 
 export type HelixPitch = {
@@ -2221,6 +2246,12 @@ export type PatternKind =
 export type Pick = {
   view: number
   entity: CompRef
+  /**
+   * Where the user picked, in view-plane mm (model mm relative to the
+   * model origin): with `point` auto, the edge's end, middle or center
+   * nearest this point is used.
+   */
+  near?: [number, number] | null
   point?: Which
 }
 
@@ -3327,6 +3358,14 @@ export interface ToolArgs {
      */
     scale?: Scale | null
   }
+  /** Planar faces of a saved part or assembly (component path, stable face ref, outward normal, area; largest first), for relative-to-model view orientations. */
+  model_planar_faces: {
+    /** `.ofp` or `.ofa` file. */
+    model: string
+    configuration?: number | null
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+  }
   /** Mark every view as up to date with its model. Views always draw the saved model; render_sheet reports `stale` views whose model changed since the last update or save. */
   update_drawing: {
     /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
@@ -3404,14 +3443,28 @@ export interface ToolArgs {
     scale?: Scale | null
     tangent?: TangentEdges | null
   }
-  /** Move, rescale, rename or restyle a view, hide model edges or components in it, or replace what it shows. */
+  /** Move, rescale, rename or restyle a view, hide model edges or components in it, break it (gaps closed up, dimensions keep true lengths), crop it, add broken-out sections, set section hatching, or replace what it shows. */
   update_drawing_view: {
     id: number
     aligned?: boolean | null
+    /** Gap between break lines, mm of paper. */
+    break_gap?: number | null
+    break_style?: BreakStyle | null
+    /**
+     * Break gaps in view-plane mm (replaces the list); empty removes the
+     * break.
+     */
+    breaks?: Break[] | null
+    /** Broken-out sections (replaces the list). */
+    broken_out?: BrokenOut[] | null
+    /** Crop the view to a closed profile (view-plane mm); null removes it. */
+    crop?: Profile | null
     /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
     detail?: 'summary' | 'full'
     /** Null follows the parent view. */
     display?: DisplayStyle | null
+    /** Section hatching: pattern (null: by material), scale and angle. */
+    hatch?: HatchOptions | null
     /** Assembly components not drawn, by key path (replaces the list). */
     hidden_components?: string[][] | null
     /** Model edges not drawn (replaces the list). */
@@ -3612,6 +3665,7 @@ export const TOOL_METHODS = {
   import_step_assembly: 'asm.import_step',
   new_drawing: 'drawing.new',
   standard_views: 'drawing.views.standard',
+  model_planar_faces: 'drawing.model.faces',
   update_drawing: 'drawing.update',
   drawing_info: 'drawing.info',
   render_sheet: 'drawing.render',
@@ -3689,6 +3743,7 @@ export const TOOL_EXAMPLES: { [K in ToolName]: ToolArgs[K][] } = {
   import_step_assembly: [{"path":"assembly.step"}],
   new_drawing: [{}, {"standard":"ansi"}, {"model":"part.ofp"}],
   standard_views: [{"model":"part.ofp","sheet":4}, {"isometric":false,"model":"part.ofp","scale":{"den":2,"num":1},"sheet":4}],
+  model_planar_faces: [{"model":"part.ofp"}],
   update_drawing: [{}],
   drawing_info: [{}],
   render_sheet: [{"sheet":1,"summary":true}],
@@ -3696,7 +3751,7 @@ export const TOOL_EXAMPLES: { [K in ToolName]: ToolArgs[K][] } = {
   update_sheet: [{"id":1,"scale":{"den":2,"num":1}}, {"id":1,"name":"Plate","properties_view":2}],
   delete_sheets: [{"ids":[4]}],
   add_drawing_view: [{"origin":[300,200],"sheet":1,"view":{"model":{"path":"part.ofp"},"orientation":{"type":"isometric"},"type":"model"}}, {"origin":[150,250],"sheet":1,"view":{"parent":2,"placement":"above","type":"projected"}}],
-  update_drawing_view: [{"id":2,"origin":[120,160]}, {"display":"hidden_visible","id":3}],
+  update_drawing_view: [{"id":2,"origin":[120,160]}, {"display":"hidden_visible","id":3}, {"break_style":"zig_zag","breaks":[{"from":20,"to":40,"vertical":true}],"id":2}, {"crop":{"center":[30,20],"radius":15,"type":"circle"},"id":2}, {"broken_out":[{"depth":3,"profile":{"center":[30,20],"radius":8,"type":"circle"}}],"id":2}],
   delete_drawing_views: [{"ids":[3]}],
   add_annotation: [{"annotation":{"at":[40,60],"text":"BREAK ALL EDGES 0.5","type":"note"},"sheet":1}, {"annotation":{"at":[0,15],"dim":"model","key":"f2.end1.depth","tolerance":{"type":"symmetric","value":0.1},"type":"dimension","view":3},"sheet":1,"view":3}, {"annotation":{"at":[250,220],"rows":[{"characteristic":"flatness","tolerance":"0.05"}],"type":"gtol"},"sheet":1}, {"annotation":{"at":[20,120],"class":"m","table":"general_tolerance","type":"table"},"sheet":1}],
   update_annotation: [{"annotation":{"at":[100,250],"text":"SEE DETAIL A","type":"note"},"id":5}, {"id":5,"view":2}],

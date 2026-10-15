@@ -240,6 +240,36 @@ fn sketch_measure(
     })
 }
 
+/// The model point a pick names: its `point`, or with `near` set and
+/// `Auto`, the end, middle or center nearest that view-plane point.
+fn pick_point(l: &Located, p: &Pick) -> DVec3 {
+    let Some(near) = p.near.filter(|_| p.point == dims::Which::Auto) else {
+        return point_of(&l.geo, p.point);
+    };
+    let near = DVec2::from(near);
+    let candidates: Vec<DVec3> = match l.geo {
+        Geo::Point(q) => vec![q],
+        Geo::Line(a, b) => vec![a, b, (a + b) / 2.0],
+        Geo::Circle { center, ends, .. } => {
+            let mut v = vec![center];
+            if let Some((a, b)) = ends {
+                v.extend([a, b]);
+            }
+            v
+        }
+        Geo::Plane { point, .. } => vec![point],
+        Geo::Cylinder { a, b, .. } => vec![a, b, (a + b) / 2.0],
+    };
+    candidates
+        .into_iter()
+        .min_by(|x, y| {
+            l.local(*x)
+                .distance(near)
+                .total_cmp(&l.local(*y).distance(near))
+        })
+        .unwrap_or_else(|| l.geo.anchor())
+}
+
 /// The `Located` view geometry needed only for its view mapping.
 fn view_only(view: Resolved) -> Located {
     Located {
@@ -251,7 +281,7 @@ fn view_only(view: Resolved) -> Located {
 impl Drawing {
     /// Sheet position of an annotation coordinate.
     fn ann_pos(&mut self, sheet: &Sheet, a: &Annotation, at: P2) -> Result<P2, String> {
-        match a.view {
+        match a.attach {
             None => Ok(at),
             Some(v) => {
                 let r = self.resolve(sheet, v)?;
@@ -893,9 +923,9 @@ impl Drawing {
                                 let foot = p0 + n0 * (p1 - p0).dot(n0);
                                 (d2(la.sheet(p0)), d2(lb.sheet(foot)), p0, foot, Some(n0))
                             }
-                            (ga, gb, wa, wb) => {
-                                let x = point_of(&ga, wa);
-                                let y = point_of(&gb, wb);
+                            _ => {
+                                let x = pick_point(&la, pa);
+                                let y = pick_point(&lb, pb);
                                 (d2(la.sheet(x)), d2(lb.sheet(y)), x, y, None)
                             }
                         }
@@ -1030,13 +1060,13 @@ impl Drawing {
                 vertical,
             } => {
                 let lo = self.locate(sheet, &origin.target)?;
-                let o = point_of(&lo.geo, origin.point);
+                let o = pick_point(&lo, origin);
                 let frame = lo.view.frame;
                 let dir = if *vertical { frame.y } else { frame.x };
                 let mut all = vec![(lo.sheet(o), 0.0)];
                 for q in points {
                     let l = self.locate(sheet, &q.target)?;
-                    let pq = point_of(&l.geo, q.point);
+                    let pq = pick_point(&l, q);
                     all.push((l.sheet(pq), (pq - o).dot(dir)));
                 }
                 let gap = std.extension_gap();
@@ -1081,11 +1111,11 @@ impl Drawing {
                 spacing,
             } => {
                 let lb = self.locate(sheet, &base.target)?;
-                let b3 = point_of(&lb.geo, base.point);
+                let b3 = pick_point(&lb, base);
                 let sb = d2(lb.sheet(b3));
                 for (i, q) in points.iter().enumerate() {
                     let l = self.locate(sheet, &q.target)?;
-                    let q3 = point_of(&l.geo, q.point);
+                    let q3 = pick_point(&l, q);
                     let sq = d2(l.sheet(q3));
                     let o = match orientation {
                         Orient::Auto => auto_orient(sb, sq, at),
@@ -1110,7 +1140,7 @@ impl Drawing {
                 let mut located = Vec::new();
                 for q in points {
                     let l = self.locate(sheet, &q.target)?;
-                    let q3 = point_of(&l.geo, q.point);
+                    let q3 = pick_point(&l, q);
                     located.push((d2(l.sheet(q3)), q3, l.view.clone()));
                 }
                 for w in located.windows(2) {
@@ -1318,7 +1348,7 @@ impl Drawing {
                 ..
             } => {
                 let lo = self.locate(sheet, &origin.target)?;
-                let o = point_of(&lo.geo, origin.point);
+                let o = pick_point(&lo, origin);
                 let frame = lo.view.frame;
                 let std = self.doc.standard;
                 let tag_names = self.hole_tags(sheet, holes, *tags);
@@ -1642,7 +1672,7 @@ impl Drawing {
                     }
                     out.push(Annotation {
                         id: alloc(),
-                        view: Some(vid),
+                        attach: Some(vid),
                         layer: None,
                         kind: AnnotationKind::Dimension(Box::new(dim)),
                     });
@@ -1695,7 +1725,7 @@ impl Drawing {
                     let at = [c[0] + rr + 8.0, c[1] + rr + 8.0];
                     out.push(Annotation {
                         id: alloc(),
-                        view: Some(*vid),
+                        attach: Some(*vid),
                         layer: None,
                         kind: AnnotationKind::HoleCallout {
                             at: [at[0] - r.origin.x, at[1] - r.origin.y],
@@ -1728,7 +1758,7 @@ impl Drawing {
                 let _ = fid;
                 out.push(Annotation {
                     id: alloc(),
-                    view: Some(*vid),
+                    attach: Some(*vid),
                     layer: None,
                     kind: AnnotationKind::Note {
                         at: [s[0] + 10.0 - r.origin.x, s[1] + 10.0 - r.origin.y],
@@ -1774,7 +1804,7 @@ impl Drawing {
                         if along < 1e-6 {
                             out.push(Annotation {
                                 id: alloc(),
-                                view: Some(*vid),
+                                attach: Some(*vid),
                                 layer: None,
                                 kind: AnnotationKind::Centerline {
                                     a: target,
@@ -1806,7 +1836,7 @@ impl Drawing {
                     if !marks.is_empty() {
                         out.push(Annotation {
                             id: alloc(),
-                            view: Some(*vid),
+                            attach: Some(*vid),
                             layer: None,
                             kind: AnnotationKind::CenterMark {
                                 targets: marks,
@@ -2011,7 +2041,7 @@ impl Drawing {
             let local = r.from_sheet(on);
             out.push(Annotation {
                 id: next,
-                view: Some(view),
+                attach: Some(view),
                 layer: None,
                 kind: AnnotationKind::Balloon {
                     at: [at[0] - r.origin.x, at[1] - r.origin.y],

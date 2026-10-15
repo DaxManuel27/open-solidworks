@@ -63,6 +63,9 @@ pub struct ViewInfo {
     pub bbox: Option<[P2; 2]>,
     /// Paper mm per model mm.
     pub scale: f64,
+    /// Sheet position of the model origin after alignment with the parent
+    /// (annotations that move with the view are placed relative to it).
+    pub origin: P2,
     /// Paper axes and view direction in model space.
     pub x: [f64; 3],
     pub y: [f64; 3],
@@ -539,6 +542,9 @@ impl Drawing {
                 id: v.id,
                 bbox,
                 scale: resolved.as_ref().map_or(1.0, |r| r.scale),
+                origin: resolved
+                    .as_ref()
+                    .map_or(v.origin, |r| [r.origin.x, r.origin.y]),
                 x: resolved
                     .as_ref()
                     .map_or([1.0, 0.0, 0.0], |r| r.frame.x.to_array()),

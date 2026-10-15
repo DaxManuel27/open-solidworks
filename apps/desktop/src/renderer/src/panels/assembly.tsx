@@ -592,10 +592,13 @@ export function ExplodePanel() {
     setAnimating(true)
     const total = steps.length
     for (let i = explode ? 1 : total - 1; explode ? i <= total : i >= 0; i += explode ? 1 : -1) {
+      // Stop when the document is no longer this assembly.
+      if (!useStore.getState().assembly) return setAnimating(false)
       await useStore.getState().run('asm.explode.show', { steps: i === 0 && !explode ? null : i })
       await new Promise((r) => setTimeout(r, 250))
     }
-    if (!explode) await useStore.getState().run('asm.explode.show', { steps: null })
+    if (!explode && useStore.getState().assembly)
+      await useStore.getState().run('asm.explode.show', { steps: null })
     setAnimating(false)
   }
   return (

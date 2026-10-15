@@ -33,6 +33,11 @@ pub struct Pick {
     pub target: ViewRef,
     #[serde(default, skip_serializing_if = "is_auto")]
     pub point: Which,
+    /// Where the user picked, in view-plane mm (model mm relative to the
+    /// model origin): with `point` auto, the edge's end, middle or center
+    /// nearest this point is used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub near: Option<[f64; 2]>,
 }
 
 fn is_auto(w: &Which) -> bool {

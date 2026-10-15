@@ -337,6 +337,7 @@ run `cargo run -p openforge -- generate` instead. -->
 | `import_step_assembly` | `asm.import_step` | file/session (not in drafts) | `path`, `detail?`, `folder?` |
 | `new_drawing` | `drawing.new` | file/session (not in drafts) | `configuration?`, `detail?`, `model?`, `projection?`, `size?`, `standard?` |
 | `standard_views` | `drawing.views.standard` | file/session (not in drafts) | `sheet`, `model`, `configuration?`, `detail?`, `isometric?`, `scale?` |
+| `model_planar_faces` | `drawing.model.faces` | read | `model`, `configuration?`, `detail?` |
 | `update_drawing` | `drawing.update` | file/session (not in drafts) | `detail?` |
 | `drawing_info` | `drawing.info` | read | `detail?` |
 | `render_sheet` | `drawing.render` | read | `detail?`, `sheet?`, `summary?` |
@@ -344,7 +345,7 @@ run `cargo run -p openforge -- generate` instead. -->
 | `update_sheet` | `drawing.sheet.update` | file/session (not in drafts) | `id`, `detail?`, `format_visible?`, `index?`, `name?`, `portrait?`, `projection?`, `properties_view?`, `scale?`, `size?`, `template?` |
 | `delete_sheets` | `drawing.sheet.delete` | file/session (not in drafts) | `ids`, `detail?` |
 | `add_drawing_view` | `drawing.view.add` | file/session (not in drafts) | `sheet`, `view`, `origin`, `detail?`, `display?`, `name?`, `scale?`, `tangent?` |
-| `update_drawing_view` | `drawing.view.update` | file/session (not in drafts) | `id`, `aligned?`, `detail?`, `display?`, `hidden_components?`, `hidden_edges?`, `label?`, `name?`, `origin?`, `scale?`, `tangent?`, `view?` |
+| `update_drawing_view` | `drawing.view.update` | file/session (not in drafts) | `id`, `aligned?`, `break_gap?`, `break_style?`, `breaks?`, `broken_out?`, `crop?`, `detail?`, `display?`, `hatch?`, `hidden_components?`, `hidden_edges?`, `label?`, `name?`, `origin?`, `scale?`, `tangent?`, `view?` |
 | `delete_drawing_views` | `drawing.view.delete` | file/session (not in drafts) | `ids`, `detail?` |
 | `add_annotation` | `drawing.annotation.add` | file/session (not in drafts) | `sheet`, `annotation`, `detail?`, `layer?`, `view?` |
 | `update_annotation` | `drawing.annotation.update` | file/session (not in drafts) | `id`, `annotation?`, `detail?`, `layer?`, `view?` |

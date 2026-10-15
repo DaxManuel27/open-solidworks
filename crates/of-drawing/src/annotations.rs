@@ -16,9 +16,10 @@ use crate::hatch::Pattern;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Annotation {
     pub id: u32,
-    /// The view it moves with; `None` places it on the sheet.
+    /// The view it moves with; `None` places it on the sheet. Named apart
+    /// from the `view` some kinds measure in, since kinds are flattened in.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub view: Option<u32>,
+    pub attach: Option<u32>,
     /// Layer override; the kind picks one otherwise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub layer: Option<String>,
@@ -433,7 +434,7 @@ impl Annotation {
     /// ones its geometry is in.
     pub fn views(&self) -> Vec<u32> {
         let mut v = self.kind.views();
-        v.extend(self.view);
+        v.extend(self.attach);
         v.sort_unstable();
         v.dedup();
         v

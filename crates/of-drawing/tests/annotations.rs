@@ -134,6 +134,7 @@ fn pick(view: u32, entity: CompRef) -> Pick {
     Pick {
         target: ViewRef { view, entity },
         point: Which::Auto,
+        near: None,
     }
 }
 
@@ -210,7 +211,7 @@ fn render(d: &mut Drawing) -> SheetRender {
                 view_annotations: sheet
                     .annotations
                     .iter()
-                    .filter(|a| a.view.is_some())
+                    .filter(|a| a.attach.is_some())
                     .map(|a| a.id)
                     .collect(),
             }],
@@ -228,7 +229,7 @@ fn add(d: &mut Drawing, view: Option<u32>, kind: AnnotationKind) -> u32 {
     let id = d.doc.alloc_id();
     d.doc.sheets[0].annotations.push(Annotation {
         id,
-        view,
+        attach: view,
         layer: None,
         kind,
     });
@@ -793,6 +794,7 @@ fn hole_revision_and_tolerance_tables() {
                         entity: corner,
                     },
                     point: Which::Start,
+                    near: None,
                 },
                 holes,
                 tags: Tags::Alphabetic,
@@ -952,4 +954,96 @@ fn cosmetic_threads_follow_the_standard() {
             "{len}"
         );
     }
+}
+
+#[test]
+fn ordinate_dimensions_measure_from_the_picked_end() {
+    let dir = Scratch::new("ordinate");
+    let path = bracket(&dir);
+    let mut d = drawing(
+        of_drawing::standard::Standard::iso(),
+        vec![model_view(FRONT, &path, Orientation::Front, [150.0, 150.0])],
+    );
+    let on_front = |e: &of_model::geom::EdgeInfo| e.start.z.abs() < 1e-6 && e.end.z.abs() < 1e-6;
+    let bottom = edge(&path, |e| {
+        e.kind == CurveKind::Line && on_front(e) && e.start.y.abs() < 1e-6 && e.end.y.abs() < 1e-6
+    });
+    let right = edge(&path, |e| {
+        e.kind == CurveKind::Line
+            && on_front(e)
+            && (e.start.x - 100.0).abs() < 1e-6
+            && (e.end.x - 100.0).abs() < 1e-6
+    });
+    let bore = edge(&path, |e| {
+        e.kind == CurveKind::Circle && (e.radius - 6.0).abs() < 1e-6 && e.center.z.abs() < 1e-6
+    });
+    let near = |entity: CompRef, at: [f64; 2]| Pick {
+        target: ViewRef {
+            view: FRONT,
+            entity,
+        },
+        point: Which::Auto,
+        near: Some(at),
+    };
+    let id = add(
+        &mut d,
+        Some(FRONT),
+        AnnotationKind::Dimension(Box::new(Dimension::new(
+            DimKind::Ordinate {
+                // The bottom edge's left end is the origin.
+                origin: near(bottom, [1.0, 0.0]),
+                points: vec![near(right, [100.0, 59.0]), pick(FRONT, bore)],
+                vertical: false,
+            },
+            [0.0, 80.0],
+        ))),
+    );
+    let r = render(&mut d);
+    let mut values: Vec<String> = text_of(&r, id).split(' ').map(String::from).collect();
+    values.sort();
+    assert_eq!(values, ["0", "100", "75"]);
+}
+
+#[test]
+fn annotations_round_trip_through_drawing_files() {
+    let mut d = drawing(of_drawing::standard::Standard::iso(), Vec::new());
+    d.doc.sheets[0].views.push(model_view(
+        FRONT,
+        std::path::Path::new("x.ofp"),
+        Orientation::Front,
+        [100.0, 100.0],
+    ));
+    add(
+        &mut d,
+        Some(FRONT),
+        AnnotationKind::Dimension(Box::new(Dimension::new(
+            DimKind::Model {
+                view: FRONT,
+                key: "f2.end1.depth".into(),
+            },
+            [0.0, 10.0],
+        ))),
+    );
+    add(
+        &mut d,
+        Some(FRONT),
+        AnnotationKind::Table(Box::new(Table {
+            at: [10.0, 280.0],
+            anchor: Default::default(),
+            kind: TableKind::Bom {
+                view: FRONT,
+                bom: Default::default(),
+                numbering: Default::default(),
+                columns: vec![of_drawing::tables::Column::Item],
+                start: 1,
+                increment: 1,
+            },
+            text_height: None,
+            max_rows: None,
+            continued: Vec::new(),
+        })),
+    );
+    let text = of_drawing::file::to_string(&d.doc);
+    let back = of_drawing::file::from_str(&text).unwrap();
+    assert_eq!(back, d.doc);
 }

@@ -242,6 +242,25 @@ impl DrawSession {
                     Ok(v)
                 }
             }
+            "drawing.model.faces" => {
+                let p: ModelFaces = args(params)?;
+                let source = model_source(
+                    &ModelSource {
+                        path: p.model.to_string_lossy().into_owned(),
+                        hash: None,
+                        configuration: p.configuration,
+                    },
+                    &self.drawing.base_dir(),
+                    false,
+                )?;
+                let path = self.drawing.model_path(&source);
+                let faces = self
+                    .drawing
+                    .sources
+                    .planar_faces(&path, p.configuration)
+                    .map_err(fail)?;
+                Ok(json!({ "faces": faces }))
+            }
             "drawing.update" => {
                 // Views always show the models as saved; this clears their
                 // "needs update" marks.
@@ -458,6 +477,37 @@ impl DrawSession {
                     if let Some(c) = p.hidden_components {
                         v.hidden_components = c;
                     }
+                    if let Some(b) = p.breaks {
+                        for g in &b {
+                            if !(g.from.is_finite() && g.to.is_finite()) || g.to <= g.from {
+                                return Err(RpcError::params("a break needs `from` below `to`"));
+                            }
+                        }
+                        v.breaks = b;
+                    }
+                    if let Some(st) = p.break_style {
+                        v.break_style = st;
+                    }
+                    if let Some(gap) = p.break_gap {
+                        v.break_gap = gap;
+                    }
+                    if let Some(c) = p.crop {
+                        v.crop = c;
+                    }
+                    if let Some(b) = p.broken_out {
+                        if b.iter().any(|x| !(x.depth.is_finite() && x.depth > 0.0)) {
+                            return Err(RpcError::params(
+                                "a broken-out section needs a depth above zero",
+                            ));
+                        }
+                        v.broken_out = b;
+                    }
+                    if let Some(h) = p.hatch {
+                        if !(h.scale.is_finite() && h.scale > 0.0) {
+                            return Err(RpcError::params("the hatch scale must be above zero"));
+                        }
+                        v.hatch = h;
+                    }
                     Ok(())
                 })?;
                 Ok(self.full())
@@ -488,7 +538,7 @@ impl DrawSession {
                         .ok_or_else(|| unknown("sheet", p.sheet))?;
                     let a = Annotation {
                         id,
-                        view: p.view,
+                        attach: p.view,
                         layer: p.layer,
                         kind: p.annotation,
                     };
@@ -508,7 +558,7 @@ impl DrawSession {
                         let (sheet, a) = self
                             .find_annotation(p.id)
                             .ok_or_else(|| unknown("annotation", p.id))?;
-                        let from = self.view_origin(&sheet, a.view)?;
+                        let from = self.view_origin(&sheet, a.attach)?;
                         let to = self.view_origin(&sheet, to)?;
                         Some([from[0] - to[0], from[1] - to[1]])
                     }
@@ -526,7 +576,7 @@ impl DrawSession {
                         a.kind = k;
                     }
                     if let (Some(v), Some(d)) = (p.view, shift) {
-                        a.view = v;
+                        a.attach = v;
                         a.kind.translate(d);
                     }
                     if let Some(l) = p.layer {
@@ -814,7 +864,7 @@ impl DrawSession {
                     view_annotations: s
                         .annotations
                         .iter()
-                        .filter(|a| a.view.is_some())
+                        .filter(|a| a.attach.is_some())
                         .map(|a| a.id)
                         .collect(),
                 }

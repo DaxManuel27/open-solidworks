@@ -71,6 +71,23 @@ const view = (name: ViewName, label: string, icon: IconId = 'orientation'): Defi
   run: (s) => s.setView(name),
 })
 const placeholder = (label: string, icon: IconId): Definition => ({ label, icon })
+const drawingOnly = (s: State) =>
+  !s.drawing ? 'Requires a drawing' : s.panel ? 'Finish or cancel the current panel' : undefined
+const hasViews = (s: State) =>
+  drawingOnly(s) ??
+  (!s.drawing?.drawing.sheets.some((x) => x.views.length) ? 'Add a view first' : undefined)
+const draw = (
+  type: PanelType,
+  label: string,
+  icon: IconId,
+  needsViews = true,
+  variant?: string,
+): Definition => ({
+  label,
+  icon,
+  run: (s) => s.openPanel({ type, variant }),
+  unavailable: needsViews ? hasViews : drawingOnly,
+})
 
 export const commands = {
   new: { label: 'New', icon: 'new', shortcut: 'Ctrl/Cmd+N', run: (s) => s.newDoc() },
@@ -150,18 +167,25 @@ export const commands = {
     label: 'Import',
     icon: 'open',
     run: (s) => s.importFile(),
-    unavailable: (s) => (s.assembly ? 'Use Import STEP as Assembly' : part(s)),
+    unavailable: (s) =>
+      s.drawing
+        ? 'Drawings show saved parts and assemblies; add a model view'
+        : s.assembly
+          ? 'Use Import STEP as Assembly'
+          : part(s),
   },
   export: {
     label: 'Export',
     icon: 'export',
-    run: (s) => s.openPanel({ type: 'export' }),
+    run: (s) => s.openPanel({ type: s.drawing ? 'drawing_export' : 'export' }),
     unavailable: (s) =>
-      s.assembly
-        ? s.assembly.components.length
-          ? idlePanel(s)
-          : 'Insert components first'
-        : (part(s) ?? body(s)),
+      s.drawing
+        ? idlePanel(s)
+        : s.assembly
+          ? s.assembly.components.length
+            ? idlePanel(s)
+            : 'Insert components first'
+          : (part(s) ?? body(s)),
   },
   undo: {
     label: 'Undo',
@@ -184,12 +208,109 @@ export const commands = {
     run: (s) => (s.sketch ? s.setSketchTool('select') : s.setPickTarget(null)),
     active: (s) => !!s.sketch && s.sketchTool === 'select',
   },
-  print: placeholder('Print', 'print'),
-  rebuild: placeholder('Rebuild', 'rebuild'),
-  properties: placeholder('File Properties', 'properties'),
+  print: {
+    label: 'Print',
+    icon: 'print',
+    shortcut: 'Ctrl/Cmd+P',
+    run: (s) => s.print(),
+    unavailable: (s) => (!s.drawing ? 'Make a drawing to print' : idlePanel(s)),
+  },
+  rebuild: {
+    label: 'Rebuild',
+    icon: 'rebuild',
+    run: (s) => (s.drawing ? s.run('drawing.update') : s.run('doc.info')),
+    unavailable: (s) => (s.assembly ? 'Assemblies rebuild as you change them' : idlePanel(s)),
+  },
+  properties: {
+    label: 'File Properties',
+    icon: 'properties',
+    run: (s) => s.openPanel({ type: s.drawing ? 'drawing_properties' : 'part_properties' }),
+    unavailable: (s) =>
+      s.assembly
+        ? 'Set properties on the parts of an assembly'
+        : (idlePanel(s) ?? (s.sketch ? 'Exit the sketch first' : undefined)),
+  },
+  makeDrawing: {
+    label: 'Make Drawing',
+    icon: 'drawing',
+    run: (s) => s.makeDrawing(),
+    unavailable: (s) =>
+      s.drawing
+        ? undefined
+        : s.assembly && !s.assembly.components.length
+          ? 'Insert components first'
+          : !s.assembly && !s.scene?.body
+            ? 'Requires a solid body'
+            : idlePanel(s),
+  },
+  newDrawing: { label: 'New Drawing', icon: 'drawing', run: (s) => s.newDrawing() },
+  standardViews: draw('standard_views', 'Standard 3 View', 'views3', false),
+  modelView: draw('model_view', 'Model View', 'view', false),
+  projectedView: draw('projected_view', 'Projected View', 'projected'),
+  auxiliaryView: draw('auxiliary_view', 'Auxiliary View', 'auxiliary'),
+  sectionView: draw('section_view', 'Section View', 'sectionView'),
+  alignedSection: draw('section_view', 'Aligned Section View', 'sectionView', true, 'aligned'),
+  detailView: draw('detail_view', 'Detail View', 'detail'),
+  brokenOut: draw('broken_out', 'Broken-out Section', 'sectionView'),
+  breakView: draw('break_view', 'Break', 'breakView'),
+  cropView: draw('crop_view', 'Crop View', 'crop'),
+  updateViews: {
+    label: 'Update Views',
+    icon: 'rebuild',
+    run: (s) => s.run('drawing.update'),
+    unavailable: hasViews,
+  },
+  addSheet: {
+    label: 'Add Sheet',
+    icon: 'new',
+    run: (s) => s.run('drawing.sheet.add'),
+    unavailable: drawingOnly,
+  },
+  sheetProperties: draw('sheet_properties', 'Sheet Properties', 'drawing', false),
+  drawingProperties: draw('drawing_properties', 'Drawing Properties', 'properties', false),
+  draftingStandard: draw('drafting_standard', 'Drafting Standard', 'options', false),
+  drawingExport: draw('drawing_export', 'Export PDF/DXF', 'export', false),
+  smartDimension: draw('smart_dimension', 'Smart Dimension', 'dimension', true, 'smart'),
+  ordinateDimension: draw('smart_dimension', 'Ordinate Dimension', 'dimension', true, 'ordinate'),
+  baselineDimension: draw('smart_dimension', 'Baseline Dimension', 'dimension', true, 'baseline'),
+  chainDimension: draw('smart_dimension', 'Chain Dimension', 'dimension', true, 'chain'),
+  chamferDimension: draw('smart_dimension', 'Chamfer Dimension', 'chamfer', true, 'chamfer'),
+  angularRunning: draw(
+    'smart_dimension',
+    'Angular Running Dimension',
+    'dimension',
+    true,
+    'angular_running',
+  ),
+  arcLength: draw('smart_dimension', 'Arc Length', 'arc', true, 'arc_length'),
+  modelItems: draw('model_items', 'Model Items', 'modelItems'),
+  note: draw('note', 'Note', 'note', false),
+  balloon: draw('balloon', 'Balloon', 'balloon'),
+  autoBalloon: draw('auto_balloon', 'Auto Balloon', 'balloon'),
+  surfaceFinish: draw('symbol', 'Surface Finish', 'finish', false, 'surface_finish'),
+  weldSymbol: draw('symbol', 'Weld Symbol', 'weld', false, 'weld'),
+  geometricTolerance: draw('symbol', 'Geometric Tolerance', 'gtol', false, 'gtol'),
+  datumFeature: draw('symbol', 'Datum Feature', 'datum', true, 'datum_feature'),
+  datumTarget: draw('symbol', 'Datum Target', 'datum', true, 'datum_target'),
+  holeCallout: draw('hole_callout', 'Hole Callout', 'callout'),
+  centerMark: draw('center_mark', 'Center Mark', 'centerMark'),
+  drawCenterline: draw('centerline', 'Centerline', 'centerlines'),
+  areaHatch: draw('area_hatch', 'Area Hatch/Fill', 'hatchArea', false),
+  revisionCloud: draw('revision_cloud', 'Revision Cloud', 'cloud', false),
+  revisionSymbol: draw('revision_cloud', 'Revision Symbol', 'cloud', false, 'symbol'),
+  bomTable: draw('table', 'Bill of Materials', 'table', true, 'bom'),
+  holeTable: draw('table', 'Hole Table', 'table', true, 'hole'),
+  revisionTable: draw('table', 'Revision Table', 'table', false, 'revision'),
+  generalTable: draw('table', 'General Table', 'table', false, 'general'),
+  toleranceTable: draw('table', 'General Tolerance Table', 'table', false, 'general_tolerance'),
   equations: panel('equations', 'Equations', 'dimension'),
   configurations: panel('configurations', 'Configurations', 'properties'),
-  options: placeholder('Options', 'options'),
+  options: {
+    label: 'Options',
+    icon: 'options',
+    run: (s) => s.openPanel({ type: s.drawing ? 'drafting_standard' : 'units' }),
+    unavailable: (s) => idlePanel(s) ?? (s.sketch ? 'Exit the sketch first' : undefined),
+  },
   sketch3d: feature('sketch3d', '3D Sketch', 'sketch'),
   extrude: feature('extrude', 'Extruded Boss/Base', 'extrude', false, true),
   revolve: feature('revolve', 'Revolved Boss/Base', 'revolve', false, true),

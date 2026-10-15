@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   BrowserWindow,
@@ -5,6 +6,7 @@ import {
   app,
   dialog,
   ipcMain,
+  shell,
   type MenuItemConstructorOptions,
   type WebContents,
 } from 'electron'
@@ -30,7 +32,9 @@ let quitting = false
 
 const PART_FILTER = { name: 'OpenForge Part', extensions: ['ofp'] }
 const ASSEMBLY_FILTER = { name: 'OpenForge Assembly', extensions: ['ofa'] }
-const DOCUMENT_FILTER = { name: 'OpenForge Document', extensions: ['ofp', 'ofa'] }
+const DRAWING_FILTER = { name: 'OpenForge Drawing', extensions: ['ofd'] }
+const DOCUMENT_FILTER = { name: 'OpenForge Document', extensions: ['ofp', 'ofa', 'ofd'] }
+const MODEL_FILTER = { name: 'Part or Assembly', extensions: ['ofp', 'ofa'] }
 
 function docOf(sender: WebContents): Doc | undefined {
   return docs.get(sender.id)
@@ -79,6 +83,11 @@ function buildMenu(): void {
         item('New Part', 'new', 'CmdOrCtrl+N'),
         item('New Assembly', 'new-assembly', 'CmdOrCtrl+Shift+N'),
         {
+          label: 'New Drawing',
+          click: () => createWindow({ kind: 'drawing' }),
+        },
+        item('Make Drawing from Part/Assembly', 'make-drawing'),
+        {
           label: 'New Window',
           click: () => createWindow({}),
         },
@@ -89,6 +98,7 @@ function buildMenu(): void {
         item('Import STEP/IGES…', 'import'),
         item('Import STEP as Assembly…', 'import-assembly'),
         item('Export…', 'export'),
+        item('Print…', 'print', 'CmdOrCtrl+P'),
         { type: 'separator' },
         mac ? { role: 'close' } : { role: 'quit' },
       ],
@@ -136,8 +146,12 @@ function buildMenu(): void {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
 
-/** Open a window for a document: a file, a new assembly, or a new part. */
-function createWindow(options: { open?: string; kind?: 'part' | 'assembly' }): BrowserWindow {
+/** Open a window for a document: a file, a new assembly or drawing (maybe of a model), or a new part. */
+function createWindow(options: {
+  open?: string
+  kind?: 'part' | 'assembly' | 'drawing'
+  model?: string
+}): BrowserWindow {
   const win = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -199,6 +213,7 @@ function createWindow(options: { open?: string; kind?: 'part' | 'assembly' }): B
   const query: Record<string, string> = {}
   if (options.open) query['open'] = options.open
   if (options.kind) query['kind'] = options.kind
+  if (options.model) query['model'] = options.model
   const devUrl = process.env['ELECTRON_RENDERER_URL']
   if (!app.isPackaged && devUrl) {
     const url = new URL(devUrl)
@@ -261,35 +276,54 @@ ipcMain.handle('chatgpt:usage', () => openChatGPTUsage())
 ipcMain.on('chatgpt:cancel', () => chatGPT().cancel())
 ipcMain.on('assistant:stop', (e) => assistantOf(e.sender).stop())
 
-type OpenKind = 'part' | 'document' | 'component' | 'import' | 'step'
+type OpenKind =
+  'part' | 'document' | 'component' | 'import' | 'step' | 'model' | 'standard' | 'template'
 ipcMain.handle('dialog:open', async (e, kind: OpenKind) => {
   const filters =
-    kind === 'part'
-      ? [DOCUMENT_FILTER, PART_FILTER, ASSEMBLY_FILTER]
-      : kind === 'document' || kind === 'component'
-        ? [DOCUMENT_FILTER, PART_FILTER, ASSEMBLY_FILTER]
-        : kind === 'step'
-          ? [{ name: 'STEP', extensions: ['step', 'stp'] }]
-          : [{ name: 'STEP or IGES', extensions: ['step', 'stp', 'iges', 'igs'] }]
+    kind === 'part' || kind === 'document'
+      ? [DOCUMENT_FILTER, PART_FILTER, ASSEMBLY_FILTER, DRAWING_FILTER]
+      : kind === 'component' || kind === 'model'
+        ? [MODEL_FILTER, PART_FILTER, ASSEMBLY_FILTER]
+        : kind === 'standard'
+          ? [{ name: 'Drafting Standard', extensions: ['ofstd'] }]
+          : kind === 'template'
+            ? [{ name: 'Sheet Format', extensions: ['ofdt'] }]
+            : kind === 'step'
+              ? [{ name: 'STEP', extensions: ['step', 'stp'] }]
+              : [{ name: 'STEP or IGES', extensions: ['step', 'stp', 'iges', 'igs'] }]
   const win = BrowserWindow.fromWebContents(e.sender) ?? undefined
   const r = await dialog.showOpenDialog(win!, { properties: ['openFile'], filters })
   return r.canceled ? null : (r.filePaths[0] ?? null)
 })
 
-type SaveKind = 'part' | 'assembly' | 'export' | 'csv'
+type SaveKind =
+  'part' | 'assembly' | 'drawing' | 'export' | 'csv' | 'pdf' | 'dxf' | 'drawing-export' | 'standard'
 ipcMain.handle('dialog:save', async (e, kind: SaveKind, defaultName: string) => {
   const filters =
     kind === 'part'
       ? [PART_FILTER]
       : kind === 'assembly'
         ? [ASSEMBLY_FILTER]
-        : kind === 'csv'
-          ? [{ name: 'CSV', extensions: ['csv'] }]
-          : [
-              { name: 'STEP', extensions: ['step'] },
-              { name: 'STL', extensions: ['stl'] },
-              { name: 'IGES', extensions: ['iges'] },
-            ]
+        : kind === 'drawing'
+          ? [DRAWING_FILTER]
+          : kind === 'csv'
+            ? [{ name: 'CSV', extensions: ['csv'] }]
+            : kind === 'pdf'
+              ? [{ name: 'PDF', extensions: ['pdf'] }]
+              : kind === 'dxf'
+                ? [{ name: 'DXF', extensions: ['dxf'] }]
+                : kind === 'drawing-export'
+                  ? [
+                      { name: 'PDF', extensions: ['pdf'] },
+                      { name: 'DXF', extensions: ['dxf'] },
+                    ]
+                  : kind === 'standard'
+                    ? [{ name: 'Drafting Standard', extensions: ['ofstd'] }]
+                    : [
+                        { name: 'STEP', extensions: ['step'] },
+                        { name: 'STL', extensions: ['stl'] },
+                        { name: 'IGES', extensions: ['iges'] },
+                      ]
   const win = BrowserWindow.fromWebContents(e.sender) ?? undefined
   const r = await dialog.showSaveDialog(win!, { defaultPath: defaultName, filters })
   return r.canceled ? null : (r.filePath ?? null)
@@ -322,6 +356,20 @@ ipcMain.on('window:open', (_e, path: string) => {
     return
   }
   createWindow({ open: path })
+})
+
+ipcMain.on('window:drawing', (_e, model: string) => {
+  createWindow({ kind: 'drawing', model })
+})
+
+// Printing goes through the drawing's PDF so paper size, scale and line
+// weights match the export; the system viewer prints it.
+ipcMain.handle('print:path', () =>
+  join(tmpdir(), `openforge-print-${process.pid}-${Date.now()}.pdf`),
+)
+ipcMain.handle('print:open', async (_e, path: string) => {
+  const error = await shell.openPath(path)
+  if (error) throw new Error(error)
 })
 
 ipcMain.on('window:close', (e) => {

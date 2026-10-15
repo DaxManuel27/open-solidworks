@@ -113,7 +113,13 @@ export const evaluateGroups: CommandGroup[] = [
       [{ command: 'configurations', variant: 'large' }],
     ],
   },
-  { label: 'Exchange', columns: [[{ command: 'export', variant: 'large' }]] },
+  {
+    label: 'Exchange',
+    columns: [
+      [{ command: 'export', variant: 'large' }],
+      [{ command: 'makeDrawing', variant: 'large' }],
+    ],
+  },
 ]
 export const assemblyGroups: CommandGroup[] = [
   {
@@ -189,8 +195,116 @@ export const assemblyEvaluateGroups: CommandGroup[] = [
       [{ command: 'units', variant: 'large' }],
     ],
   },
-  { label: 'Exchange', columns: [[{ command: 'export', variant: 'large' }]] },
+  {
+    label: 'Exchange',
+    columns: [
+      [{ command: 'export', variant: 'large' }],
+      [{ command: 'makeDrawing', variant: 'large' }],
+    ],
+  },
 ]
+export const drawingGroups: CommandGroup[] = [
+  {
+    label: 'Views',
+    columns: [
+      [{ command: 'standardViews', variant: 'large' }],
+      [{ command: 'modelView', variant: 'large' }],
+      [{ command: 'projectedView' }, { command: 'auxiliaryView' }],
+      [
+        { command: 'sectionView', menu: ['sectionView', 'alignedSection'] },
+        { command: 'detailView' },
+      ],
+    ],
+  },
+  {
+    label: 'Modify',
+    columns: [
+      [{ command: 'brokenOut' }, { command: 'breakView' }, { command: 'cropView' }],
+      [{ command: 'updateViews', variant: 'large' }],
+    ],
+  },
+  {
+    label: 'Sheet',
+    columns: [
+      [{ command: 'addSheet' }, { command: 'sheetProperties' }],
+      [{ command: 'drawingProperties' }, { command: 'draftingStandard' }],
+    ],
+  },
+]
+export const annotationGroups: CommandGroup[] = [
+  {
+    label: 'Dimensions',
+    columns: [
+      [
+        {
+          command: 'smartDimension',
+          variant: 'large',
+          menu: [
+            'smartDimension',
+            'ordinateDimension',
+            'baselineDimension',
+            'chainDimension',
+            'chamferDimension',
+            'angularRunning',
+            'arcLength',
+          ],
+        },
+      ],
+      [{ command: 'modelItems', variant: 'large' }],
+    ],
+  },
+  {
+    label: 'Annotations',
+    columns: [
+      [{ command: 'note', variant: 'large' }],
+      [{ command: 'balloon', menu: ['balloon', 'autoBalloon'] }, { command: 'holeCallout' }],
+      [{ command: 'surfaceFinish' }, { command: 'weldSymbol' }],
+      [
+        { command: 'geometricTolerance' },
+        { command: 'datumFeature', menu: ['datumFeature', 'datumTarget'] },
+      ],
+      [{ command: 'centerMark' }, { command: 'drawCenterline' }],
+      [
+        { command: 'areaHatch' },
+        { command: 'revisionCloud', menu: ['revisionCloud', 'revisionSymbol'] },
+      ],
+    ],
+  },
+  {
+    label: 'Tables',
+    columns: [
+      [
+        {
+          command: 'bomTable',
+          variant: 'large',
+          menu: ['bomTable', 'holeTable', 'revisionTable', 'generalTable', 'toleranceTable'],
+        },
+      ],
+    ],
+  },
+]
+export const drawingEvaluateGroups: CommandGroup[] = [
+  {
+    label: 'Document',
+    columns: [
+      [{ command: 'drawingProperties', variant: 'large' }],
+      [{ command: 'draftingStandard', variant: 'large' }],
+    ],
+  },
+  {
+    label: 'Output',
+    columns: [
+      [{ command: 'drawingExport', variant: 'large' }],
+      [{ command: 'print', variant: 'large' }],
+    ],
+  },
+]
+export const drawingTabs: { id: Tab; label: string }[] = [
+  { id: 'drawing', label: 'View Layout' },
+  { id: 'annotation', label: 'Annotation' },
+  { id: 'evaluate', label: 'Evaluate' },
+]
+export const drawingTabOrder = ['View Layout', 'Annotation', 'Sketch', 'Evaluate', 'Add-ins']
 export const assemblyTabs: { id: Tab; label: string }[] = [
   { id: 'assembly', label: 'Assembly' },
   { id: 'evaluate', label: 'Evaluate' },

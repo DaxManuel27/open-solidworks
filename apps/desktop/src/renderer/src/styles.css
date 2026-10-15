@@ -573,3 +573,186 @@ input.bad {
 .toast.error {
   border-left-color: var(--danger);
 }
+
+/* ---- Drawings ---- */
+
+.drawing-area {
+  display: flex;
+  flex-direction: column;
+}
+
+.sheet-canvas {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.sheet-canvas canvas {
+  display: block;
+  touch-action: none;
+}
+
+.sheet-prompt {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 12px;
+  background: rgb(31 41 51 / 0.85);
+  color: #fff;
+  border-radius: 12px;
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.sheet-notices {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sheet-notices button {
+  background: #fff8e1;
+  border: 1px solid var(--warn);
+  border-radius: 4px;
+  padding: 4px 8px;
+  text-align: left;
+}
+
+.sheet-error {
+  background: #fdecec;
+  border: 1px solid var(--danger);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.sheet-cursor {
+  position: absolute;
+  left: 8px;
+  bottom: 6px;
+  font-size: 11px;
+  color: #fff;
+  text-shadow: 0 0 2px rgb(0 0 0 / 0.6);
+  pointer-events: none;
+}
+
+.sheet-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 0 6px;
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+  min-height: 28px;
+}
+
+.sheet-tabs > button {
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  padding: 4px 14px;
+  cursor: pointer;
+}
+
+.sheet-tabs > button.active {
+  background: var(--panel-2);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+.sheet-tabs .sheet-add {
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.sheet-tab-rename {
+  width: 120px;
+  margin: 3px 0;
+}
+
+.drawing-tree .tree-item .note {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.drawing-tree .tree-sheet.current .name {
+  font-weight: 600;
+}
+
+.tree-toggle {
+  border: none;
+  background: none;
+  padding: 0 2px;
+  width: 14px;
+  color: var(--muted);
+}
+
+.panel-prompt {
+  padding: 6px 8px;
+  margin: 4px 0;
+  background: var(--accent-soft);
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0;
+}
+
+.button-row.symbols button {
+  min-width: 28px;
+}
+
+.field.compact {
+  flex: 1;
+}
+
+.field.compact input {
+  width: 100%;
+}
+
+.prop-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 4px 0;
+}
+
+.prop-table th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.prop-table input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.json-editor {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+}
+
+.dimension-display {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dimension-display input {
+  flex: 1;
+  min-width: 0;
+}
