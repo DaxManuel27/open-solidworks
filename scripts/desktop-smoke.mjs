@@ -98,12 +98,17 @@ async function run(win) {
     const r = await window.openforge.call(${JSON.stringify(method)}, ${JSON.stringify(params)});
     if (!r.ok) throw new Error(r.error); return r.value;
   })()`)
-  const click = (label) =>
-    js(`(() => {
-    const b = [...document.querySelectorAll('button')].find(b => (b.getAttribute('aria-label') ?? b.querySelector('.command-label')?.textContent ?? b.textContent).trim() === ${JSON.stringify(label)});
-    if (!b || b.disabled) throw new Error('Button unavailable: ' + ${JSON.stringify(label)});
-    b.click();
-  })()`)
+  // Commands are disabled while an earlier operation finishes (closing a panel
+  // ends its edit asynchronously), so wait for the button before clicking.
+  const click = async (label) => {
+    const find = `[...document.querySelectorAll('button')].find(b => (b.getAttribute('aria-label') ?? b.querySelector('.command-label')?.textContent ?? b.textContent).trim() === ${JSON.stringify(label)})`
+    try {
+      await wait(() => js(`(() => { const b = ${find}; return !!b && !b.disabled })()`), label)
+    } catch {
+      throw new Error(`Button unavailable: ${label}`)
+    }
+    await js(`${find}.click()`)
+  }
   const menu = (command) => win.webContents.send('menu', command)
   const key = (value) =>
     js(
