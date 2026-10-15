@@ -201,6 +201,24 @@ fn render(d: &mut Drawing) -> SheetRender {
             bytes,
         )
         .unwrap();
+        let sheet = &d.doc.sheets[0];
+        let dxf = of_drawing::dxf::write_version(
+            &[of_drawing::dxf::DxfSheet {
+                graphics: &r.graphics,
+                name: sheet.name.clone(),
+                scale: sheet.scale.factor(),
+                view_annotations: sheet
+                    .annotations
+                    .iter()
+                    .filter(|a| a.view.is_some())
+                    .map(|a| a.id)
+                    .collect(),
+            }],
+            &d.doc.standard,
+            of_drawing::dxf::DxfVersion::R2018,
+        )
+        .unwrap();
+        std::fs::write(std::path::Path::new(&dir).join(format!("{name}.dxf")), dxf).unwrap();
     }
     r
 }
@@ -848,4 +866,90 @@ fn hole_revision_and_tolerance_tables() {
         })
         .collect();
     assert!(format_text.contains(&"B"), "{format_text:?}");
+}
+
+/// A 40 × 40 × 10 block with one tapped ISO M6 hole through it at (20, 20).
+fn tapped(dir: &Scratch) -> std::path::PathBuf {
+    let mut m = Model::new(block_doc(40.0, 40.0, 10.0));
+    m.rebuild();
+    let top = face_facing(&m, DVec3::Z);
+    let mut sk = Sketch::new();
+    sk.add_point(DVec2::new(20.0, 20.0));
+    let s = m.doc.add(FeatureKind::Sketch(SketchFeature {
+        plane: top,
+        sketch: sk,
+    }));
+    m.doc.add(FeatureKind::Hole(Hole {
+        sketch: s,
+        kind: HoleKind::Tapped,
+        standard: HoleStandard::Iso,
+        size: "M6".into(),
+        fit: HoleFit::Normal,
+        end: HoleEnd::ThroughAll,
+        reverse: false,
+        diameter_override: None,
+        cbore_diameter_override: None,
+        cbore_depth_override: None,
+        csink_diameter_override: None,
+        csink_angle_override: None,
+        cosmetic_thread: true,
+    }));
+    m.rebuild();
+    assert!(m.statuses().iter().all(|s| s.error.is_none()));
+    save(&m.doc, &dir.path("tapped.ofp"))
+}
+
+#[test]
+fn cosmetic_threads_follow_the_standard() {
+    let dir = Scratch::new("threads");
+    let path = tapped(&dir);
+    let threads = |std: of_drawing::standard::Standard, o: Orientation| {
+        let mut d = drawing(std, vec![model_view(FRONT, &path, o, [150.0, 150.0])]);
+        let r = render(&mut d);
+        r.graphics
+            .items
+            .into_iter()
+            .filter(|i| i.layer == "THREADS")
+            .collect::<Vec<_>>()
+    };
+    // End view, ISO: a thin three-quarter circle at the major diameter
+    // around the tap drill hole.
+    let iso = threads(of_drawing::standard::Standard::iso(), Orientation::Front);
+    assert_eq!(iso.len(), 1, "{iso:?}");
+    let Prim::Arc {
+        center,
+        radius,
+        start,
+        end,
+    } = iso[0].prim
+    else {
+        panic!("{:?}", iso[0].prim)
+    };
+    assert_close(radius, 3.0, 1e-9);
+    assert_close(center[0], 170.0, 1e-6);
+    assert_close(center[1], 170.0, 1e-6);
+    assert_close((end - start).to_degrees(), 250.0, 1e-9);
+    assert_eq!(
+        iso[0].pen.style,
+        of_drawing::graphics::LineStyle::Continuous
+    );
+    // ANSI: a full hidden circle.
+    let ansi = threads(of_drawing::standard::Standard::ansi(), Orientation::Front);
+    assert_eq!(ansi.len(), 1);
+    assert_eq!(ansi[0].pen.style, of_drawing::graphics::LineStyle::Hidden);
+    // Side view: hidden lines at the major diameter over the 10 mm depth,
+    // and the thread end.
+    let side = threads(of_drawing::standard::Standard::iso(), Orientation::Top);
+    assert_eq!(side.len(), 3, "{side:?}");
+    for i in &side {
+        assert_eq!(i.pen.style, of_drawing::graphics::LineStyle::Hidden);
+        let Prim::Line { a, b } = i.prim else {
+            panic!()
+        };
+        let len = ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2)).sqrt();
+        assert!(
+            (len - 10.0).abs() < 1e-6 || (len - 6.0).abs() < 1e-6,
+            "{len}"
+        );
+    }
 }

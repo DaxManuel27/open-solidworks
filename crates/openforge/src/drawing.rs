@@ -802,10 +802,28 @@ impl DrawSession {
             return Ok(vec![path.clone()]);
         }
         let version = p.dxf_version.unwrap_or_default();
+        let dxf_sheets: Vec<dxf::DxfSheet> = sheets
+            .iter()
+            .zip(&ids)
+            .map(|(g, id)| {
+                let s = self.drawing.doc.sheet(*id).expect("checked above");
+                dxf::DxfSheet {
+                    graphics: g,
+                    name: s.name.clone(),
+                    scale: s.scale.factor(),
+                    view_annotations: s
+                        .annotations
+                        .iter()
+                        .filter(|a| a.view.is_some())
+                        .map(|a| a.id)
+                        .collect(),
+                }
+            })
+            .collect();
         if !p.per_sheet || sheets.len() == 1 {
             write(
                 path,
-                dxf::write_version(&sheets, &standard, version)
+                dxf::write_version(&dxf_sheets, &standard, version)
                     .map_err(fail)?
                     .into_bytes(),
             )?;
@@ -816,8 +834,8 @@ impl DrawSession {
             .and_then(|s| s.to_str())
             .unwrap_or("drawing");
         let mut out = Vec::new();
-        for (g, id) in sheets.iter().zip(&ids) {
-            let name = &self.drawing.doc.sheet(*id).unwrap().name;
+        for d in &dxf_sheets {
+            let name = &d.name;
             let safe: String = name
                 .chars()
                 .map(|c| {
@@ -831,7 +849,7 @@ impl DrawSession {
             let file = path.with_file_name(format!("{stem}-{safe}.dxf"));
             write(
                 &file,
-                dxf::write_version(std::slice::from_ref(g), &standard, version)
+                dxf::write_version(std::slice::from_ref(d), &standard, version)
                     .map_err(fail)?
                     .into_bytes(),
             )?;

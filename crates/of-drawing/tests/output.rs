@@ -165,3 +165,156 @@ fn dxf_round_trips_entities_layers_and_line_types() {
         "{heights:?}"
     );
 }
+
+/// Group-code pairs of a DXF file.
+fn pairs(text: &str) -> Vec<(i32, String)> {
+    let lines: Vec<&str> = text.lines().collect();
+    lines
+        .chunks(2)
+        .filter(|c| c.len() == 2)
+        .map(|c| (c[0].trim().parse().unwrap(), c[1].to_string()))
+        .collect()
+}
+
+/// Entities of one kind: their pairs up to the next entity.
+fn entities<'a>(p: &'a [(i32, String)], kind: &str) -> Vec<&'a [(i32, String)]> {
+    let mut out = Vec::new();
+    for (i, (c, v)) in p.iter().enumerate() {
+        if *c == 0 && v == kind {
+            let end = p[i + 1..]
+                .iter()
+                .position(|(c, _)| *c == 0)
+                .map_or(p.len(), |k| i + 1 + k);
+            out.push(&p[i + 1..end]);
+        }
+    }
+    out
+}
+
+fn get(e: &[(i32, String)], code: i32) -> Option<&str> {
+    e.iter().find(|(c, _)| *c == code).map(|(_, v)| v.as_str())
+}
+
+fn num(e: &[(i32, String)], code: i32) -> f64 {
+    get(e, code).unwrap().parse().unwrap()
+}
+
+#[test]
+fn dxf_2018_puts_views_in_model_space_at_true_size() {
+    // A sheet at 1:2: a view line 100 mm long on paper is 200 mm of model.
+    let mut g = Graphics::new(420.0, 297.0);
+    let view = Owner::View {
+        view: 2,
+        entity: None,
+    };
+    g.rect(
+        [10.0, 10.0],
+        [410.0, 287.0],
+        Pen::new(LineStyle::Continuous, 0.5),
+        layers::FORMAT,
+        &Owner::Format,
+    );
+    g.line(
+        [50.0, 100.0],
+        [150.0, 100.0],
+        Pen::new(LineStyle::Continuous, 0.5),
+        layers::VISIBLE,
+        &view,
+    );
+    let mut red = Pen::new(LineStyle::Hidden, 0.25);
+    red.color = [200, 30, 30];
+    g.line([50.0, 90.0], [150.0, 90.0], red, layers::HIDDEN, &view);
+    for p in text::layout("⌀20 H7", [60.0, 120.0], 3.5, 0.0, HAlign::Left) {
+        g.push(
+            p,
+            Pen::new(LineStyle::Continuous, 0.25),
+            layers::DIMENSIONS,
+            &Owner::Annotation { id: 7 },
+        );
+    }
+    for p in text::layout("NOTES", [20.0, 40.0], 3.5, 0.0, HAlign::Left) {
+        g.push(
+            p,
+            Pen::new(LineStyle::Continuous, 0.25),
+            layers::NOTES,
+            &Owner::Annotation { id: 8 },
+        );
+    }
+    let second = Graphics::new(297.0, 210.0);
+    let sheets = [
+        dxf::DxfSheet {
+            graphics: &g,
+            name: "Plate".into(),
+            scale: 0.5,
+            view_annotations: vec![7],
+        },
+        dxf::DxfSheet {
+            graphics: &second,
+            name: "Parts".into(),
+            scale: 1.0,
+            view_annotations: Vec::new(),
+        },
+    ];
+    let text = dxf::write_version(&sheets, &Standard::iso(), dxf::DxfVersion::R2018).unwrap();
+    keep("sheet-2018.dxf", text.as_bytes());
+    let p = pairs(&text);
+    assert!(
+        p.windows(2)
+            .any(|w| w[0].1 == "$ACADVER" && w[1].1 == "AC1032")
+    );
+    // Model space: the view lines at twice their paper length, weights and
+    // colour kept.
+    let lines = entities(&p, "LINE");
+    let model: Vec<_> = lines
+        .iter()
+        .filter(|e| get(e, 67).is_none() && get(e, 8) != Some("DIMENSIONS"))
+        .collect();
+    assert_eq!(model.len(), 2);
+    for e in &model {
+        assert_eq!(num(e, 11) - num(e, 10), 200.0);
+    }
+    assert_eq!(get(model[0], 370), Some("50"));
+    assert_eq!(get(model[1], 370), Some("25"));
+    assert_eq!(get(model[1], 6), Some("HIDDEN"));
+    assert_eq!(
+        get(model[1], 420),
+        Some(&*format!("{}", (200 << 16) | (30 << 8) | 30))
+    );
+    // Text attached to a view is in model space (doubled), sheet notes
+    // are on paper; text is UTF-8.
+    let texts = entities(&p, "TEXT");
+    let note = texts.iter().find(|e| get(e, 1) == Some("NOTES")).unwrap();
+    assert_eq!(get(note, 67), Some("1"));
+    let dim = texts.iter().find(|e| get(e, 1) == Some("20 H7")).unwrap();
+    assert!(get(dim, 67).is_none());
+    assert!((num(dim, 40) - 7.0).abs() < 1e-3, "{}", num(dim, 40));
+    // The format is on paper at 1:1.
+    let border = entities(&p, "LWPOLYLINE")
+        .into_iter()
+        .find(|e| get(e, 67) == Some("1"))
+        .unwrap();
+    assert_eq!(num(border, 10), 10.0);
+    // Two layouts named after the sheets, each with a viewport at its
+    // scale: view height = paper height / scale.
+    let dict = entities(&p, "DICTIONARY")
+        .into_iter()
+        .find(|e| get(e, 3) == Some("Model"))
+        .unwrap();
+    let names: Vec<&str> = dict
+        .iter()
+        .filter(|(c, _)| *c == 3)
+        .map(|(_, v)| v.as_str())
+        .collect();
+    assert_eq!(names, ["Model", "Plate", "Parts"]);
+    let vps: Vec<_> = entities(&p, "VIEWPORT")
+        .into_iter()
+        .filter(|e| get(e, 69) == Some("2"))
+        .collect();
+    assert_eq!(vps.len(), 2);
+    // Inactive layouts keep their entities in their blocks, written first.
+    let plate = vps.iter().find(|e| num(e, 45) == 594.0).unwrap();
+    let parts = vps.iter().find(|e| num(e, 45) == 210.0).unwrap();
+    assert_eq!(num(plate, 12), 420.0);
+    // The second sheet sits beside the first in model space.
+    assert_eq!(num(parts, 12), 840.0 + 50.0 + 148.5);
+}

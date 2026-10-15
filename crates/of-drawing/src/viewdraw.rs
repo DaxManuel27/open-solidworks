@@ -44,6 +44,151 @@ fn p2(v: DVec2) -> P2 {
     [v.x, v.y]
 }
 
+/// A thread to show: where it starts on its axis, the unit axis, major
+/// diameter, pitch and length, and whether it is internal.
+struct ThreadSpec {
+    start: DVec3,
+    axis: DVec3,
+    diameter: f64,
+    pitch: f64,
+    length: f64,
+    internal: bool,
+    entity: Option<CompRef>,
+}
+
+/// Every cosmetic and tapped-hole thread of a scene, in model space.
+fn scene_threads(scene: &Scene) -> Vec<ThreadSpec> {
+    let mut out = Vec::new();
+    for piece in &scene.pieces {
+        let state = piece.part.state();
+        let pose = &piece.pose;
+        for th in state.cosmetic_threads.values() {
+            let Ok(a) = of_model::cosmetic_thread::annotation(th, state) else {
+                continue;
+            };
+            out.push(ThreadSpec {
+                start: pose.point(a.start),
+                axis: pose.vector(a.axis).normalize_or(DVec3::Z),
+                diameter: th.diameter,
+                pitch: th.pitch,
+                length: th.length,
+                internal: th.internal,
+                entity: Some(CompRef {
+                    component: piece.component.clone(),
+                    entity: th.face.clone(),
+                }),
+            });
+        }
+        for threads in state.hole_threads.values() {
+            for th in threads {
+                out.push(ThreadSpec {
+                    start: pose.point(th.start),
+                    axis: pose.vector(th.axis).normalize_or(DVec3::Z),
+                    diameter: th.diameter,
+                    pitch: th.pitch,
+                    length: th.length,
+                    internal: true,
+                    entity: None,
+                });
+            }
+        }
+    }
+    out
+}
+
+/// Cosmetic thread display (ISO 6410 / ASME Y14.6, simplified): in side
+/// views thin lines at the thread's second diameter (minor for external
+/// threads, major for internal ones) and a line where the thread ends; in
+/// end views a three-quarter circle (ISO) or a hidden full circle (ANSI).
+/// Internal threads are hidden lines unless the view is sectioned.
+fn thread_marks(
+    scene: &Scene,
+    r: &Resolved,
+    std: &crate::standard::Standard,
+    sectioned: bool,
+) -> Vec<Local> {
+    let thin = Pen::new(LineStyle::Continuous, std.thin_line());
+    let thick = Pen::new(LineStyle::Continuous, std.thick_line());
+    let hidden = Pen::new(LineStyle::Hidden, std.thin_line());
+    let mut out = Vec::new();
+    for t in scene_threads(scene) {
+        // External: thread root; internal: the major diameter beyond the
+        // drilled minor diameter.
+        let minor = (t.diameter - 1.226_87 * t.pitch).max(t.diameter * 0.5);
+        let line_d = if t.internal { t.diameter } else { minor };
+        let along = t.axis.dot(r.frame.toward).abs();
+        let mut push = |prim: Prim, pen: Pen, entity: &Option<CompRef>| {
+            out.push(Local {
+                prim,
+                pen,
+                layer: "THREADS".into(),
+                entity: entity.clone(),
+            })
+        };
+        if along > 0.999 {
+            let c = r.frame.project(t.start);
+            let radius = line_d / 2.0;
+            match std.base {
+                StandardBase::Iso => push(
+                    Prim::Arc {
+                        center: p2(c),
+                        radius,
+                        // Open in the upper right quadrant.
+                        start: 100f64.to_radians(),
+                        end: 350f64.to_radians(),
+                    },
+                    thin,
+                    &t.entity,
+                ),
+                StandardBase::Ansi => push(
+                    Prim::Arc {
+                        center: p2(c),
+                        radius,
+                        start: 0.0,
+                        end: std::f64::consts::TAU,
+                    },
+                    hidden,
+                    &t.entity,
+                ),
+            }
+        } else if along < 1e-3 {
+            let a = r.frame.project(t.start);
+            let b = r.frame.project(t.start + t.axis * t.length);
+            let Some(u) = (b - a).try_normalize() else {
+                continue;
+            };
+            let n = u.perp();
+            let (pen, end_pen) = if t.internal && !sectioned {
+                (hidden, hidden)
+            } else {
+                (thin, thick)
+            };
+            for side in [-1.0, 1.0] {
+                let o = n * (side * line_d / 2.0);
+                push(
+                    Prim::Line {
+                        a: p2(a + o),
+                        b: p2(b + o),
+                    },
+                    pen,
+                    &t.entity,
+                );
+            }
+            // Thread termination across the major diameter.
+            let h = n * (t.diameter / 2.0);
+            push(
+                Prim::Line {
+                    a: p2(b - h),
+                    b: p2(b + h),
+                },
+                end_pen,
+                &t.entity,
+            );
+        }
+    }
+    out
+}
+
 /// The removed side of a cutting line in the parent's paper coordinates.
 fn removed_side(parent: &Resolved, view: &Resolved) -> DVec2 {
     parent
@@ -350,6 +495,15 @@ impl Drawing {
             for [a, b] in hatch::lines(&loops, pattern, v.hatch.scale / r.scale, v.hatch.angle) {
                 locals.push(Local::new(Prim::Line { a, b }, thin, layers::HATCH));
             }
+        }
+        if !slice
+            && matches!(
+                r.display,
+                DisplayStyle::HiddenRemoved | DisplayStyle::HiddenVisible | DisplayStyle::Wireframe
+            )
+        {
+            let sectioned = matches!(v.kind, ViewKind::Section { .. }) || !v.broken_out.is_empty();
+            locals.extend(thread_marks(&scene, &r, &std, sectioned));
         }
         if r.exploded {
             let pen = Pen::new(LineStyle::Phantom, std.thin_line());

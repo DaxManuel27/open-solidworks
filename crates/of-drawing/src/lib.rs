@@ -8,6 +8,7 @@ pub mod dims;
 pub mod document;
 pub mod drawing;
 pub mod dxf;
+mod dxf2018;
 pub mod file;
 pub mod fits;
 pub mod formats;

@@ -1,6 +1,8 @@
-//! DXF output (AutoCAD R12, ASCII): the sheet at 1:1 in millimetres, one
+//! DXF output. R12 (AC1009, ASCII): the sheet at 1:1 in millimetres, one
 //! layer per drawing layer with its line type, text in a style naming the
-//! bundled font, and fills as triangles.
+//! bundled font, and fills as triangles. 2018 (AC1032, see `dxf2018`): the
+//! same with lineweights and true colour, views in model space at true size
+//! and each sheet as a paper space layout.
 
 use std::fmt::Write;
 
@@ -8,14 +10,14 @@ use crate::graphics::{Graphics, LineStyle, P2, Prim};
 use crate::standard::Standard;
 use crate::text::cap_for;
 
-struct Out(String);
+pub(crate) struct Out(pub String);
 
 impl Out {
-    fn pair(&mut self, code: i32, value: impl std::fmt::Display) {
+    pub(crate) fn pair(&mut self, code: i32, value: impl std::fmt::Display) {
         let _ = write!(self.0, "{code:>3}\n{value}\n");
     }
 
-    fn num(&mut self, code: i32, v: f64) {
+    pub(crate) fn num(&mut self, code: i32, v: f64) {
         // Plain decimals; DXF readers differ on exponent support.
         let v = if v.abs() < 1e-12 { 0.0 } else { v };
         let s = format!("{v:.6}");
@@ -23,14 +25,14 @@ impl Out {
         self.pair(code, if s.is_empty() || s == "-" { "0" } else { s });
     }
 
-    fn point(&mut self, code: i32, p: P2) {
+    pub(crate) fn point(&mut self, code: i32, p: P2) {
         self.num(code, p[0]);
         self.num(code + 10, p[1]);
         self.num(code + 20, 0.0);
     }
 }
 
-fn ltype_name(style: LineStyle) -> &'static str {
+pub(crate) fn ltype_name(style: LineStyle) -> &'static str {
     match style {
         LineStyle::Continuous => "CONTINUOUS",
         LineStyle::Hidden => "HIDDEN",
@@ -41,7 +43,7 @@ fn ltype_name(style: LineStyle) -> &'static str {
 
 /// Nearest AutoCAD colour index for an RGB colour (black and white map to 7,
 /// which displays as the background's opposite).
-fn aci(c: [u8; 3]) -> i32 {
+pub(crate) fn aci(c: [u8; 3]) -> i32 {
     const TABLE: [(i32, [u8; 3]); 8] = [
         (1, [255, 0, 0]),
         (2, [255, 255, 0]),
@@ -68,7 +70,7 @@ fn aci(c: [u8; 3]) -> i32 {
 }
 
 /// Layer name made safe for DXF (letters, digits, `-` and `_`).
-fn layer_name(s: &str, sheet: Option<usize>) -> String {
+pub(crate) fn layer_name(s: &str, sheet: Option<usize>) -> String {
     let base: String = s
         .chars()
         .map(|c| {
@@ -106,15 +108,30 @@ pub enum DxfVersion {
     R2018,
 }
 
+/// A sheet to write, with what DXF 2018 needs to split it into paper and
+/// model space.
+pub struct DxfSheet<'a> {
+    pub graphics: &'a Graphics,
+    /// Layout name.
+    pub name: String,
+    /// The sheet scale: paper mm per model mm.
+    pub scale: f64,
+    /// Annotations that move with a view; they go to model space with it.
+    pub view_annotations: Vec<u32>,
+}
+
 /// Write sheets as DXF in a version.
 pub fn write_version(
-    sheets: &[Graphics],
+    sheets: &[DxfSheet],
     standard: &Standard,
     version: DxfVersion,
 ) -> Result<String, String> {
     match version {
-        DxfVersion::R12 => write(sheets, standard),
-        DxfVersion::R2018 => write(sheets, standard),
+        DxfVersion::R12 => {
+            let g: Vec<Graphics> = sheets.iter().map(|s| s.graphics.clone()).collect();
+            write(&g, standard)
+        }
+        DxfVersion::R2018 => crate::dxf2018::write(sheets, standard),
     }
 }
 
@@ -329,7 +346,7 @@ fn escape(s: &str) -> String {
 }
 
 /// Ear-clipping triangulation of a simple polygon.
-fn triangulate(points: &[P2]) -> Vec<[P2; 3]> {
+pub(crate) fn triangulate(points: &[P2]) -> Vec<[P2; 3]> {
     let mut idx: Vec<usize> = (0..points.len()).collect();
     if idx.len() > 1 && points[0] == points[points.len() - 1] {
         idx.pop();
