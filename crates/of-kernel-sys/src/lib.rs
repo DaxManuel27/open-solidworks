@@ -143,6 +143,28 @@ pub mod ffi {
         data: Vec<f64>,
     }
 
+    /// A face's surface parameterisation. Kinds: 0 other, 1 plane, 2
+    /// cylinder, 3 cone. A plane's point at (u, v) is `origin + u x + v y`; a
+    /// cylinder's is `origin + radius (cos u x + sin u y) + v z`; a cone's is
+    /// `origin + (radius + v sin a)(cos u x + sin u y) + v cos a z` with `a`
+    /// the semi-angle. `reversed` faces have their normal opposite to the
+    /// surface's.
+    #[derive(Debug, Clone, Copy, Default)]
+    struct FaceFrame {
+        kind: u8,
+        origin: Vec3,
+        x: Vec3,
+        y: Vec3,
+        z: Vec3,
+        radius: f64,
+        semi_angle: f64,
+        umin: f64,
+        umax: f64,
+        vmin: f64,
+        vmax: f64,
+        reversed: bool,
+    }
+
     #[derive(Debug, Clone, Copy, Default)]
     struct Distance {
         value: f64,
@@ -428,6 +450,21 @@ pub mod ffi {
         /// Edges a face meets itself along (cylinder seams), possibly
         /// repeated, except those on the silhouette seen along `view`.
         fn seam_edges(s: &Shape, view: &Vec3) -> Vec<u32>;
+        fn face_frame(s: &Shape, face: u32) -> Result<FaceFrame>;
+        /// Faces of `s` mapped into `frame`'s plane, each by an affine map of
+        /// its (u, v) parameters (six values per face: x = a u + b v + c,
+        /// y = d u + e v + f), joined into one region and extruded along
+        /// `thickness`. `sources` gets, per face of the result: the index of
+        /// the edge of `s` it was extruded from, -1 for the face in the plane,
+        /// -2 for the opposite face, -3 when unknown.
+        fn flatten(
+            s: &Shape,
+            faces: &[u32],
+            maps: &[f64],
+            frame: &Frame,
+            thickness: &Vec3,
+            sources: &mut Vec<i64>,
+        ) -> Result<UniquePtr<Shape>>;
 
         fn write_step(s: &Shape, path: &str) -> Result<()>;
         fn read_step(path: &str) -> Result<UniquePtr<Shape>>;

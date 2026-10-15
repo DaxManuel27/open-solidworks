@@ -30,6 +30,8 @@ pub mod naming;
 mod ops;
 pub mod properties;
 mod resolve;
+pub mod sheet_metal;
+pub mod sheet_tables;
 pub mod units;
 
 pub use bodies::{BodyDisplay, BodyId, Combine, KeepSide, MoveBody, SolidBody, SplitBody};
@@ -195,6 +197,12 @@ pub enum FeatureKind {
     /// Imported bodies come from the `import` method.
     #[schemars(skip)]
     Import(Import),
+    /// The first sheet metal feature, or a tab on a sheet metal face.
+    BaseFlange(sheet_metal::BaseFlange),
+    /// Walls bent up from edges of a sheet metal body.
+    EdgeFlange(sheet_metal::EdgeFlange),
+    /// Every sheet metal body flattened; suppress it to show the part formed.
+    FlatPattern(sheet_metal::FlatPattern),
 }
 
 impl FeatureKind {
@@ -241,6 +249,9 @@ impl FeatureKind {
             FeatureKind::CircularPattern(_) => "CirPattern",
             FeatureKind::Mirror(_) => "Mirror",
             FeatureKind::Import(_) => "Imported",
+            FeatureKind::BaseFlange(_) => "Base-Flange",
+            FeatureKind::EdgeFlange(_) => "Edge-Flange",
+            FeatureKind::FlatPattern(_) => "Flat-Pattern",
         }
     }
 
@@ -319,6 +330,19 @@ impl FeatureKind {
             }
             FeatureKind::Hole(h) => out.push(h.sketch),
             FeatureKind::Rib(r) => out.push(r.sketch),
+            FeatureKind::BaseFlange(b) => {
+                out.push(b.sketch);
+                for end in b.end1.iter().chain(&b.end2) {
+                    refs.extend(end.target());
+                }
+            }
+            FeatureKind::EdgeFlange(e) => {
+                refs.extend(&e.edges);
+                if let sheet_metal::FlangeLength::UpToVertex { target } = &e.length {
+                    refs.push(target);
+                }
+            }
+            FeatureKind::FlatPattern(f) => refs.extend(&f.fixed_face),
             FeatureKind::Wrap(w) => {
                 out.push(w.sketch);
                 refs.push(&w.face);

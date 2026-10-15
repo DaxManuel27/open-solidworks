@@ -749,6 +749,33 @@ pub fn effective(doc: &Document) -> Evaluation {
     }
 }
 
+/// Evaluate a standalone formula in the given variables: plain numbers and
+/// lengths in mm. The result must be a length, returned in mm.
+pub fn evaluate_with(
+    text: &str,
+    numbers: &[(&str, f64)],
+    lengths: &[(&str, f64)],
+) -> Result<f64, String> {
+    check_syntax(text)?;
+    let q = evaluate(text, |name| {
+        if let Some((_, v)) = numbers.iter().find(|(n, _)| *n == name) {
+            return Ok(Quantity::scalar(*v));
+        }
+        if let Some((_, v)) = lengths.iter().find(|(n, _)| *n == name) {
+            return Ok(Quantity {
+                value: *v,
+                length: 1,
+                angle: 0,
+            });
+        }
+        Err(format!("unknown name `{name}`"))
+    })?;
+    if q.length != 1 || q.angle != 0 {
+        return Err("the formula must give a length".into());
+    }
+    Ok(q.value)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -797,3 +824,4 @@ mod tests {
         }
     }
 }
+

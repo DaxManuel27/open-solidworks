@@ -14,6 +14,7 @@ use crate::naming::{Inputs, Naming};
 use crate::resolve::{RResult, Resolved, resolve};
 mod face_fillet;
 mod rib;
+pub(crate) mod sheet;
 mod thread;
 mod wrap;
 
@@ -51,6 +52,8 @@ pub(crate) fn build(
         FeatureKind::CircularPattern(p) => circular_pattern(fid, p, prev, state),
         FeatureKind::Mirror(m) => mirror(fid, m, prev, state),
         FeatureKind::Import(i) => import(fid, i, state),
+        FeatureKind::BaseFlange(p) => sheet::base_flange(fid, p, prev, state),
+        FeatureKind::EdgeFlange(p) => sheet::edge_flange(fid, p, prev, state),
         _ => Ok(()),
     };
     if result.is_ok() && state.tools.contains_key(&fid) {
@@ -981,11 +984,11 @@ pub(crate) fn to_geom(c: &SCurve) -> GCurve {
 }
 
 /// A sketch profile as kernel faces, with a name for each face edge.
-struct ProfileShape {
-    shape: Shape,
-    plane: Plane,
+pub(crate) struct ProfileShape {
+    pub(crate) shape: Shape,
+    pub(crate) plane: Plane,
     /// Per kernel edge of `shape`: `s{entity}` for the sketch curve it came from.
-    edge_names: Vec<String>,
+    pub(crate) edge_names: Vec<String>,
 }
 
 fn sketch_of(prev: &State, id: FeatureId) -> RResult<&(Plane, Sketch)> {

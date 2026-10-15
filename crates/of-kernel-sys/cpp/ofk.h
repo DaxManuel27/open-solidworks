@@ -41,6 +41,7 @@ struct EdgeInfo;
 struct Distance;
 struct StepNode;
 struct HlrEdge;
+struct FaceFrame;
 
 class Shape {
 public:
@@ -173,6 +174,10 @@ StepNode step_read_node(const StepRead &r, uint32_t i);
 std::unique_ptr<Shape> step_read_shape(const StepRead &r, uint32_t i);
 rust::Vec<HlrEdge> hlr(const Shape &s, const Frame &view, bool exact, bool hidden,
                        double deflection);
+FaceFrame face_frame(const Shape &s, uint32_t face);
+std::unique_ptr<Shape> flatten(const Shape &s, rust::Slice<const uint32_t> faces,
+                               rust::Slice<const double> maps, const Frame &frame,
+                               const Vec3 &thickness, rust::Vec<int64_t> &sources);
 rust::Vec<uint32_t> seam_edges(const Shape &s, const Vec3 &view);
 
 } // namespace ofk

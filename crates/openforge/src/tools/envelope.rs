@@ -158,6 +158,8 @@ fn changes_material(kind: &FeatureKind) -> bool {
             | LinearPattern(_)
             | CircularPattern(_)
             | Mirror(_)
+            | BaseFlange(_)
+            | EdgeFlange(_)
     )
 }
 
