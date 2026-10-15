@@ -342,6 +342,8 @@ fn notes_lead_to_model_points_and_fill_fields() {
     );
     s.annotations.push(Annotation {
         id: 10,
+        view: None,
+        layer: None,
         kind: AnnotationKind::Note {
             at: [100.0, 250.0],
             text: "⌀10 THRU\n$PRP:\"PartNo\"".into(),
@@ -353,6 +355,9 @@ fn notes_lead_to_model_points_and_fill_fields() {
                 },
                 at: [30.0, 35.0],
             }),
+            jog: false,
+            border: Default::default(),
+            angle: 0.0,
         },
     });
     let mut d = drawing(vec![s]);

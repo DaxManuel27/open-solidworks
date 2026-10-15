@@ -85,6 +85,39 @@ fn layer_name(s: &str, sheet: Option<usize>) -> String {
     }
 }
 
+/// DXF file version.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Default,
+    serde::Serialize,
+    serde::Deserialize,
+    schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum DxfVersion {
+    /// AC1009: readable by nearly everything; no lineweights.
+    R12,
+    /// AC1032: lineweights, true colour, paper space layout.
+    #[default]
+    R2018,
+}
+
+/// Write sheets as DXF in a version.
+pub fn write_version(
+    sheets: &[Graphics],
+    standard: &Standard,
+    version: DxfVersion,
+) -> Result<String, String> {
+    match version {
+        DxfVersion::R12 => write(sheets, standard),
+        DxfVersion::R2018 => write(sheets, standard),
+    }
+}
+
 /// Write sheets as DXF. With several sheets they are placed side by side,
 /// 20 mm apart, each with its own layer prefix.
 pub fn write(sheets: &[Graphics], standard: &Standard) -> Result<String, String> {

@@ -39,6 +39,9 @@ pub struct BomRow {
     pub mass: Option<f64>,
     /// Every evaluated custom property.
     pub properties: BTreeMap<String, String>,
+    /// Key paths of the instances the row counts (for balloons).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub components: Vec<Vec<String>>,
 }
 
 fn row_for(i: &Instance) -> BomRow {
@@ -60,6 +63,7 @@ fn row_for(i: &Instance) -> BomRow {
         material: String::new(),
         mass: None,
         properties: BTreeMap::new(),
+        components: Vec::new(),
     };
     match &i.loaded {
         Loaded::Part(p) => {
@@ -109,7 +113,13 @@ fn group<'a>(instances: impl Iterator<Item = &'a Instance>) -> Vec<(BomRow, Vec<
             }
         }
     }
-    groups.into_iter().map(|(_, r, v)| (r, v)).collect()
+    groups
+        .into_iter()
+        .map(|(_, mut r, v)| {
+            r.components = v.iter().map(|i| i.key.clone()).collect();
+            (r, v)
+        })
+        .collect()
 }
 
 pub fn bom(asm: &mut Assembly, kind: BomType) -> Vec<BomRow> {

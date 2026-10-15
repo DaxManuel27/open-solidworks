@@ -312,6 +312,8 @@ run `cargo run -p openforge -- generate` instead. -->
 | `open_part` | `doc.open` | file/session (not in drafts) | `path`, `detail?` |
 | `save_part` | `doc.save` | file/session (not in drafts) | `detail?`, `path?` |
 | `export` | `export` | file/session (not in drafts) | `path`, `configuration?`, `detail?` |
+| `set_part_properties` | `doc.properties.set` | edit (draft) | `properties`, `additionalProperties?`, `detail?` |
+| `set_dimension_display` | `doc.dimension_display.set` | edit (draft) | `key`, `detail?`, `name?`, `show?` |
 | `import` | `import` | file/session (not in drafts) | `path`, `detail?` |
 | `undo` | `doc.undo` | file/session (not in drafts) | `detail?` |
 | `new_assembly` | `asm.new` | file/session (not in drafts) | `detail?` |
@@ -333,7 +335,9 @@ run `cargo run -p openforge -- generate` instead. -->
 | `clearance` | `asm.clearance` | read | `minimum`, `components?`, `detail?` |
 | `bill_of_materials` | `asm.bom` | read | `csv?`, `detail?`, `type?` |
 | `import_step_assembly` | `asm.import_step` | file/session (not in drafts) | `path`, `detail?`, `folder?` |
-| `new_drawing` | `drawing.new` | file/session (not in drafts) | `detail?`, `projection?`, `size?`, `standard?` |
+| `new_drawing` | `drawing.new` | file/session (not in drafts) | `configuration?`, `detail?`, `model?`, `projection?`, `size?`, `standard?` |
+| `standard_views` | `drawing.views.standard` | file/session (not in drafts) | `sheet`, `model`, `configuration?`, `detail?`, `isometric?`, `scale?` |
+| `update_drawing` | `drawing.update` | file/session (not in drafts) | `detail?` |
 | `drawing_info` | `drawing.info` | read | `detail?` |
 | `render_sheet` | `drawing.render` | read | `detail?`, `sheet?`, `summary?` |
 | `add_sheet` | `drawing.sheet.add` | file/session (not in drafts) | `detail?`, `name?`, `portrait?`, `projection?`, `scale?`, `size?`, `template?` |
@@ -342,7 +346,15 @@ run `cargo run -p openforge -- generate` instead. -->
 | `add_drawing_view` | `drawing.view.add` | file/session (not in drafts) | `sheet`, `view`, `origin`, `detail?`, `display?`, `name?`, `scale?`, `tangent?` |
 | `update_drawing_view` | `drawing.view.update` | file/session (not in drafts) | `id`, `aligned?`, `detail?`, `display?`, `hidden_components?`, `hidden_edges?`, `label?`, `name?`, `origin?`, `scale?`, `tangent?`, `view?` |
 | `delete_drawing_views` | `drawing.view.delete` | file/session (not in drafts) | `ids`, `detail?` |
-| `add_note` | `drawing.annotation.add` | file/session (not in drafts) | `sheet`, `annotation`, `detail?` |
+| `add_annotation` | `drawing.annotation.add` | file/session (not in drafts) | `sheet`, `annotation`, `detail?`, `layer?`, `view?` |
+| `update_annotation` | `drawing.annotation.update` | file/session (not in drafts) | `id`, `annotation?`, `detail?`, `layer?`, `view?` |
+| `move_annotations` | `drawing.annotation.move` | file/session (not in drafts) | `ids`, `by`, `detail?` |
+| `insert_model_items` | `drawing.model_items` | file/session (not in drafts) | `sheet`, `detail?`, `items?`, `views?` |
+| `drive_dimension` | `drawing.dimension.drive` | file/session (not in drafts) | `id`, `value`, `detail?` |
+| `auto_balloons` | `drawing.balloons.auto` | file/session (not in drafts) | `sheet`, `view`, `detail?`, `ignore_multiple?`, `layout?` |
+| `table_csv` | `drawing.table.csv` | read | `id`, `detail?`, `path?` |
+| `set_drafting_standard` | `drawing.standard.set` | file/session (not in drafts) | `detail?`, `load?`, `save?`, `standard?` |
+| `export_drawing` | `drawing.export` | file/session (not in drafts) | `path`, `detail?`, `dxf_version?`, `monochrome?`, `per_sheet?`, `sheets?` |
 | `delete_annotations` | `drawing.annotation.delete` | file/session (not in drafts) | `ids`, `detail?` |
 | `set_drawing_properties` | `drawing.properties.set` | file/session (not in drafts) | `properties`, `additionalProperties?`, `detail?` |
 

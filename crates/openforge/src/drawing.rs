@@ -7,8 +7,8 @@ use of_drawing::annotations::{Annotation, AnnotationKind};
 use of_drawing::drawing::Drawing;
 use of_drawing::standard::{Standard, StandardBase};
 use of_drawing::{
-    Anchor, DrawingDocument, ModelSource, Projection, Scale, Sheet, SheetFormat, SheetSize, View,
-    ViewKind, dxf, formats, pdf,
+    DrawingDocument, ModelSource, Projection, Scale, Sheet, SheetFormat, SheetSize, View, ViewKind,
+    dxf, formats, pdf,
 };
 use of_protocol::{ErrorCode, RpcError};
 use serde::de::DeserializeOwned;
@@ -80,8 +80,26 @@ fn blank(p: &NewDrawing) -> DrawingDocument {
 }
 
 impl DrawSession {
-    pub fn new(p: &NewDrawing) -> DrawSession {
-        DrawSession::from_drawing(Drawing::new(blank(p)))
+    pub fn new(p: &NewDrawing) -> Result<DrawSession, RpcError> {
+        let mut s = DrawSession::from_drawing(Drawing::new(blank(p)));
+        if let Some(model) = &p.model {
+            let source = model_source(
+                &ModelSource {
+                    path: model.to_string_lossy().into_owned(),
+                    hash: None,
+                    configuration: p.configuration,
+                },
+                &s.drawing.base_dir(),
+                false,
+            )?;
+            let sheet = s.drawing.doc.sheets[0].id;
+            s.drawing
+                .add_standard_views(sheet, source, true, None)
+                .map_err(fail)?;
+            s.drawing.record_hashes();
+            s.dirty = true;
+        }
+        Ok(s)
     }
 
     fn from_drawing(drawing: Drawing) -> DrawSession {
@@ -104,6 +122,29 @@ impl DrawSession {
 
     pub fn doc(&self) -> &DrawingDocument {
         &self.drawing.doc
+    }
+
+    /// Run a change that needs the models (layouts); undone like any other.
+    fn change_drawing(
+        &mut self,
+        f: impl FnOnce(&mut Drawing) -> Result<(), RpcError>,
+    ) -> Result<(), RpcError> {
+        let before = self.drawing.doc.clone();
+        if let Err(e) =
+            f(&mut self.drawing).and_then(|()| self.drawing.doc.validate().map_err(fail))
+        {
+            self.drawing.doc = before;
+            return Err(e);
+        }
+        if self.drawing.doc != before {
+            self.undo.push(before);
+            if self.undo.len() > UNDO_LIMIT {
+                self.undo.remove(0);
+            }
+            self.redo.clear();
+            self.dirty = true;
+        }
+        Ok(())
     }
 
     /// Run a change on a copy of the document; keep it only if it succeeds
@@ -151,6 +192,7 @@ impl DrawSession {
                     .path
                     .or_else(|| self.drawing.path().map(Path::to_path_buf))
                     .ok_or_else(|| RpcError::params("choose where to save"))?;
+                self.drawing.record_hashes();
                 self.drawing.save(&path).map_err(fail)?;
                 self.dirty = false;
                 Ok(self.full())
@@ -188,12 +230,60 @@ impl DrawSession {
                 }
                 let r = self.drawing.render(id).map_err(fail)?;
                 if p.summary {
-                    Ok(json!({ "sheet": id, "views": r.views, "items": r.graphics.items.len() }))
+                    let mut v =
+                        json!({ "sheet": id, "views": r.views, "items": r.graphics.items.len() });
+                    if !r.dangling.is_empty() {
+                        v["dangling"] = json!(r.dangling);
+                    }
+                    Ok(v)
                 } else {
                     let mut v = json!(r);
                     v["sheet"] = json!(id);
                     Ok(v)
                 }
+            }
+            "drawing.update" => {
+                // Views always show the models as saved; this clears their
+                // "needs update" marks.
+                self.change_drawing(|d| {
+                    d.record_hashes();
+                    Ok(())
+                })?;
+                Ok(self.full())
+            }
+            "drawing.views.standard" => {
+                let p: StandardViews = args(params)?;
+                let saved = self.drawing.path().is_some();
+                let mut added = None;
+                self.change_drawing(|d| {
+                    let source = model_source(
+                        &ModelSource {
+                            path: p.model.to_string_lossy().into_owned(),
+                            hash: None,
+                            configuration: p.configuration,
+                        },
+                        &d.base_dir(),
+                        saved,
+                    )?;
+                    if d.doc.sheet(p.sheet).is_none() {
+                        return Err(unknown("sheet", p.sheet));
+                    }
+                    added = Some(
+                        d.add_standard_views(p.sheet, source, p.isometric, p.scale)
+                            .map_err(fail)?,
+                    );
+                    Ok(())
+                })?;
+                let a = added.expect("set on success");
+                let mut v = self.full();
+                v["views"] = json!({
+                    "front": a.front,
+                    "top": a.top,
+                    "side": a.side,
+                    "isometric": a.isometric,
+                });
+                v["scale"] = json!(a.scale);
+                Ok(v)
             }
             "drawing.sheet.add" => {
                 let p: AddSheet = args(params)?;
@@ -299,11 +389,19 @@ impl DrawSession {
                         *model = model_source(model, base, saved)?;
                     }
                     id = doc.alloc_id();
+                    let name = p.name.unwrap_or_else(|| default_name(&kind, id));
+                    let labelled = matches!(
+                        kind,
+                        ViewKind::Section { .. }
+                            | ViewKind::Detail { .. }
+                            | ViewKind::Auxiliary { .. }
+                    );
+                    let label = labelled.then(|| of_drawing::viewdraw::next_label(doc));
                     let sheet = doc
                         .sheet_mut(p.sheet)
                         .ok_or_else(|| unknown("sheet", p.sheet))?;
-                    let name = p.name.unwrap_or_else(|| default_name(&kind, id));
                     let mut v = View::new(id, name, kind, p.origin);
+                    v.label = label;
                     v.scale = p.scale;
                     v.display = p.display;
                     v.tangent = p.tangent;
@@ -388,16 +486,198 @@ impl DrawSession {
                     let sheet = doc
                         .sheet_mut(p.sheet)
                         .ok_or_else(|| unknown("sheet", p.sheet))?;
-                    check_anchors(sheet, &p.annotation)?;
-                    sheet.annotations.push(Annotation {
+                    let a = Annotation {
                         id,
+                        view: p.view,
+                        layer: p.layer,
                         kind: p.annotation,
-                    });
+                    };
+                    check_anchors(sheet, &a)?;
+                    sheet.annotations.push(a);
                     Ok(())
                 })?;
                 let mut v = self.full();
                 v["id"] = json!(id);
                 Ok(v)
+            }
+            "drawing.annotation.update" => {
+                let p: UpdateAnnotation = args(params)?;
+                // Moving between a view and the sheet keeps the drawn place.
+                let shift = match p.view {
+                    Some(to) => {
+                        let (sheet, a) = self
+                            .find_annotation(p.id)
+                            .ok_or_else(|| unknown("annotation", p.id))?;
+                        let from = self.view_origin(&sheet, a.view)?;
+                        let to = self.view_origin(&sheet, to)?;
+                        Some([from[0] - to[0], from[1] - to[1]])
+                    }
+                    None => None,
+                };
+                self.change(|doc, _| {
+                    let sheet = doc
+                        .sheets
+                        .iter_mut()
+                        .find(|s| s.annotations.iter().any(|a| a.id == p.id))
+                        .ok_or_else(|| unknown("annotation", p.id))?;
+                    let i = sheet.annotations.iter().position(|a| a.id == p.id).unwrap();
+                    let mut a = sheet.annotations[i].clone();
+                    if let Some(k) = p.annotation {
+                        a.kind = k;
+                    }
+                    if let (Some(v), Some(d)) = (p.view, shift) {
+                        a.view = v;
+                        a.kind.translate(d);
+                    }
+                    if let Some(l) = p.layer {
+                        a.layer = l;
+                    }
+                    check_anchors(sheet, &a)?;
+                    sheet.annotations[i] = a;
+                    Ok(())
+                })?;
+                Ok(self.full())
+            }
+            "drawing.annotation.move" => {
+                let p: MoveAnnotations = args(params)?;
+                self.change(|doc, _| {
+                    for id in &p.ids {
+                        let a = doc
+                            .sheets
+                            .iter_mut()
+                            .flat_map(|s| s.annotations.iter_mut())
+                            .find(|a| a.id == *id)
+                            .ok_or_else(|| unknown("annotation", id))?;
+                        a.kind.translate(p.by);
+                    }
+                    Ok(())
+                })?;
+                Ok(self.full())
+            }
+            "drawing.model_items" => {
+                let p: ModelItemsParams = args(params)?;
+                let mut added = Vec::new();
+                self.change_drawing(|d| {
+                    let sheet = d
+                        .doc
+                        .sheet(p.sheet)
+                        .ok_or_else(|| unknown("sheet", p.sheet))?;
+                    let views: Vec<u32> = match &p.views {
+                        Some(v) => {
+                            for id in v {
+                                if sheet.view(*id).is_none() {
+                                    return Err(unknown("view on this sheet", id));
+                                }
+                            }
+                            v.clone()
+                        }
+                        None => sheet.views.iter().map(|v| v.id).collect(),
+                    };
+                    let new = d.model_items(p.sheet, &views, &p.items).map_err(fail)?;
+                    d.doc.next_id = d
+                        .doc
+                        .next_id
+                        .max(new.iter().map(|a| a.id + 1).max().unwrap_or(0));
+                    added = new.iter().map(|a| a.id).collect();
+                    d.doc.sheet_mut(p.sheet).unwrap().annotations.extend(new);
+                    Ok(())
+                })?;
+                let mut v = self.full();
+                v["added"] = json!(added);
+                Ok(v)
+            }
+            "drawing.dimension.drive" => {
+                let p: DriveDimension = args(params)?;
+                if !p.value.is_finite() || p.value <= 0.0 {
+                    return Err(RpcError::params("a dimension value must be above zero"));
+                }
+                let path = self
+                    .drawing
+                    .set_model_dimension(p.id, p.value)
+                    .map_err(fail)?;
+                // The drawing made this change, so its views are current.
+                self.change_drawing(|d| {
+                    d.record_hashes();
+                    Ok(())
+                })?;
+                let mut v = self.full();
+                v["saved_models"] = json!([path]);
+                Ok(v)
+            }
+            "drawing.balloons.auto" => {
+                let p: AutoBalloons = args(params)?;
+                let mut added = Vec::new();
+                self.change_drawing(|d| {
+                    let sheet = d
+                        .doc
+                        .sheet(p.sheet)
+                        .ok_or_else(|| unknown("sheet", p.sheet))?;
+                    if sheet.view(p.view).is_none() {
+                        return Err(unknown("view on this sheet", p.view));
+                    }
+                    let new = d
+                        .auto_balloons(p.sheet, p.view, p.layout, p.ignore_multiple)
+                        .map_err(fail)?;
+                    if new.is_empty() {
+                        return Err(fail("the view shows no assembly components to balloon"));
+                    }
+                    d.doc.next_id = d
+                        .doc
+                        .next_id
+                        .max(new.iter().map(|a| a.id + 1).max().unwrap_or(0));
+                    added = new.iter().map(|a| a.id).collect();
+                    d.doc.sheet_mut(p.sheet).unwrap().annotations.extend(new);
+                    Ok(())
+                })?;
+                let mut v = self.full();
+                v["added"] = json!(added);
+                Ok(v)
+            }
+            "drawing.table.csv" => {
+                let p: TableCsv = args(params)?;
+                let (sheet, a) = self
+                    .find_annotation(p.id)
+                    .ok_or_else(|| unknown("annotation", p.id))?;
+                let AnnotationKind::Table(t) = &a.kind else {
+                    return Err(RpcError::params(format!(
+                        "annotation {} is not a table",
+                        p.id
+                    )));
+                };
+                let csv = self.drawing.table_cells(&sheet, t).map_err(fail)?.csv();
+                match p.path {
+                    Some(path) => {
+                        std::fs::write(&path, &csv).map_err(|e| {
+                            fail(format!("could not write {}: {e}", path.display()))
+                        })?;
+                        Ok(json!({ "path": path }))
+                    }
+                    None => Ok(json!({ "csv": csv })),
+                }
+            }
+            "drawing.standard.set" => {
+                let p: SetStandard = args(params)?;
+                let standard = match (p.standard, &p.load) {
+                    (Some(_), Some(_)) => {
+                        return Err(RpcError::params("give `standard` or `load`, not both"));
+                    }
+                    (Some(s), None) => s,
+                    (None, Some(path)) => Standard::load(path).map_err(fail)?,
+                    (None, None) => self.drawing.doc.standard,
+                };
+                self.change(|doc, _| {
+                    doc.standard = standard;
+                    Ok(())
+                })?;
+                if let Some(path) = &p.save {
+                    standard.save(path).map_err(fail)?;
+                }
+                Ok(self.full())
+            }
+            "drawing.export" => {
+                let p: ExportDrawing = args(params)?;
+                let written = self.export_with(&p)?;
+                Ok(json!({ "paths": written }))
             }
             "drawing.annotation.delete" => {
                 let p: crate::tools::asm_params::ItemIds = args(params)?;
@@ -443,6 +723,19 @@ impl DrawSession {
 
     /// Write every sheet to a PDF or DXF file, chosen by extension.
     fn export(&mut self, path: &Path) -> Result<(), RpcError> {
+        self.export_with(&ExportDrawing {
+            path: path.to_path_buf(),
+            sheets: None,
+            monochrome: false,
+            per_sheet: false,
+            dxf_version: None,
+        })
+        .map(drop)
+    }
+
+    /// Write sheets to PDF or DXF; returns the files written.
+    fn export_with(&mut self, p: &ExportDrawing) -> Result<Vec<std::path::PathBuf>, RpcError> {
+        let path = &p.path;
         let ext = path
             .extension()
             .and_then(|e| e.to_str())
@@ -451,10 +744,30 @@ impl DrawSession {
         if ext != "pdf" && ext != "dxf" {
             return Err(RpcError::params("a drawing exports to .pdf or .dxf"));
         }
-        let ids: Vec<u32> = self.drawing.doc.sheets.iter().map(|s| s.id).collect();
+        let ids: Vec<u32> = match &p.sheets {
+            Some(ids) => {
+                if ids.is_empty() {
+                    return Err(RpcError::params("choose at least one sheet"));
+                }
+                for id in ids {
+                    if self.drawing.doc.sheet(*id).is_none() {
+                        return Err(unknown("sheet", id));
+                    }
+                }
+                // In sheet order.
+                self.drawing
+                    .doc
+                    .sheets
+                    .iter()
+                    .map(|s| s.id)
+                    .filter(|id| ids.contains(id))
+                    .collect()
+            }
+            None => self.drawing.doc.sheets.iter().map(|s| s.id).collect(),
+        };
         let mut sheets = Vec::new();
-        for id in ids {
-            let r = self.drawing.render(id).map_err(fail)?;
+        for id in &ids {
+            let r = self.drawing.render(*id).map_err(fail)?;
             if let Some(v) = r.views.iter().find(|v| v.error.is_some()) {
                 return Err(fail(format!(
                     "view {} could not be drawn: {}",
@@ -465,27 +778,89 @@ impl DrawSession {
             sheets.push(r.graphics);
         }
         let standard = self.drawing.doc.standard;
-        let bytes = if ext == "pdf" {
+        let write = |path: &Path, bytes: Vec<u8>| {
+            std::fs::write(path, bytes)
+                .map_err(|e| fail(format!("could not write {}: {e}", path.display())))
+        };
+        if ext == "pdf" {
             let title = self
                 .drawing
                 .path()
                 .and_then(|p| p.file_stem())
                 .and_then(|s| s.to_str())
                 .map(String::from);
-            pdf::write(
+            let bytes = pdf::write(
                 &sheets,
                 &standard,
                 &pdf::PdfOptions {
                     title,
-                    ..Default::default()
+                    monochrome: p.monochrome,
                 },
             )
-            .map_err(fail)?
-        } else {
-            dxf::write(&sheets, &standard).map_err(fail)?.into_bytes()
-        };
-        std::fs::write(path, bytes)
-            .map_err(|e| fail(format!("could not write {}: {e}", path.display())))
+            .map_err(fail)?;
+            write(path, bytes)?;
+            return Ok(vec![path.clone()]);
+        }
+        let version = p.dxf_version.unwrap_or_default();
+        if !p.per_sheet || sheets.len() == 1 {
+            write(
+                path,
+                dxf::write_version(&sheets, &standard, version)
+                    .map_err(fail)?
+                    .into_bytes(),
+            )?;
+            return Ok(vec![path.clone()]);
+        }
+        let stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("drawing");
+        let mut out = Vec::new();
+        for (g, id) in sheets.iter().zip(&ids) {
+            let name = &self.drawing.doc.sheet(*id).unwrap().name;
+            let safe: String = name
+                .chars()
+                .map(|c| {
+                    if c.is_alphanumeric() || c == '-' || c == '_' {
+                        c
+                    } else {
+                        '_'
+                    }
+                })
+                .collect();
+            let file = path.with_file_name(format!("{stem}-{safe}.dxf"));
+            write(
+                &file,
+                dxf::write_version(std::slice::from_ref(g), &standard, version)
+                    .map_err(fail)?
+                    .into_bytes(),
+            )?;
+            out.push(file);
+        }
+        Ok(out)
+    }
+
+    fn find_annotation(&self, id: u32) -> Option<(Sheet, Annotation)> {
+        self.drawing.doc.sheets.iter().find_map(|s| {
+            s.annotations
+                .iter()
+                .find(|a| a.id == id)
+                .map(|a| (s.clone(), a.clone()))
+        })
+    }
+
+    /// Sheet position of a view's origin, or the sheet's for `None`.
+    fn view_origin(&mut self, sheet: &Sheet, view: Option<u32>) -> Result<[f64; 2], RpcError> {
+        match view {
+            None => Ok([0.0, 0.0]),
+            Some(v) => {
+                if sheet.view(v).is_none() {
+                    return Err(unknown("view on this sheet", v));
+                }
+                let r = self.drawing.resolve(sheet, v).map_err(fail)?;
+                Ok([r.origin.x, r.origin.y])
+            }
+        }
     }
 
     pub fn full(&self) -> Value {
@@ -561,25 +936,33 @@ fn delete_views(doc: &mut DrawingDocument, ids: &[u32]) -> Vec<u32> {
         if s.properties_view.is_some_and(|v| gone.contains(&v)) {
             s.properties_view = None;
         }
+        let gone_list: Vec<u32> = gone.iter().copied().collect();
         for a in &mut s.annotations {
-            let AnnotationKind::Note { leader, .. } = &mut a.kind;
-            if matches!(leader, Some(Anchor::Model { target, .. }) if gone.contains(&target.view)) {
-                *leader = None;
-            }
+            a.kind.drop_leaders_to(&gone_list);
         }
+        // Annotations that move with, or measure, a deleted view go too.
+        s.annotations
+            .retain(|a| !a.views().iter().any(|v| gone.contains(v)));
     }
     let mut out: Vec<u32> = gone.into_iter().collect();
     out.sort();
     out
 }
 
-/// Annotations may anchor only to views on their own sheet.
-fn check_anchors(sheet: &Sheet, a: &AnnotationKind) -> Result<(), RpcError> {
-    let AnnotationKind::Note { leader, .. } = a;
-    if let Some(Anchor::Model { target, .. }) = leader
-        && sheet.view(target.view).is_none()
-    {
-        return Err(unknown("view on this sheet", target.view));
+/// Annotations may refer only to views on their own sheet (a BOM may list
+/// an assembly view on any sheet).
+fn check_anchors(sheet: &Sheet, a: &Annotation) -> Result<(), RpcError> {
+    let bom_view = match &a.kind {
+        AnnotationKind::Table(t) => match &t.kind {
+            of_drawing::tables::TableKind::Bom { view, .. } => Some(*view),
+            _ => None,
+        },
+        _ => None,
+    };
+    for v in a.views() {
+        if sheet.view(v).is_none() && Some(v) != bom_view {
+            return Err(unknown("view on this sheet", v));
+        }
     }
     Ok(())
 }
@@ -590,7 +973,10 @@ impl Default for DrawSession {
             standard: None,
             size: None,
             projection: None,
+            model: None,
+            configuration: None,
         })
+        .expect("a blank drawing needs no model")
     }
 }
 

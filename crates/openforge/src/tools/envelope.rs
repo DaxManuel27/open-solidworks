@@ -688,7 +688,15 @@ mod tests {
                 if let Some(folder) = example.get_mut("folder") {
                     *folder = json!(dir.join("hardware"));
                 }
+                if let Some(model) = example.get_mut("model").filter(|m| m.is_string()) {
+                    *model = json!(dir.join(model.as_str().unwrap()));
+                }
                 let method = entry.tool.method;
+                if method == "drawing.new" {
+                    example_part()
+                        .handle("doc.save", json!({ "path": dir.join("part.ofp") }))
+                        .unwrap();
+                }
                 let mut s = crate::tools::tests::example_for(method, &dir);
                 match entry.tool.method {
                     "import" => drop(s.handle("export", example.clone()).unwrap()),

@@ -335,7 +335,7 @@ impl Session {
                 let p: FilePath = args(params)?;
                 crate::drawing::DrawSession::open(&p.path).map_err(fail)?
             } else {
-                crate::drawing::DrawSession::new(&args(params)?)
+                crate::drawing::DrawSession::new(&args(params)?)?
             };
             let revision = self.revision;
             *self = Session::new();
@@ -750,6 +750,7 @@ impl Session {
                     "hardware_library".into(),
                     "step_assembly_structure".into(),
                     "part_v4_read".into(),
+                    "part_v5_read".into(),
                     "drawings".into(),
                 ],
             })),
@@ -831,6 +832,60 @@ impl Session {
                 };
                 self.checkpoint();
                 self.model.doc.material = m;
+                Ok(self.snapshot())
+            }
+            "doc.properties.set" => {
+                let p: SetProperties = args(params)?;
+                let mut doc = self.model.doc.clone();
+                for (name, v) in p.properties {
+                    match v {
+                        Some(prop) => {
+                            prop.validate(&name).map_err(RpcError::params)?;
+                            doc.properties.insert(name.trim().to_string(), prop);
+                        }
+                        None => {
+                            doc.properties.remove(&name);
+                        }
+                    }
+                }
+                self.checkpoint();
+                self.model.doc = doc;
+                Ok(self.snapshot())
+            }
+            "doc.dimension_display.set" => {
+                let p: DimensionDisplay = args(params)?;
+                if !self
+                    .model
+                    .doc
+                    .features
+                    .iter()
+                    .flat_map(of_model::equations::parameters)
+                    .any(|t| t.key == p.key)
+                {
+                    return Err(RpcError::coded(
+                        ErrorCode::UnknownParameter,
+                        "unknown parameter",
+                    ));
+                }
+                let mut d = self
+                    .model
+                    .doc
+                    .dimension_display
+                    .get(&p.key)
+                    .cloned()
+                    .unwrap_or_default();
+                if let Some(show) = p.show {
+                    d.show = show;
+                }
+                if let Some(name) = p.name {
+                    d.name = name.map(|n| n.trim().to_string()).filter(|n| !n.is_empty());
+                }
+                self.checkpoint();
+                if d == of_model::DimensionDisplay::default() {
+                    self.model.doc.dimension_display.remove(&p.key);
+                } else {
+                    self.model.doc.dimension_display.insert(p.key, d);
+                }
                 Ok(self.snapshot())
             }
             "doc.rollback" => {

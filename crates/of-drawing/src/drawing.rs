@@ -9,13 +9,11 @@ use of_model::geom::{DVec2, HlrEdge, HlrQuality, Shape};
 use schemars::JsonSchema;
 use serde::Serialize;
 
-use crate::annotations::AnnotationKind;
 use crate::clip::Gap;
 use crate::document::*;
 use crate::formats::{self, Fields, Format};
-use crate::graphics::{Graphics, HAlign, LineStyle, Owner, P2, Pen, layers};
+use crate::graphics::{Graphics, P2};
 use crate::model::Sources;
-use crate::text;
 use crate::viewdraw::gaps;
 use crate::views::{self, Frame};
 
@@ -410,7 +408,7 @@ impl Drawing {
         Ok(f.sheet_format)
     }
 
-    fn fields(&mut self, sheet: &Sheet) -> Fields {
+    pub(crate) fn fields(&mut self, sheet: &Sheet) -> Fields {
         let index = self
             .doc
             .sheets
@@ -432,6 +430,24 @@ impl Drawing {
                 .to_string(),
             ..Default::default()
         };
+        // A revision table's latest revision feeds the title block.
+        let current = self
+            .doc
+            .sheets
+            .iter()
+            .flat_map(|s| &s.annotations)
+            .find_map(|a| match &a.kind {
+                crate::annotations::AnnotationKind::Table(t) => match &t.kind {
+                    crate::tables::TableKind::Revision { rows, numeric } => {
+                        crate::tables::revision_cells(rows, *numeric).1
+                    }
+                    _ => None,
+                },
+                _ => None,
+            });
+        if let Some(rev) = current {
+            f.drawing.insert("Revision".into(), rev);
+        }
         let view = sheet
             .properties_view
             .and_then(|id| sheet.view(id))
@@ -557,51 +573,6 @@ impl Drawing {
             title_block: format.title_block,
             dangling,
         })
-    }
-
-    fn draw_annotation(
-        &mut self,
-        sheet: &Sheet,
-        a: &crate::annotations::Annotation,
-        g: &mut Graphics,
-    ) -> Result<(), String> {
-        let std = self.doc.standard;
-        let owner = Owner::Annotation { id: a.id };
-        let thin = Pen::new(LineStyle::Continuous, std.thin_line());
-        match &a.kind {
-            AnnotationKind::Note {
-                at,
-                text: t,
-                height,
-                leader,
-            } => {
-                let fields = self.fields(sheet);
-                let value = formats::fill(t, &fields);
-                let h = height.unwrap_or(std.text_height());
-                for p in text::layout(&value, *at, h, 0.0, HAlign::Left) {
-                    g.push(p, thin, layers::NOTES, &owner);
-                }
-                let target = match leader {
-                    Some(l) => Some(
-                        self.anchor_point(sheet, l)
-                            .ok_or("the leader's view is gone")?,
-                    ),
-                    None => None,
-                };
-                if let Some(target) = target {
-                    let (w, bh) = text::block_size(&value, h);
-                    // Leave from the nearer end of the first line.
-                    let start = if target[0] < at[0] + w / 2.0 {
-                        [at[0] - 1.0, at[1] + h / 2.0]
-                    } else {
-                        [at[0] + w + 1.0, at[1] + h / 2.0]
-                    };
-                    let _ = bh;
-                    crate::annotations::leader(g, start, target, std.arrow_length(), thin, &owner);
-                }
-            }
-        }
-        Ok(())
     }
 
     /// Sheet position of an anchor.

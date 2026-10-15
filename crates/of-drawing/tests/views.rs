@@ -576,3 +576,54 @@ fn relative_views_and_stale_models() {
     assert!(d.record_hashes());
     assert!(!render(&mut d).views[0].stale);
 }
+
+#[test]
+fn standard_views_fit_the_sheet_in_either_projection() {
+    let dir = Scratch::new("standard");
+    // 300 mm long: too big for A3 at 1:1, so 1:2 is chosen.
+    let doc = plate_doc(300.0, 120.0, 30.0, &[(50.0, 60.0, 10.0)]);
+    let path = save(&doc, &dir.path("long.ofp"));
+    for projection in [Projection::First, Projection::Third] {
+        let mut d = drawing(of_drawing::standard::Standard::iso(), Vec::new());
+        d.doc.sheets[0].projection = projection;
+        d.doc.sheets[0].format.visible = true;
+        let source = ModelSource {
+            path: path.to_string_lossy().into_owned(),
+            hash: None,
+            configuration: None,
+        };
+        let added = d.add_standard_views(SHEET, source, true, None).unwrap();
+        assert_eq!(added.scale, Scale { num: 1.0, den: 2.0 });
+        assert_eq!(d.doc.sheets[0].scale, added.scale);
+        let r = render(&mut d);
+        let boxes: Vec<[[f64; 2]; 2]> = r.views.iter().map(|v| v.bbox.unwrap()).collect();
+        // Inside the frame, clear of the title block and of each other.
+        let [lo, hi] = r.frame;
+        let tb = r.title_block;
+        for b in &boxes {
+            assert!(
+                b[0][0] >= lo[0] && b[0][1] >= lo[1] && b[1][0] <= hi[0] && b[1][1] <= hi[1],
+                "{b:?}"
+            );
+            let over_tb = b[1][0] > tb[0][0] && b[0][1] < tb[1][1];
+            assert!(!over_tb, "{b:?} overlaps the title block {tb:?}");
+        }
+        for i in 0..boxes.len() {
+            for j in i + 1..boxes.len() {
+                let (a, b) = (boxes[i], boxes[j]);
+                let apart = a[1][0] < b[0][0]
+                    || b[1][0] < a[0][0]
+                    || a[1][1] < b[0][1]
+                    || b[1][1] < a[0][1];
+                assert!(apart, "{a:?} {b:?}");
+            }
+        }
+        // The top view is above the front in third angle, below in first.
+        let (front, top) = (boxes[0], boxes[1]);
+        match projection {
+            Projection::Third => assert!(top[0][1] > front[1][1]),
+            Projection::First => assert!(top[1][1] < front[0][1]),
+        }
+        assert_eq!(d.doc.sheets[0].properties_view, Some(added.front));
+    }
+}
