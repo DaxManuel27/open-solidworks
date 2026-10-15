@@ -1,3 +1,58 @@
+# Handoff: Phase 4 drawings (2026-10-15, session 8)
+
+Read this first. Earlier sections below are history.
+
+## State
+
+- Branch `phase-4`, nothing pushed. Every Phase 4 milestone (P4.0–P4.8) is implemented
+  and verified locally; see `docs/phase-4-status.md` for what was built, how it was
+  verified and the recorded limits. Session 8 commits on top of `c2d85af`: annotations
+  and tables (`64810e2`), threads and DXF 2018 (`be2eb65`), the desktop drawing UI
+  (`be900aa`), conformance and budgets (`0150cf6`), and the docs commit.
+- The only open gate is hosted three-platform CI on the release candidate, which needs
+  `phase-4` pushed (owner's call per the branching rule), then the merge into `main`.
+
+## Verified on this tree
+
+`cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test --workspace`,
+`openforge generate --check`, `pnpm lint`, `format:check`, `typecheck`, `build`,
+`test:assistant`, `conformance` (98/98), `perf:draw:check`, and the full native desktop
+smoke (`pnpm --filter @openforge/desktop smoke`, now with the drawing scenario). Not rerun
+this session: `perf:check`, `perf:asm:check`, `bench`.
+
+## Where things live
+
+| Area | Files |
+| --- | --- |
+| Annotation model | `of-drawing/src/annotations.rs` (kinds; `Annotation.attach` is the view it moves with, named apart from kinds' own `view` because kinds are flattened in) |
+| Drawing annotations | `of-drawing/src/annot.rs` (draw every kind, model items, driving dimensions, hole text, auto balloons, tables' cells), `dims.rs` (dimension model, value text, drafting), `symbols.rs`, `tables.rs`, `fits.rs` (ISO 286), `locate.rs` (`ViewRef` → model geometry) |
+| Output | `pdf.rs`, `dxf.rs` (R12 + `DxfSheet`), `dxf2018.rs` (AC1032: model space at true size, layouts, viewports) |
+| Core | `openforge/src/drawing.rs` (all `drawing.*` methods), params in `tools/drawing_params.rs`; part `doc.properties.set` / `doc.dimension_display.set` in `session.rs` |
+| Desktop | `renderer/src/drawing/` (`SheetCanvas.tsx`, `state.ts` sheet store + pick routing, `SheetTabs.tsx`, `DrawingTree.tsx`, `panels/{common,sheet,views,dimensions,annotate}.tsx`); ribbon in `toolbars/{commands,layout}.ts`; `store.ts` `adoptDrawing`, `makeDrawing`, `print`; main process `.ofd` dialogs, `window:drawing`, `print:*` |
+| Tests | `of-drawing/tests/annotations.rs`, `output.rs` (DXF 2018 structure), area 15 in `scripts/catalog-conformance.mjs`, `scripts/drawing-smoke.mjs`, `scripts/phase-4-performance.mjs` + `docs/phase-4-budgets.json` |
+
+## Gotchas
+
+- Drafting symbols (⌀ ⌴ ⌵ ↧ □, GD&T) are strokes, not text: text checks compare with the
+  symbols removed (`plain()` in tests and conformance).
+- Imported model dimensions store `at` relative to the middle of what they measure, so
+  they follow model changes; other annotations with `attach` are relative to the view
+  origin (the resolved one, reported as `views[].origin` by render).
+- Panels route sheet clicks through `useDrawing().target` (`useSheetPicks`); the smoke
+  calls `target.onPick` directly. `window.__openforgeDrawing` exposes that store.
+- `openPanel` with `editing` must not call `edit.begin` in drawings (it is the view or
+  annotation ID there); switching document kind clears the open panel.
+- pnpm: `corepack enable --install-directory <scratch>/tools` and put it on PATH.
+
+## Next steps
+
+1. Push `phase-4` (owner's call) and run hosted CI on macOS, Windows and Linux. Likely
+   attention points: the font import from `crates/of-drawing/assets` in the renderer
+   build (Vite `?url` outside the app root), DXF/PDF paths on Windows, and the drawing
+   smoke's new window under Xvfb.
+2. Record the run in `docs/phase-4-status.md` (Hosted CI) and, with the owner's
+   confirmation, merge `phase-4` into `main`.
+
 # Handoff: Phase 4 drawings (2026-10-12, session 7)
 
 Read this first. Earlier sections below are history (session 6 has the of-drawing
@@ -15,17 +70,17 @@ module map, still accurate).
 
 ## Done this session
 
-| Area | Where | Notes |
-| --- | --- | --- |
-| Render tests | `of-drawing/tests/render.rs`, helpers in `tests/common/mod.rs` | 3-view first/third angle with alignment, edge refs, hidden lines, title block fields (incl. mass/material), cache hits, hidden edges/components, note leaders, assembly + exploded views, auxiliary views, PDF/DXF of a rendered sheet |
-| HLR timings | `of-drawing/tests/hlr_timing.rs` (ignored; run with `--ignored --nocapture`, add `--release`) | Shelled, filleted housing and a 23-part gearbox stand-in (no gearbox fixture existed in the repo). Exact beats preview everywhere |
-| Aux view fix | `of-drawing/src/model.rs` `Sources::locate`; `Drawing::resolve`/`anchor_point` now take `&mut self` | Auxiliary views use the drawing's model cache instead of loading a fresh `Sources` per resolve |
-| Core session | `openforge/src/drawing.rs` (`DrawSession`), routing in `session.rs` (`drawing.new`, `.ofd` `doc.open`, `for_drawing`) | Undo/redo of whole documents; model paths checked and stored relative once saved; view delete cascades to derived views and drops leaders to them |
-| Methods | `drawing.info/render/sheet.*/view.*/annotation.*/properties.set`, `export` to `.pdf`/`.dxf` | Documented in `docs/protocol.md` → Drawings |
-| Catalog/MCP | `tools/drawing_params.rs`, 12 tools in `tools/mod.rs`; fixture `example_drawing` + `example_for` | Every example replays; envelopes trim drawing snapshots like part snapshots |
-| CLI | `main.rs` `drawing_info`; `export` works for `.ofd` | `openforge info x.ofd`, `openforge export x.ofd out.pdf` |
-| Protocol | `PROTOCOL_VERSION` 5 (scene stays 4), `CoreInfo.drawing_file_version`, capability `drawings` | Desktop check in `store.ts` updated to 5/4 |
-| Tests | `openforge/tests/drawing.rs` (serve + CLI) | |
+| Area         | Where                                                                                                                 | Notes                                                                                                                                                                                                                                  |
+| ------------ | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Render tests | `of-drawing/tests/render.rs`, helpers in `tests/common/mod.rs`                                                        | 3-view first/third angle with alignment, edge refs, hidden lines, title block fields (incl. mass/material), cache hits, hidden edges/components, note leaders, assembly + exploded views, auxiliary views, PDF/DXF of a rendered sheet |
+| HLR timings  | `of-drawing/tests/hlr_timing.rs` (ignored; run with `--ignored --nocapture`, add `--release`)                         | Shelled, filleted housing and a 23-part gearbox stand-in (no gearbox fixture existed in the repo). Exact beats preview everywhere                                                                                                      |
+| Aux view fix | `of-drawing/src/model.rs` `Sources::locate`; `Drawing::resolve`/`anchor_point` now take `&mut self`                   | Auxiliary views use the drawing's model cache instead of loading a fresh `Sources` per resolve                                                                                                                                         |
+| Core session | `openforge/src/drawing.rs` (`DrawSession`), routing in `session.rs` (`drawing.new`, `.ofd` `doc.open`, `for_drawing`) | Undo/redo of whole documents; model paths checked and stored relative once saved; view delete cascades to derived views and drops leaders to them                                                                                      |
+| Methods      | `drawing.info/render/sheet.*/view.*/annotation.*/properties.set`, `export` to `.pdf`/`.dxf`                           | Documented in `docs/protocol.md` → Drawings                                                                                                                                                                                            |
+| Catalog/MCP  | `tools/drawing_params.rs`, 12 tools in `tools/mod.rs`; fixture `example_drawing` + `example_for`                      | Every example replays; envelopes trim drawing snapshots like part snapshots                                                                                                                                                            |
+| CLI          | `main.rs` `drawing_info`; `export` works for `.ofd`                                                                   | `openforge info x.ofd`, `openforge export x.ofd out.pdf`                                                                                                                                                                               |
+| Protocol     | `PROTOCOL_VERSION` 5 (scene stays 4), `CoreInfo.drawing_file_version`, capability `drawings`                          | Desktop check in `store.ts` updated to 5/4                                                                                                                                                                                             |
+| Tests        | `openforge/tests/drawing.rs` (serve + CLI)                                                                            |                                                                                                                                                                                                                                        |
 
 ## Verified on this tree
 

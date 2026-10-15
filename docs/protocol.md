@@ -78,7 +78,8 @@ failed configuration as though it were complete.
 
 ## Drawings
 
-`drawing.new` (`{standard?, size?, projection?}`) or `doc.open` of an `.ofd` file
+`drawing.new` (`{standard?, size?, projection?, model?, configuration?}`; with `model`, a
+standard 3 view and isometric of that file) or `doc.open` of an `.ofd` file
 replaces the open document with a drawing, as `asm.new` does for assemblies. While
 a drawing is open it answers `drawing.*`, `doc.info`, `doc.save`, `doc.undo`,
 `doc.redo` and `export`; part and assembly methods fail with `E_NOT_ALLOWED`.
@@ -94,11 +95,22 @@ one undo step.
 | `drawing.sheet.update` | `{id, name?, size?, portrait?, scale?, projection?, template?, format_visible?, properties_view?, index?}` |
 | `drawing.sheet.delete` | `{ids}`; one sheet always remains |
 | `drawing.view.add` | `{sheet, view, origin, name?, scale?, display?, tangent?}`; returns `id` |
-| `drawing.view.update` | `{id, name?, view?, origin?, scale?, display?, tangent?, label?, aligned?, hidden_edges?, hidden_components?}`; null resets optional values |
+| `drawing.view.update` | `{id, name?, view?, origin?, scale?, display?, tangent?, label?, aligned?, hidden_edges?, hidden_components?, breaks?, break_style?, break_gap?, crop?, broken_out?, hatch?}`; null resets optional values |
+| `drawing.views.standard` | `{sheet, model, configuration?, isometric?, scale?}`; laid out per the sheet's projection; without `scale` the largest preferred scale that fits becomes the sheet scale; returns `views {front, top, side, isometric}` and `scale` |
+| `drawing.model.faces` | `{model, configuration?}`; planar faces `{entity, normal, area}` for relative-to-model views |
+| `drawing.update` | Records the current model hashes, clearing views' `stale` marks |
 | `drawing.view.delete` | `{ids}`; also deletes views derived from them; returns `deleted` |
-| `drawing.annotation.add`, `drawing.annotation.delete` | `{sheet, annotation}` (returns `id`) or `{ids}` |
+| `drawing.annotation.add`, `drawing.annotation.delete` | `{sheet, annotation, view?, layer?}` (returns `id`) or `{ids}`; with `view` the annotation's positions are relative to that view and it moves with it (stored as `attach`) |
+| `drawing.annotation.update` | `{id, annotation?, view?, layer?}`; changing `view` keeps where it is drawn |
+| `drawing.annotation.move` | `{ids, by}`; sheet positions move, model anchors stay |
+| `drawing.model_items` | `{sheet, views?, items? {dimensions, hole_callouts, threads, axes}}`; returns `added` |
+| `drawing.dimension.drive` | `{id, value}`; edits, rebuilds and saves the part of an imported dimension; returns `saved_models` |
+| `drawing.balloons.auto` | `{sheet, view, layout?, ignore_multiple?}`; returns `added` |
+| `drawing.table.csv` | `{id, path?}`; returns `csv` or writes `path` |
+| `drawing.standard.set` | `{standard?, load?, save?}`; `.ofstd` files |
+| `drawing.export` | `{path, sheets?, monochrome?, per_sheet?, dxf_version?}`; returns `paths` |
 | `drawing.properties.set` | `{properties}`; `$PRPSHEET` values, null removes |
-| `export` | `{path}`; every sheet to `.pdf` (one page per sheet, true size) or `.dxf` (R12, sheets side by side) |
+| `export` | `{path}`; every sheet to `.pdf` (one page per sheet, true size) or `.dxf` (2018: views at true size in model space, one paper space layout per sheet) |
 
 Sheet coordinates are mm of paper from the bottom-left corner, y up. A view's
 `origin` is the sheet position of its model origin; projected and auxiliary views
@@ -113,8 +125,20 @@ size), angle, text, width}`. `owner` is `format`, `annotation {id}` or `view
 {view, entity?}`, where `entity` is the model edge (`CompRef`) the curve shows;
 silhouettes of curved faces have none. `views[]` give each view's sheet `bbox`,
 `scale`, paper axes `x`/`y`, view direction `toward` and `error` when it could not
-be drawn. A failed view does not fail the render; `export` refuses to write a
-drawing with failed views.
+be drawn, `origin` (the sheet position of its model origin) and `stale` when its
+model changed on disk since the last save or `drawing.update`. A failed view does not
+fail the render; `export` refuses to write a drawing with failed views. Annotations
+whose model anchor no longer resolves are drawn where possible and listed in
+`dangling`.
+
+Annotation kinds (`type`): `note`, `dimension` (with `dim`: `linear`, `angular`,
+`radius`, `diameter`, `arc_length`, `chamfer`, `ordinate`, `baseline`, `chain`,
+`angular_running` or `model` for an imported part parameter), `balloon`,
+`hole_callout`, `center_mark`, `centerline`, `surface_finish`, `datum_feature`,
+`datum_target`, `gtol`, `weld`, `area_hatch`, `revision_cloud`, `revision_symbol` and
+`table` (with `table`: `bom`, `hole`, `revision`, `general` or `general_tolerance`).
+Geometry is named through `{view, entity}` picks; a pick's `near` (view-plane mm)
+chooses the end, middle or center of an edge nearest the click.
 
 `openforge info drawing.ofd` lists sheets and views with their errors;
 `openforge export drawing.ofd out.pdf|out.dxf` writes it.

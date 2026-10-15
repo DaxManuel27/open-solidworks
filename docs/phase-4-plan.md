@@ -1,6 +1,7 @@
 # Phase 4 implementation plan
 
-Status: in progress, 2026-10-13. Built on `phase-4`, created from `main` after the
+Status: implemented and verified locally, 2026-10-15 (see [Phase 4 status](phase-4-status.md));
+hosted CI on the release candidate is the remaining gate. Built on `phase-4`, created from `main` after the
 Phase 3 merge (PR #4; see [Phase 3 status](phase-3-status.md)) and the clippy fix
 that turned hosted CI green. The owner decided output and tooling questions on
 2026-10-13; see [Decisions](#decisions).

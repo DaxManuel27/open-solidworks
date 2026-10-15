@@ -4,7 +4,7 @@ Detailed specs for [catalog section 15](../solidworks-feature-catalog.md#15-draw
 
 A drawing (`.slddrw`) holds sheets; each sheet has a sheet format (border and title block) and views of parts or assemblies. Views stay associative: model changes update views, and model dimensions shown in a drawing can drive the model. API: `IDrawingDoc`, `ISheet`, `IView`; view types in `swDrawingViewTypes_e`.
 
-**OpenForge today:** no drawings. Everything in this section is missing.
+**OpenForge today:** drawings, sheets and formats, every view kind listed below except alternate position, detached, 3D and flat pattern views, model items and driving dimensions, every dimension scheme and tolerance type, notes, balloons, symbols, cosmetic threads, BOM, hole, revision, general and general tolerance tables, ISO and ANSI standards, PDF and DXF output (Phase 4; see [status](../phase-4-status.md) for limits). Blocks, DrawCompare, auto-generation, other standards, DWG, eDrawings and detailing mode are deferred.
 
 ## Sheets and views
 
