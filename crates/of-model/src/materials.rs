@@ -45,3 +45,20 @@ pub fn by_name(name: &str) -> Option<Material> {
 
 /// Density used when no material is set (water), in kg/m³.
 pub const DEFAULT_DENSITY: f64 = 1000.0;
+
+/// Sheet metal defaults of a library material: K-factor and inside bend
+/// radius as a multiple of thickness. Typical press brake values for air
+/// bending; None for materials that are not formed as sheet.
+pub fn sheet_metal_defaults(name: &str) -> Option<(f64, f64)> {
+    let n = name.to_ascii_lowercase();
+    Some(match n.as_str() {
+        "plain carbon steel" => (0.44, 1.0),
+        "stainless steel 304" => (0.45, 1.5),
+        "aluminum 6061" => (0.43, 1.5),
+        "aluminum 7075" => (0.45, 3.0),
+        "brass" => (0.42, 1.0),
+        "copper" => (0.42, 1.0),
+        "titanium ti-6al-4v" => (0.45, 2.5),
+        _ => return None,
+    })
+}

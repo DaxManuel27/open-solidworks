@@ -338,9 +338,7 @@ impl FeatureKind {
             }
             FeatureKind::EdgeFlange(e) => {
                 refs.extend(&e.edges);
-                if let sheet_metal::FlangeLength::UpToVertex { target } = &e.length {
-                    refs.push(target);
-                }
+                refs.extend(e.length.target());
             }
             FeatureKind::FlatPattern(f) => refs.extend(&f.fixed_face),
             FeatureKind::Wrap(w) => {

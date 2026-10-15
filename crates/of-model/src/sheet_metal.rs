@@ -135,6 +135,9 @@ pub struct SheetMetalParams {
     /// Take thickness, radius and K-factor from a gauge table instead.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gauge: Option<GaugeChoice>,
+    /// Take the K-factor and inside radius from the part's material.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub use_material: bool,
 }
 
 impl Default for SheetMetalParams {
@@ -145,6 +148,7 @@ impl Default for SheetMetalParams {
             allowance: Allowance::default(),
             relief: Relief::default(),
             gauge: None,
+            use_material: false,
         }
     }
 }
@@ -238,6 +242,25 @@ pub enum FlangeLength {
     },
     /// The flange end passes through a vertex.
     UpToVertex { target: Ref },
+    /// The flange's inner face ends on a plane or planar face.
+    UpToSurface { target: Ref },
+    /// As `up_to_surface`, stopping `offset` short of it.
+    OffsetFromSurface {
+        target: Ref,
+        #[schemars(range(min = 0.0))]
+        offset: f64,
+    },
+}
+
+impl FlangeLength {
+    pub fn target(&self) -> Option<&Ref> {
+        match self {
+            FlangeLength::Blind { .. } => None,
+            FlangeLength::UpToVertex { target }
+            | FlangeLength::UpToSurface { target }
+            | FlangeLength::OffsetFromSurface { target, .. } => Some(target),
+        }
+    }
 }
 
 /// Walls bent up from linear edges of a sheet metal body.

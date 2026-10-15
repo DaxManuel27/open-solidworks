@@ -454,7 +454,7 @@ pub fn parameters(feature: &Feature) -> Vec<Parameter> {
                     let integer = key == "count";
                     let scalar = matches!(
                         key.as_str(),
-                        "turns" | "position" | "turn" | "tangent_length"
+                        "turns" | "position" | "turn" | "tangent_length" | "k" | "ratio"
                     );
                     if angle
                         || integer
@@ -481,6 +481,10 @@ pub fn parameters(feature: &Feature) -> Vec<Parameter> {
                                 | "diameter_override"
                                 | "cbore_diameter_override"
                                 | "cbore_depth_override"
+                                | "gap"
+                                | "end_offset"
+                                | "position_offset"
+                                | "width"
                         )
                     {
                         let mut parameter = param(fid, path, n, angle, integer);
@@ -824,4 +828,3 @@ mod tests {
         }
     }
 }
-

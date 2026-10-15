@@ -63,6 +63,8 @@ pub struct State {
     pub(crate) tools: HashMap<FeatureId, Vec<Tool>>,
     /// Sheet metal bodies, with their parameters and bends.
     pub sheet_metal: Vec<crate::sheet_metal::SheetMetalBody>,
+    /// The part's material, for features that take defaults from it.
+    pub material: Option<String>,
     pub(crate) tool_order: Vec<FeatureId>,
 }
 
@@ -345,8 +347,9 @@ fn evaluated_feature(
     build_feature(&mut evaluation.document, index, prev)
 }
 
-fn build_feature(doc: &mut Document, index: usize, prev: State) -> (State, FeatureStatus) {
+fn build_feature(doc: &mut Document, index: usize, mut prev: State) -> (State, FeatureStatus) {
     let f: Feature = doc.features[index].clone();
+    prev.material = doc.material.as_ref().map(|m| m.name.clone());
     let mut status = FeatureStatus {
         id: f.id,
         error: None,

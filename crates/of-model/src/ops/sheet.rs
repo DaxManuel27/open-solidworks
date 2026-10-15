@@ -68,8 +68,15 @@ fn record_for_face(state: &State, face: u32) -> RResult<usize> {
         .ok_or_else(|| "select geometry of a sheet metal body".to_string())
 }
 
-fn check_params(p: &SheetMetalParams) -> RResult<SheetMetalParams> {
-    let p = crate::sheet_tables::resolve(p)?;
+fn check_params(p: &SheetMetalParams, material: Option<&str>) -> RResult<SheetMetalParams> {
+    let mut p = crate::sheet_tables::resolve(p)?;
+    if p.use_material {
+        let name = material.ok_or("set the part's material to use its sheet metal values")?;
+        let (k, ratio) = crate::materials::sheet_metal_defaults(name)
+            .ok_or_else(|| format!("{name} has no sheet metal values"))?;
+        p.allowance = crate::sheet_metal::Allowance::KFactor { k };
+        p.radius = ratio * p.thickness;
+    }
     if !(p.thickness.is_finite() && p.thickness > 1e-6) {
         return Err("the sheet thickness must be more than zero".into());
     }
@@ -86,7 +93,7 @@ pub(super) fn base_flange(
     prev: &State,
     state: &mut State,
 ) -> RResult<()> {
-    let params = check_params(&p.sheet)?;
+    let params = check_params(&p.sheet, prev.material.as_deref())?;
     let (plane, sk) = sketch_of(prev, p.sketch)?;
     let contours = sk.contours().map_err(geo)?;
     if !contours.regions.is_empty() {
@@ -815,6 +822,21 @@ pub(super) fn edge_flange(
                 let q = resolve(prev, target)?.point()?;
                 let (x, y, _) = f.local(q);
                 (DVec2::new(x, y) - b_in).dot(d)
+            }
+            FlangeLength::UpToSurface { target }
+            | FlangeLength::OffsetFromSurface { target, .. } => {
+                let plane = resolve(prev, target)?.plane()?;
+                let start = f.world(b_in.x, b_in.y, 0.0);
+                let dir = f.x * d.x + f.y * d.y;
+                let along = dir.dot(plane.normal);
+                if along.abs() < 1e-9 {
+                    return Err("the flange runs parallel to the surface".into());
+                }
+                let reach = (plane.origin - start).dot(plane.normal) / along;
+                match &p.length {
+                    FlangeLength::OffsetFromSurface { offset, .. } => reach - offset,
+                    _ => reach,
+                }
             }
         };
         if straight <= 1e-6 {
