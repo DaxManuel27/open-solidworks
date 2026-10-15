@@ -2,9 +2,8 @@
 
 Updated 2026-10-15. Built on `phase-4`, branched from `main` after the Phase 3 merge
 and the clippy fix that turned hosted CI green. Every milestone in
-[the implementation plan](phase-4-plan.md) is implemented and verified locally; the
-plan's release gate also needs hosted macOS, Windows and Linux CI on the release
-candidate, recorded at the end of this page once it has run.
+[the implementation plan](phase-4-plan.md) is implemented and verified, locally and on
+hosted macOS, Windows and Linux CI ([below](#hosted-ci)).
 
 ## What was built
 
@@ -86,5 +85,9 @@ writer), eDrawings and markups, detailing mode and lightweight drawings, DimXper
 
 ## Hosted CI
 
-Not run yet: `phase-4` has not been pushed. CI now also runs `pnpm perf:draw:check`, and
-the Linux desktop smoke includes the drawing scenario.
+Passed on macOS, Windows and Linux on 2026-10-15:
+[run 38687852412](https://github.com/DaxManuel27/open-solidworks/actions/runs/38687852412)
+on commit 4d53943, including `pnpm perf:draw:check` and the native desktop smoke with
+the drawing scenario. The first run (38686480880, on 24b149d) failed on Windows only:
+the smoke clicked Save while closing a panel still held commands disabled. Its `click`
+helper now waits for the button to become available.
