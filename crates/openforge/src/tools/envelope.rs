@@ -160,6 +160,9 @@ fn changes_material(kind: &FeatureKind) -> bool {
             | Mirror(_)
             | BaseFlange(_)
             | EdgeFlange(_)
+            | Hem(_)
+            | MiterFlange(_)
+            | Jog(_)
     )
 }
 

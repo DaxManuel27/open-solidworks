@@ -496,6 +496,9 @@ fn build_kind(id: FeatureId, kind: &FeatureKind, prev: &State, state: &mut State
         FeatureKind::MoveBody(p) => return crate::bodies::move_body(id, p, prev, state),
         FeatureKind::SplitBody(p) => return crate::bodies::split_body(id, p, prev, state),
         FeatureKind::FlatPattern(p) => return ops::sheet::flat_pattern(id, p, prev, state),
+        FeatureKind::SketchedBend(p) => return ops::sheet::sketched_bend(id, p, prev, state),
+        FeatureKind::Jog(p) => return ops::sheet::jog(id, p, prev, state),
+        FeatureKind::CrossBreak(p) => return ops::sheet::cross_break(id, p, prev, state),
         _ => {
             ops::build(id, kind, prev, state)?;
             return state.refresh_bodies(id, prev);

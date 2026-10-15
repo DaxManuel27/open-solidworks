@@ -345,6 +345,8 @@ pub struct SheetMetalBody {
     /// Bend lines, once the body is flattened.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bend_lines: Vec<BendLine>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cross_breaks: Vec<CrossBreakRecord>,
 }
 
 /// The flat length of a bend.
@@ -429,4 +431,216 @@ pub fn flattened(state: &State, index: usize) -> Result<Flattened, String> {
         thickness: record.params.thickness,
         bend_lines: flat.bend_lines,
     })
+}
+
+/// The shape of a hem.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum HemKind {
+    /// Folded flat onto the sheet.
+    Closed,
+    /// Folded back with a gap, mm.
+    Open {
+        #[schemars(extend("exclusiveMinimum" = 0))]
+        gap: f64,
+    },
+    /// Curled past 180° and back down onto the sheet.
+    TearDrop {
+        /// Radians, between 180° and 270°.
+        angle: f64,
+        /// Inside radius, mm.
+        #[schemars(extend("exclusiveMinimum" = 0))]
+        radius: f64,
+    },
+    /// Curled by `angle` with no straight part.
+    Rolled {
+        /// Radians, less than 360°.
+        angle: f64,
+        #[schemars(extend("exclusiveMinimum" = 0))]
+        radius: f64,
+    },
+    /// Folded back, then forward again over itself, with a gap, mm.
+    Double {
+        #[schemars(range(min = 0.0))]
+        gap: f64,
+    },
+}
+
+/// Where a hem sits relative to its edge.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum HemPosition {
+    /// The fold's outside is at the edge.
+    #[default]
+    MaterialInside,
+    /// The fold starts at the edge.
+    BendOutside,
+}
+
+/// Folds edges of a sheet back on themselves.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Hem {
+    #[schemars(length(min = 1))]
+    pub edges: Vec<Ref>,
+    pub kind: HemKind,
+    /// Length of the folded-back part for closed, open and double hems, mm.
+    #[serde(default = "hem_length")]
+    #[schemars(range(min = 0.0))]
+    pub length: f64,
+    #[serde(default)]
+    pub position: HemPosition,
+    /// Fold toward the other face of the sheet.
+    #[serde(default)]
+    pub reverse: bool,
+    /// Gap where hems on adjacent edges meet, mm.
+    #[serde(default = "default_gap")]
+    #[schemars(range(min = 0.0))]
+    pub gap: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowance: Option<Allowance>,
+}
+
+fn hem_length() -> f64 {
+    10.0
+}
+
+/// Flanges along a chain of edges from one open profile, mitered where the
+/// edges meet. The profile is sketched on a plane square to the first edge,
+/// starting on it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct MiterFlange {
+    #[schemars(range(min = 1))]
+    pub sketch: FeatureId,
+    /// Edges of one face of the sheet, the first one under the profile.
+    #[schemars(length(min = 1))]
+    pub edges: Vec<Ref>,
+    #[serde(default)]
+    pub position: FlangePosition,
+    #[serde(default = "default_gap")]
+    #[schemars(range(min = 0.0))]
+    pub gap: f64,
+    /// Shorten the chain at its start and end, mm.
+    #[serde(default)]
+    #[schemars(range(min = 0.0))]
+    pub start_offset: f64,
+    #[serde(default)]
+    #[schemars(range(min = 0.0))]
+    pub end_offset: f64,
+    #[serde(default)]
+    pub bend: BendOverride,
+}
+
+/// Where a sketched bend or jog sits relative to its sketch line.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BendPosition {
+    /// The line is the middle of the bend in the flat.
+    #[default]
+    Centerline,
+    /// The bent side's outer face passes through the line.
+    MaterialInside,
+    /// The bent side's inner face passes through the line.
+    MaterialOutside,
+    /// The bend starts at the line.
+    BendOutside,
+}
+
+/// Bends a flat region of the sheet along a sketched line.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SketchedBend {
+    /// A sketch on a flat face of the sheet holding one line across it.
+    #[schemars(range(min = 1))]
+    pub sketch: FeatureId,
+    /// A face on the side that stays put; the body's fixed face otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fixed: Option<Ref>,
+    /// Radians, between 0 and 180°.
+    #[serde(default = "right_angle")]
+    pub angle: f64,
+    #[serde(default)]
+    pub position: BendPosition,
+    /// Bend toward the other face of the sheet.
+    #[serde(default)]
+    pub reverse: bool,
+    #[serde(default)]
+    pub bend: BendOverride,
+}
+
+/// How a jog's offset is measured.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum JogDimension {
+    /// Between the faces on the same side of the two walls.
+    #[default]
+    Outside,
+    /// Between the facing faces of the two walls.
+    Inside,
+    /// Over both walls.
+    Overall,
+}
+
+/// A Z-shaped offset of the sheet along a sketched line: two opposite bends.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Jog {
+    #[schemars(range(min = 1))]
+    pub sketch: FeatureId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fixed: Option<Ref>,
+    /// mm.
+    #[schemars(extend("exclusiveMinimum" = 0))]
+    pub offset: f64,
+    #[serde(default)]
+    pub dimension: JogDimension,
+    /// Radians, between 0 and 180° (default 90°).
+    #[serde(default = "right_angle")]
+    pub angle: f64,
+    #[serde(default)]
+    pub position: BendPosition,
+    /// Keep the moved side where it was in plan, shortening the flat; when
+    /// off, the flat keeps its length and the moved side shifts back.
+    #[serde(default = "yes")]
+    pub fix_projected_length: bool,
+    #[serde(default)]
+    pub reverse: bool,
+    #[serde(default)]
+    pub bend: BendOverride,
+}
+
+fn yes() -> bool {
+    true
+}
+
+/// Cosmetic stiffening crosses on a flat face: diagonal lines in views and
+/// the flat pattern. The geometry is not changed.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CrossBreak {
+    pub face: Ref,
+    /// Radians (default 3°).
+    #[serde(default = "break_angle")]
+    pub angle: f64,
+    /// mm.
+    #[serde(default = "break_radius")]
+    pub radius: f64,
+    /// Break toward the other side.
+    #[serde(default)]
+    pub reverse: bool,
+}
+
+fn break_angle() -> f64 {
+    3f64.to_radians()
+}
+
+fn break_radius() -> f64 {
+    1.0
+}
+
+/// A cross break kept on its body.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CrossBreakRecord {
+    pub feature: FeatureId,
+    /// The stable name of the face it is on.
+    pub face: String,
+    pub angle: f64,
+    pub radius: f64,
+    pub up: bool,
 }

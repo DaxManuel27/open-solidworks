@@ -1,6 +1,9 @@
 //! Sheet metal features: base flanges, tabs and edge flanges, and the flat
 //! pattern. See [`crate::sheet_metal`] for the bend records they write.
 
+mod bend;
+mod hem;
+mod miter;
 mod unfold;
 
 use std::f64::consts::{PI, TAU};
@@ -16,11 +19,14 @@ use crate::build::{Body, State};
 use crate::naming::{Inputs, Naming};
 use crate::resolve::{Resolved, resolve};
 use crate::sheet_metal::{
-    BaseFlange, BendRecord, EdgeFlange, FlangeLength, FlangePosition, FlatPattern, LengthMeasure,
-    ReliefKind, SheetMetalBody, SheetMetalParams, ThicknessSide,
+    BaseFlange, BendRecord, CrossBreak, CrossBreakRecord, EdgeFlange, FlangeLength, FlangePosition,
+    FlatPattern, LengthMeasure, ReliefKind, SheetMetalBody, SheetMetalParams, ThicknessSide,
 };
 use crate::{EndCondition, FeatureId, Ref};
 
+pub(crate) use bend::{jog, sketched_bend};
+pub(super) use hem::hem;
+pub(super) use miter::miter_flange;
 pub(crate) use unfold::flatten;
 
 /// Strip a split suffix (`~2`) from a face name.
@@ -187,6 +193,7 @@ fn closed_base(
         params,
         bends: Vec::new(),
         bend_lines: Vec::new(),
+        cross_breaks: Vec::new(),
     });
     Ok(())
 }
@@ -585,13 +592,14 @@ fn open_base(
         params,
         bends,
         bend_lines: Vec::new(),
+        cross_breaks: Vec::new(),
     });
     Ok(())
 }
 
 /// The frame of one flange: 2D profile coordinates (X outward from the edge
 /// in the sheet's plane, Y in the rise direction) and Z along the edge.
-struct FlangeFrame {
+pub(super) struct FlangeFrame {
     origin: DVec3,
     x: DVec3,
     y: DVec3,
@@ -778,7 +786,7 @@ pub(super) fn edge_flange(
         .iter()
         .map(|r| flange_frame(prev, r, p.reverse))
         .collect::<RResult<_>>()?;
-    let mut cuts: Option<(Shape, Naming)> = None;
+    let mut cuts = Vec::new();
     let mut flanges = Vec::new();
     let mut new_bends = Vec::new();
     for (k, f) in frames.iter().enumerate() {
@@ -915,93 +923,10 @@ pub(super) fn edge_flange(
             "root".into(),
         ));
         let prefix = format!("e{k}.");
-        let mut tool = flange_prism(fid, &prefix, f, &profile, z0, z1)?;
-        // Flanges of this feature that meet this one at a corner: split the
-        // corner between them, leaving the gap.
-        for (j, g) in frames.iter().enumerate() {
-            if j == k {
-                continue;
-            }
-            let Some(corner) = f
-                .ends
-                .iter()
-                .find(|e| g.ends.iter().any(|o| (**e - *o).length() < 1e-6))
-            else {
-                continue;
-            };
-            let m = (f.x - g.x).normalize_or_zero();
-            if m == DVec3::ZERO {
-                continue;
-            }
-            let plane = Plane::new(*corner + m * (p.gap / 2.0), f.y, m);
-            let half = Shape::half_space(&Shape::plane_face(&plane).map_err(geo)?, *corner + m)
-                .map_err(geo)?;
-            tool = common_named(fid, tool, &half)?;
-        }
+        let tool = flange_prism(fid, &prefix, f, &profile, z0, z1)?;
+        let tool = corner_trims(fid, tool, k, &frames, p.gap)?;
         flanges.push(tool);
-        // Material the bend replaces, and reliefs where it stops short.
-        if x_end < -1e-9 {
-            let eps = 1e-3 * t.max(1.0);
-            let za = if z0 < eps { -eps } else { z0 };
-            let zb = if f.length - z1 < eps {
-                f.length + eps
-            } else {
-                z1
-            };
-            let mut pieces = vec![flange_prism(
-                fid,
-                &format!("{prefix}cut."),
-                f,
-                &rect(x_end, eps, -t - eps, eps),
-                za,
-                zb,
-            )?];
-            if relief.kind != ReliefKind::None {
-                let (w, depth) = match relief.kind {
-                    ReliefKind::Tear => ((t / 100.0).max(0.01), 0.0),
-                    _ => (relief.width(t), relief.depth(t)),
-                };
-                let reach = x_end - depth;
-                for (at, from, to) in [(z0 > eps, z0 - w, z0), (z1 < f.length - eps, z1, z1 + w)] {
-                    if !at {
-                        continue;
-                    }
-                    pieces.push(flange_prism(
-                        fid,
-                        &format!("{prefix}relief."),
-                        f,
-                        &rect(reach, eps, -t - eps, eps),
-                        from,
-                        to,
-                    )?);
-                    if relief.kind == ReliefKind::Obround {
-                        // Round the relief's end: a cylinder through the sheet.
-                        let mid = (from + to) / 2.0;
-                        let disc = Profile {
-                            plane: Plane::new(f.world(reach, -t - eps, mid), f.x, f.y),
-                            faces: vec![ProfileFace {
-                                outer: vec![GCurve::Circle {
-                                    center: DVec2::ZERO,
-                                    radius: w / 2.0,
-                                }],
-                                holes: Vec::new(),
-                            }],
-                        }
-                        .to_shape()
-                        .map_err(geo)?;
-                        let r = disc.prism(f.y * (t + 2.0 * eps)).map_err(geo)?;
-                        let names = Naming::by_index(&r.shape, &format!("{fid}.{prefix}relief.o"));
-                        pieces.push((r.shape, names));
-                    }
-                }
-            }
-            for piece in pieces {
-                cuts = Some(match cuts {
-                    None => piece,
-                    Some(c) => fuse_named(fid, c, piece)?,
-                });
-            }
-        }
+        cuts.extend(bend_cuts(fid, &prefix, f, x_end, z0, z1, relief)?);
         new_bends.push((
             f.record,
             BendRecord {
@@ -1014,16 +939,140 @@ pub(super) fn edge_flange(
             },
         ));
     }
-    if let Some((tool, names)) = cuts {
+    apply_flanges(fid, state, cuts, flanges, new_bends)
+}
+
+/// Cut away the material bends replace, add the flanges and record the bends.
+pub(super) fn apply_flanges(
+    fid: FeatureId,
+    state: &mut State,
+    cuts: Vec<(Shape, Naming)>,
+    flanges: Vec<(Shape, Naming)>,
+    bends: Vec<(usize, BendRecord)>,
+) -> RResult<()> {
+    let mut cut: Option<(Shape, Naming)> = None;
+    for piece in cuts {
+        cut = Some(match cut {
+            None => piece,
+            Some(c) => fuse_named(fid, c, piece)?,
+        });
+    }
+    if let Some((tool, names)) = cut {
         apply_tool(fid, state, tool, names, BoolOp::Cut, true)?;
     }
     for (tool, names) in flanges {
         apply_tool(fid, state, tool, names, BoolOp::Fuse, true)?;
     }
-    for (record, bend) in new_bends {
+    for (record, bend) in bends {
         state.sheet_metal[record].bends.push(bend);
     }
     Ok(())
+}
+
+/// Split the corners a flange shares with the other flanges of its feature,
+/// leaving `gap` between them.
+pub(super) fn corner_trims(
+    fid: FeatureId,
+    mut tool: (Shape, Naming),
+    k: usize,
+    frames: &[FlangeFrame],
+    gap: f64,
+) -> RResult<(Shape, Naming)> {
+    let f = &frames[k];
+    for (j, g) in frames.iter().enumerate() {
+        if j == k {
+            continue;
+        }
+        let Some(corner) = f
+            .ends
+            .iter()
+            .find(|e| g.ends.iter().any(|o| (**e - *o).length() < 1e-6))
+        else {
+            continue;
+        };
+        let m = (f.x - g.x).normalize_or_zero();
+        if m == DVec3::ZERO {
+            continue;
+        }
+        let plane = Plane::new(*corner + m * (gap / 2.0), f.y, m);
+        let half = Shape::half_space(&Shape::plane_face(&plane).map_err(geo)?, *corner + m)
+            .map_err(geo)?;
+        tool = common_named(fid, tool, &half)?;
+    }
+    Ok(tool)
+}
+
+/// The sheet a bend starting at `x_end < 0` replaces, from `z0` to `z1` along
+/// its edge, and reliefs where the bend stops short of the edge's ends.
+pub(super) fn bend_cuts(
+    fid: FeatureId,
+    prefix: &str,
+    f: &FlangeFrame,
+    x_end: f64,
+    z0: f64,
+    z1: f64,
+    relief: crate::sheet_metal::Relief,
+) -> RResult<Vec<(Shape, Naming)>> {
+    if x_end >= -1e-9 {
+        return Ok(Vec::new());
+    }
+    let t = f.thickness;
+    let eps = 1e-3 * t.max(1.0);
+    let za = if z0 < eps { -eps } else { z0 };
+    let zb = if f.length - z1 < eps {
+        f.length + eps
+    } else {
+        z1
+    };
+    let mut pieces = vec![flange_prism(
+        fid,
+        &format!("{prefix}cut."),
+        f,
+        &rect(x_end, eps, -t - eps, eps),
+        za,
+        zb,
+    )?];
+    if relief.kind == ReliefKind::None {
+        return Ok(pieces);
+    }
+    let (w, depth) = match relief.kind {
+        ReliefKind::Tear => ((t / 100.0).max(0.01), 0.0),
+        _ => (relief.width(t), relief.depth(t)),
+    };
+    let reach = x_end - depth;
+    for (at, from, to) in [(z0 > eps, z0 - w, z0), (z1 < f.length - eps, z1, z1 + w)] {
+        if !at {
+            continue;
+        }
+        pieces.push(flange_prism(
+            fid,
+            &format!("{prefix}relief."),
+            f,
+            &rect(reach, eps, -t - eps, eps),
+            from,
+            to,
+        )?);
+        if relief.kind == ReliefKind::Obround {
+            // Round the relief's end: a cylinder through the sheet.
+            let mid = (from + to) / 2.0;
+            let disc = Profile {
+                plane: Plane::new(f.world(reach, -t - eps, mid), f.x, f.y),
+                faces: vec![ProfileFace {
+                    outer: vec![GCurve::Circle {
+                        center: DVec2::ZERO,
+                        radius: w / 2.0,
+                    }],
+                    holes: Vec::new(),
+                }],
+            }
+            .to_shape()
+            .map_err(geo)?;
+            let r = disc.prism(f.y * (t + 2.0 * eps)).map_err(geo)?;
+            let names = Naming::by_index(&r.shape, &format!("{fid}.{prefix}relief.o"));
+            pieces.push((r.shape, names));
+        }
+    }
+    Ok(pieces)
 }
 
 /// Flatten every sheet metal body.
@@ -1067,4 +1116,36 @@ pub(crate) fn flat_pattern(
         state.sheet_metal[i].bend_lines = flat.bend_lines;
     }
     state.aggregate_bodies()
+}
+
+/// Record a cross break on a flat face of a sheet metal body.
+pub(crate) fn cross_break(
+    fid: FeatureId,
+    p: &CrossBreak,
+    prev: &State,
+    state: &mut State,
+) -> RResult<()> {
+    let (Kind::Face, index) = prev.index_of(&p.face)? else {
+        return Err("select a flat face for the cross break".into());
+    };
+    let record = record_for_face(prev, index)?;
+    let body = body_of(prev)?;
+    if body.shape.face_info(index).map_err(geo)?.kind != of_geom::SurfaceKind::Plane {
+        return Err("a cross break goes on a flat face".into());
+    }
+    let face = body
+        .names
+        .face_name(index)
+        .ok_or("the face has no name")?
+        .to_string();
+    state.sheet_metal[record]
+        .cross_breaks
+        .push(CrossBreakRecord {
+            feature: fid,
+            face,
+            angle: p.angle,
+            radius: p.radius,
+            up: !p.reverse,
+        });
+    Ok(())
 }

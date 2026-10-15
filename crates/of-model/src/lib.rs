@@ -203,6 +203,16 @@ pub enum FeatureKind {
     EdgeFlange(sheet_metal::EdgeFlange),
     /// Every sheet metal body flattened; suppress it to show the part formed.
     FlatPattern(sheet_metal::FlatPattern),
+    /// Fold sheet edges back on themselves.
+    Hem(sheet_metal::Hem),
+    /// Flanges from one profile along a chain of edges, mitered at corners.
+    MiterFlange(sheet_metal::MiterFlange),
+    /// Bend the sheet along a sketched line.
+    SketchedBend(sheet_metal::SketchedBend),
+    /// A Z-shaped offset of the sheet along a sketched line.
+    Jog(sheet_metal::Jog),
+    /// Cosmetic stiffening crosses on a flat sheet face.
+    CrossBreak(sheet_metal::CrossBreak),
 }
 
 impl FeatureKind {
@@ -252,6 +262,11 @@ impl FeatureKind {
             FeatureKind::BaseFlange(_) => "Base-Flange",
             FeatureKind::EdgeFlange(_) => "Edge-Flange",
             FeatureKind::FlatPattern(_) => "Flat-Pattern",
+            FeatureKind::Hem(_) => "Hem",
+            FeatureKind::MiterFlange(_) => "Miter Flange",
+            FeatureKind::SketchedBend(_) => "Sketched Bend",
+            FeatureKind::Jog(_) => "Jog",
+            FeatureKind::CrossBreak(_) => "Cross-Break",
         }
     }
 
@@ -341,6 +356,20 @@ impl FeatureKind {
                 refs.extend(e.length.target());
             }
             FeatureKind::FlatPattern(f) => refs.extend(&f.fixed_face),
+            FeatureKind::Hem(h) => refs.extend(&h.edges),
+            FeatureKind::MiterFlange(m) => {
+                out.push(m.sketch);
+                refs.extend(&m.edges);
+            }
+            FeatureKind::SketchedBend(b) => {
+                out.push(b.sketch);
+                refs.extend(&b.fixed);
+            }
+            FeatureKind::Jog(j) => {
+                out.push(j.sketch);
+                refs.extend(&j.fixed);
+            }
+            FeatureKind::CrossBreak(c) => refs.push(&c.face),
             FeatureKind::Wrap(w) => {
                 out.push(w.sketch);
                 refs.push(&w.face);

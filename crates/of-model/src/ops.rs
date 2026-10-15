@@ -54,6 +54,8 @@ pub(crate) fn build(
         FeatureKind::Import(i) => import(fid, i, state),
         FeatureKind::BaseFlange(p) => sheet::base_flange(fid, p, prev, state),
         FeatureKind::EdgeFlange(p) => sheet::edge_flange(fid, p, prev, state),
+        FeatureKind::Hem(p) => sheet::hem(fid, p, prev, state),
+        FeatureKind::MiterFlange(p) => sheet::miter_flange(fid, p, prev, state),
         _ => Ok(()),
     };
     if result.is_ok() && state.tools.contains_key(&fid) {
