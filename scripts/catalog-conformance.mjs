@@ -1,4 +1,4 @@
-// Checks Phase 1, 2 and 3 behaviour against the feature specs in docs/features,
+// Checks Phase 1 to 4 behaviour against the feature specs in docs/features,
 // driving `openforge serve` over JSON-RPC the way the desktop and MCP clients do.
 //
 //   cargo build && pnpm conformance [filter]
@@ -1689,6 +1689,565 @@ check('19 STEP', 'assembly export keeps the product structure; import rebuilds i
   const imported = await call('asm.import_step', { path: step, folder: join(tmp, 'c13-imported') })
   expect(imported.components.length === 2, `${imported.components.length} components`)
 })
+
+// 15 Drawings
+const plain = (t) =>
+  t
+    .replace(/[⌀⌴⌵↧□]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+const textOf = (render, id) =>
+  plain(
+    render.graphics.items
+      .filter((i) => i.owner.type === 'annotation' && i.owner.id === id && i.prim.type === 'text')
+      .map((i) => i.prim.text)
+      .join(' '),
+  )
+const formatText = (render) =>
+  render.graphics.items
+    .filter((i) => i.owner.type === 'format' && i.prim.type === 'text')
+    .map((i) => i.prim.text)
+const viewItems = (render, view) =>
+  render.graphics.items.filter((i) => i.owner.type === 'view' && i.owner.view === view)
+const render = (sheet = 1) => call('drawing.render', { sheet })
+const noErrors = (r) => {
+  for (const v of r.views) expect(!v.error, `view ${v.id}: ${v.error}`)
+}
+const width = (b) => b[1][0] - b[0][0]
+const annotate = async (annotation, view, sheet = 1) =>
+  (await call('drawing.annotation.add', { sheet, annotation, ...(view ? { view } : {}) })).id
+const addView = async (view, origin, extra = {}, sheet = 1) =>
+  (await call('drawing.view.add', { sheet, view, origin, ...extra })).id
+const modelView = (path, type = 'front', more = {}) => ({
+  type: 'model',
+  model: { path },
+  orientation: { type },
+  ...more,
+})
+
+/** A 100 x 60 x 10 plate with a Ø12 bore, two M6 counterbores and properties, saved. */
+async function drawingPart(name = 'c15-plate.ofp') {
+  await fresh()
+  const s = await sketch(front, [rect([0, 0], [100, 60]), circle([75, 30], 6)])
+  const bore = s.view.curves.find((c) => c.type === 'circle').id
+  await call('edit.begin', { id: s.id })
+  await call('sketch.edit', {
+    id: s.id,
+    op: { op: 'dimension', constraint: { type: 'diameter', curve: bore, value: 12 } },
+  })
+  await call('sketch.close')
+  await ok(blind(s.id, 10))
+  const topFace = await face(facing([0, 0, 1]))
+  const h = await sketch(topFace, [
+    { op: 'add_point', at: [20, 30] },
+    { op: 'add_point', at: [40, 30] },
+  ])
+  await ok({
+    type: 'hole',
+    sketch: h.id,
+    kind: 'counterbore',
+    standard: 'iso',
+    size: 'M6',
+    end: { type: 'through_all' },
+  })
+  await call('doc.properties.set', {
+    properties: { PartNo: { value: 'C15-PLATE' }, Description: { value: 'Plate' } },
+  })
+  await call('doc.set_material', { name: 'Steel', density: 7850 })
+  const path = join(tmp, name)
+  await call('doc.save', { path })
+  return path
+}
+/** A front view (2) of the plate on a blank A3 drawing. */
+async function plateDrawing(display) {
+  const path = await drawingPart()
+  await call('drawing.new')
+  await addView(modelView(path), [150, 150], display ? { display } : {})
+  return path
+}
+
+check(
+  '15 Sheets',
+  'title block fields show the model properties, mass, scale and sheet count',
+  async () => {
+    const path = await drawingPart()
+    await call('drawing.new', { model: path })
+    const r = await render()
+    noErrors(r)
+    const t = formatText(r)
+    for (const want of ['C15-PLATE', 'Plate', 'Steel', '1 / 1'])
+      expect(t.includes(want), `${want} in ${t.join('|')}`)
+    expect(
+      t.some((x) => / kg$/.test(x)),
+      'mass',
+    )
+    await call('drawing.sheet.add', {})
+    expect(formatText(await render()).includes('1 / 2'), 'sheet count follows')
+  },
+)
+check('15 Sheets', 'fails: a zero sheet scale and deleting the last sheet', async () => {
+  await call('drawing.new')
+  expect(
+    await fails('drawing.sheet.update', { id: 1, scale: { num: 0, den: 1 } }),
+    'zero scale accepted',
+  )
+  expect(await fails('drawing.sheet.delete', { ids: [1] }), 'last sheet deleted')
+})
+check('15 View types', 'standard 3 view follows first and third angle projection', async () => {
+  const path = await drawingPart()
+  for (const [projection, above] of [
+    ['third', true],
+    ['first', false],
+  ]) {
+    await call('drawing.new', { projection })
+    const v = (await call('drawing.views.standard', { sheet: 1, model: path })).views
+    const r = await render()
+    noErrors(r)
+    const box = (id) => r.views.find((x) => x.id === id).bbox
+    const top = box(v.top)[0][1] > box(v.front)[1][1]
+    expect(top === above, `${projection}: top view ${top ? 'above' : 'below'} the front`)
+  }
+})
+check(
+  '15 View types',
+  'model views in every named orientation and projected views in eight directions',
+  async () => {
+    const path = await plateDrawing()
+    for (const o of [
+      'back',
+      'left',
+      'right',
+      'top',
+      'bottom',
+      'isometric',
+      'dimetric',
+      'trimetric',
+    ])
+      await addView(modelView(path, o), [300, 200])
+    for (const placement of [
+      'left',
+      'right',
+      'above',
+      'below',
+      'above_left',
+      'above_right',
+      'below_left',
+      'below_right',
+    ])
+      await addView({ type: 'projected', parent: 2, placement }, [150, 150])
+    const r = await render()
+    noErrors(r)
+    expect(r.views.length === 17, `${r.views.length} views`)
+  },
+)
+check(
+  '15 View types',
+  'an auxiliary view normal to an edge; fails on a circular edge',
+  async () => {
+    const path = await plateDrawing()
+    const r0 = await render()
+    const line = viewItems(r0, 2).find((i) => i.owner.entity && i.prim.type === 'line')
+    const aux = await addView({ type: 'auxiliary', parent: 2, edge: line.owner.entity }, [320, 150])
+    noErrors(await render())
+    const arc = viewItems(r0, 2).find((i) => i.owner.entity && i.prim.type === 'arc')
+    const bad = await addView({ type: 'auxiliary', parent: 2, edge: arc.owner.entity }, [320, 60])
+    const r = await render()
+    expect(r.views.find((v) => v.id === aux).bbox, 'auxiliary drawn')
+    expect(r.views.find((v) => v.id === bad).error, 'circular edge accepted')
+    void path
+  },
+)
+check(
+  '15 Section views',
+  'full sections hatch the cut faces; slice shows only them; aligned needs three points',
+  async () => {
+    await plateDrawing()
+    const line = {
+      points: [
+        [50, 70],
+        [50, -10],
+      ],
+    }
+    const full = await addView({ type: 'section', parent: 2, line }, [300, 150])
+    const slice = await addView({ type: 'section', parent: 2, line, slice: true }, [370, 150])
+    const aligned = await addView({ type: 'section', parent: 2, line, kind: 'aligned' }, [300, 60])
+    const r = await render()
+    expect(
+      viewItems(r, full).some((i) => i.layer === 'HATCH'),
+      'hatching',
+    )
+    expect(
+      viewItems(r, slice).some((i) => i.layer === 'HATCH'),
+      'slice hatching',
+    )
+    expect(viewItems(r, slice).length < viewItems(r, full).length, 'slice draws less')
+    expect(r.views.find((v) => v.id === aligned).error, 'two-point aligned section accepted')
+    expect(
+      viewItems(r, full).some((i) => i.prim.type === 'text' && i.prim.text.includes('A')),
+      'labelled',
+    )
+  },
+)
+check(
+  '15 Detail views',
+  'a detail is twice the parent scale and keeps only what is in its circle',
+  async () => {
+    await plateDrawing()
+    const profile = { type: 'circle', center: [75, 30], radius: 10 }
+    const d = await addView({ type: 'detail', parent: 2, profile }, [320, 80])
+    const r = await render()
+    noErrors(r)
+    const v = r.views.find((x) => x.id === d)
+    expect(v.scale === 2, `scale ${v.scale}`)
+    expect(width(v.bbox) <= 2 * 2 * 10 + 1e-6, `width ${width(v.bbox)}`)
+  },
+)
+check(
+  '15 Break views',
+  'a break shortens the view and dimensions across it keep their true length',
+  async () => {
+    await plateDrawing()
+    const before = (await render()).views[0].bbox
+    await call('drawing.view.update', {
+      id: 2,
+      breaks: [{ vertical: true, from: 30, to: 70 }],
+      break_style: 'zig_zag',
+    })
+    const r = await render()
+    const after = r.views[0].bbox
+    expect(width(after) < width(before) - 20, `${width(before)} -> ${width(after)}`)
+    const bottom = viewItems(r, 2).filter((i) => i.owner.entity && i.prim.type === 'line')
+    // Left and right edges, picked by their position on the sheet.
+    const vertical = bottom.filter((i) => Math.abs(i.prim.a[0] - i.prim.b[0]) < 1e-6)
+    vertical.sort((a, b) => a.prim.a[0] - b.prim.a[0])
+    const dim = await annotate(
+      {
+        type: 'dimension',
+        dim: 'linear',
+        a: { view: 2, entity: vertical[0].owner.entity },
+        b: { view: 2, entity: vertical[vertical.length - 1].owner.entity },
+        at: [20, -20],
+      },
+      2,
+    )
+    expect(textOf(await render(), dim) === '100', `${textOf(await render(), dim)}`)
+  },
+)
+check('15 Crop views', 'a crop keeps only the profile', async () => {
+  await plateDrawing()
+  await call('drawing.view.update', {
+    id: 2,
+    crop: { type: 'circle', center: [75, 30], radius: 15 },
+  })
+  const v = (await render()).views[0]
+  expect(width(v.bbox) <= 30 + 1e-6, `width ${width(v.bbox)}`)
+})
+check(
+  '15 Display',
+  'hidden lines visible adds dashed hidden edges; removed draws none',
+  async () => {
+    // From above, the through holes are hidden behind the top face.
+    const path = await drawingPart()
+    await call('drawing.new')
+    await addView(modelView(path, 'top'), [150, 150], { display: 'hidden_visible' })
+    const hidden = (await render()).graphics.items.filter((i) => i.layer === 'HIDDEN')
+    expect(hidden.length > 0 && hidden.every((i) => i.pen.style === 'hidden'), 'hidden lines')
+    await call('drawing.view.update', { id: 2, display: 'hidden_removed' })
+    expect(!(await render()).graphics.items.some((i) => i.layer === 'HIDDEN'), 'none when removed')
+  },
+)
+check(
+  '15 Model items',
+  'dimensions import once, into the truest view; hidden ones stay out',
+  async () => {
+    const path = await drawingPart()
+    await call('doc.open', { path })
+    await call('doc.dimension_display.set', { key: 'f2.end1.depth', show: false })
+    await call('doc.save', { path })
+    await call('drawing.new', { model: path })
+    const first = await call('drawing.model_items', { sheet: 1 })
+    const dims = first.drawing.sheets[0].annotations.filter((a) => a.type === 'dimension')
+    const keys = dims.map((a) => a.key)
+    expect(!keys.includes('f2.end1.depth'), 'hidden dimension imported')
+    expect(keys.length === 1 && keys[0].startsWith('f1.dimension.'), JSON.stringify(keys))
+    // The bore's diameter lies in the front plane: the front view shows it true.
+    const front = first.drawing.sheets[0].views.find((v) => v.kind.orientation?.type === 'front')
+    expect(dims[0].attach === front.id, `in view ${dims[0].attach}`)
+    const again = await call('drawing.model_items', { sheet: 1 })
+    expect(
+      again.added.every(
+        (id) => again.drawing.sheets[0].annotations.find((a) => a.id === id).type !== 'dimension',
+      ),
+      'duplicate dimensions',
+    )
+  },
+)
+check(
+  '15 Dimensions',
+  'an imported dimension drives the part; a reference dimension does not',
+  async () => {
+    const path = await drawingPart()
+    await call('drawing.new', { model: path })
+    const r = await call('drawing.model_items', { sheet: 1 })
+    const depth = r.drawing.sheets[0].annotations.find((a) => a.key === 'f2.end1.depth')
+    await call('drawing.dimension.drive', { id: depth.id, value: 14 })
+    expect(textOf(await render(), depth.id) === '14', 'redrawn')
+    await call('doc.open', { path })
+    near(
+      await volume(),
+      100 * 60 * 14 - PI * 36 * 14 - 2 * (PI * 3.3 ** 2 * (14 - 6.4) + PI * 5.5 ** 2 * 6.4),
+      0.1,
+      'part volume',
+    )
+    await call('drawing.new', { model: path })
+    const r0 = await render()
+    const line = viewItems(r0, r0.views[0].id).find((i) => i.owner.entity && i.prim.type === 'line')
+    const ref = await annotate(
+      {
+        type: 'dimension',
+        dim: 'linear',
+        a: { view: r0.views[0].id, entity: line.owner.entity },
+        at: [0, -20],
+      },
+      r0.views[0].id,
+    )
+    expect(
+      await fails('drawing.dimension.drive', { id: ref, value: 5 }),
+      'reference dimension drove the model',
+    )
+  },
+)
+check(
+  '15 Dimension properties',
+  'fits, bilateral and symmetric tolerances, prefix and dual units',
+  async () => {
+    await plateDrawing()
+    const r0 = await render()
+    const bore = viewItems(r0, 2).find(
+      (i) => i.owner.entity && i.prim.type === 'arc' && Math.abs(i.prim.radius - 6) < 1e-6,
+    )
+    const target = { view: 2, entity: bore.owner.entity }
+    const dim = (tolerance, more = {}) =>
+      annotate({ type: 'dimension', dim: 'diameter', target, at: [100, 50], tolerance, ...more }, 2)
+    const fit = await dim({ type: 'fit', hole: 'H7', shaft: 'g6' })
+    const fitTol = await dim({ type: 'fit', hole: 'H7', display: 'classes_with_tolerance' })
+    const bil = await dim({ type: 'bilateral', plus: 0.1, minus: 0.05 })
+    const sym = await dim({ type: 'symmetric', value: 0.2 }, { dual: true })
+    const r = await render()
+    expect(textOf(r, fit) === '12 H7/g6', textOf(r, fit))
+    expect(textOf(r, fitTol) === '12 H7 +0.018 0', textOf(r, fitTol))
+    expect(textOf(r, bil) === '12 +0.1 -0.05', textOf(r, bil))
+    expect(textOf(r, sym) === '12±0.2 [0.472]', textOf(r, sym))
+    expect(
+      await fails('drawing.annotation.add', {
+        sheet: 1,
+        view: 9,
+        annotation: { type: 'dimension', dim: 'diameter', target, at: [0, 0] },
+      }),
+      'unknown view accepted',
+    )
+  },
+)
+check('15 Hole callouts', 'a counterbore callout reads the Hole Wizard data', async () => {
+  const path = await drawingPart()
+  await call('drawing.new')
+  await addView(modelView(path, 'top'), [150, 150])
+  const r = await call('drawing.model_items', {
+    sheet: 1,
+    items: { dimensions: false, hole_callouts: true, threads: false },
+  })
+  void r
+  await call('drawing.new')
+  await addView(modelView(path), [150, 150])
+  const r0 = await render()
+  const cb = viewItems(r0, 2).find(
+    (i) => i.owner.entity && i.prim.type === 'arc' && Math.abs(i.prim.radius - 5.5) < 1e-6,
+  )
+  const id = await annotate(
+    { type: 'hole_callout', at: [40, 40], target: { view: 2, entity: cb.owner.entity } },
+    2,
+  )
+  expect(textOf(await render(), id) === '2X 6.6 THRU 11 6.4', textOf(await render(), id))
+})
+check(
+  '15 Notes',
+  'property links resolve; a leader to a deleted view drops, the note stays',
+  async () => {
+    await plateDrawing()
+    const id = await annotate({
+      type: 'note',
+      at: [30, 40],
+      text: '$PRP:"PartNo" $SHEET',
+      leader: {
+        type: 'model',
+        target: { view: 2, entity: { component: [], entity: { type: 'origin' } } },
+        at: [0, 0],
+      },
+    })
+    expect(textOf(await render(), id) === 'C15-PLATE 1', textOf(await render(), id))
+    await call('drawing.view.delete', { ids: [2] })
+    const note = (await call('drawing.info')).drawing.sheets[0].annotations.find((a) => a.id === id)
+    expect(note && !note.leader, 'note kept without its leader')
+  },
+)
+check(
+  '15 BOM and balloons',
+  'auto balloons match BOM item numbers; a part view has nothing to balloon',
+  async () => {
+    const plate = await drawingPart()
+    await fresh()
+    const p = await sketch(front, [circle([0, 0], 6)])
+    await ok(blind(p.id, 30))
+    await call('doc.properties.set', { properties: { PartNo: { value: 'C15-PIN' } } })
+    const pin = join(tmp, 'c15-pin.ofp')
+    await call('doc.save', { path: pin })
+    await call('asm.new')
+    await call('asm.insert', { path: plate })
+    await call('asm.insert', {
+      path: pin,
+      transform: { translation: [75, 30, 10], rotation: [0, 0, 0, 1] },
+    })
+    await call('asm.insert', {
+      path: pin,
+      transform: { translation: [75, 30, -30], rotation: [0, 0, 0, 1] },
+    })
+    const asm = join(tmp, 'c15.ofa')
+    await call('doc.save', { path: asm })
+    await call('drawing.new')
+    const view = await addView(modelView(asm, 'isometric'), [200, 150])
+    const bom = await annotate({ type: 'table', table: 'bom', view, at: [20, 280] })
+    const r = await call('drawing.balloons.auto', { sheet: 1, view })
+    const rr = await render()
+    const items = r.added.map((id) => textOf(rr, id)).sort()
+    expect(JSON.stringify(items) === '["1","2"]', JSON.stringify(items))
+    const table = textOf(rr, bom)
+    expect(table.includes('C15-PIN 2'), table)
+    const csv = (await call('drawing.table.csv', { id: bom })).csv
+    expect(csv.split('\n')[0].startsWith('ITEM NO.'), csv)
+    const part = await addView(modelView(plate), [80, 80])
+    expect(await fails('drawing.balloons.auto', { sheet: 1, view: part }), 'part view ballooned')
+  },
+)
+check('15 Hole table', 'tags, positions from the origin and sizes', async () => {
+  await plateDrawing()
+  const r0 = await render()
+  const holes = viewItems(r0, 2)
+    .filter((i) => i.owner.entity && i.prim.type === 'arc' && Math.abs(i.prim.radius - 3.3) < 1e-6)
+    .map((i) => ({ view: 2, entity: i.owner.entity }))
+  const corner = viewItems(r0, 2).find((i) => i.owner.entity && i.prim.type === 'line')
+  const id = await annotate({
+    type: 'table',
+    table: 'hole',
+    origin: { view: 2, entity: corner.owner.entity, near: [0, 0] },
+    holes,
+    at: [20, 280],
+  })
+  const t = textOf(await render(), id)
+  expect(t.startsWith('TAG X LOC Y LOC SIZE A1 20 30 6.6 THRU 11 6.4 A2 40 30'), t)
+})
+check(
+  '15 Revision table',
+  'automatic letters; the latest drives the title block revision',
+  async () => {
+    await plateDrawing()
+    await annotate({
+      type: 'table',
+      table: 'revision',
+      rows: [{ description: 'Released' }, { description: 'Bore' }],
+      at: [410, 287],
+      anchor: 'top_right',
+    })
+    expect(formatText(await render()).includes('B'), 'revision B in the title block')
+  },
+)
+check('15 General tolerance table', 'ISO 2768-m values', async () => {
+  await plateDrawing()
+  const id = await annotate({
+    type: 'table',
+    table: 'general_tolerance',
+    class: 'm',
+    at: [20, 200],
+  })
+  const t = textOf(await render(), id)
+  for (const want of ['ISO 2768-m', '30-120 mm ±0.3', '±0°30'])
+    expect(t.includes(want), `${want} in ${t}`)
+})
+check(
+  '15 Drafting standards',
+  'ANSI keeps trailing zeros; standards save to and load from files',
+  async () => {
+    await plateDrawing()
+    const r0 = await render()
+    const bore = viewItems(r0, 2).find(
+      (i) => i.owner.entity && i.prim.type === 'arc' && Math.abs(i.prim.radius - 6) < 1e-6,
+    )
+    const id = await annotate(
+      {
+        type: 'dimension',
+        dim: 'diameter',
+        target: { view: 2, entity: bore.owner.entity },
+        at: [100, 50],
+      },
+      2,
+    )
+    expect(textOf(await render(), id) === '12', textOf(await render(), id))
+    const file = join(tmp, 'c15.ofstd')
+    await call('drawing.standard.set', {
+      standard: { base: 'ansi', overrides: { precision: 3 } },
+      save: file,
+    })
+    expect(textOf(await render(), id) === '12.000', textOf(await render(), id))
+    await call('drawing.standard.set', { standard: { base: 'iso' } })
+    await call('drawing.standard.set', { load: file })
+    expect((await call('drawing.info')).drawing.standard.base === 'ansi', 'loaded')
+    expect(
+      await fails('drawing.standard.set', { load: join(tmp, 'missing.ofstd') }),
+      'missing file loaded',
+    )
+  },
+)
+check(
+  '15 Output',
+  'PDF of chosen sheets, DXF per sheet and in one file; other extensions fail',
+  async () => {
+    await plateDrawing()
+    await call('drawing.sheet.add', {})
+    const pdf = join(tmp, 'c15.pdf')
+    await call('drawing.export', { path: pdf, sheets: [1], monochrome: true })
+    const bytes = (await import('node:fs')).readFileSync(pdf, 'latin1')
+    expect(
+      bytes.startsWith('%PDF') && (bytes.match(/\/Type\s*\/Page\b/g) ?? []).length === 1,
+      'one page',
+    )
+    const many = await call('drawing.export', { path: join(tmp, 'c15.dxf'), per_sheet: true })
+    expect(many.paths.length === 2, `${many.paths.length} files`)
+    const one = (await call('drawing.export', { path: join(tmp, 'c15-all.dxf') })).paths[0]
+    const dxf = (await import('node:fs')).readFileSync(one, 'utf8')
+    expect(dxf.includes('AC1032') && dxf.includes('LAYOUT'), 'DXF 2018 with layouts')
+    expect(await fails('drawing.export', { path: join(tmp, 'c15.png') }), 'png accepted')
+  },
+)
+check(
+  '15 Associativity',
+  'saving the model marks views stale; a missing model reports an error',
+  async () => {
+    const path = await plateDrawing()
+    await call('doc.save', { path: join(tmp, 'c15.ofd') })
+    await call('doc.open', { path })
+    await call('doc.properties.set', { properties: { PartNo: { value: 'C15-B' } } })
+    await call('doc.save', { path })
+    await call('doc.open', { path: join(tmp, 'c15.ofd') })
+    const r = await render()
+    expect(r.views[0].stale, 'stale after the model changed')
+    expect(formatText(r).includes('C15-B'), 'title block follows the saved model')
+    await call('drawing.update')
+    expect(!(await render()).views[0].stale, 'updated')
+    ;(await import('node:fs')).renameSync(path, path + '.moved')
+    const gone = await render()
+    expect(gone.views[0].error, 'missing model drawn')
+    ;(await import('node:fs')).renameSync(path + '.moved', path)
+  },
+)
 
 // ---- run ----
 const results = []

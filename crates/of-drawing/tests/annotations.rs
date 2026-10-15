@@ -1047,3 +1047,224 @@ fn annotations_round_trip_through_drawing_files() {
     let back = of_drawing::file::from_str(&text).unwrap();
     assert_eq!(back, d.doc);
 }
+
+/// A 100 × 60 × 10 block with a 5 mm chamfer on the corner at (100, 0) and
+/// an 8 mm fillet on the corner at (0, 60), both edges along z.
+fn chamfered(dir: &Scratch) -> std::path::PathBuf {
+    let mut m = Model::new(block_doc(100.0, 60.0, 10.0));
+    m.rebuild();
+    let corner = |x: f64, y: f64| {
+        let state = m.state();
+        let body = state.body.as_ref().unwrap();
+        (0..body.shape.count(Kind::Edge))
+            .find(|i| {
+                let e = body.shape.edge_info(*i).unwrap();
+                (e.start.x - x).abs() < 1e-6
+                    && (e.end.x - x).abs() < 1e-6
+                    && (e.start.y - y).abs() < 1e-6
+                    && (e.end.y - y).abs() < 1e-6
+            })
+            .map(|i| state.ref_for(Kind::Edge, i).unwrap())
+            .unwrap()
+    };
+    let (c, f) = (corner(100.0, 0.0), corner(0.0, 60.0));
+    m.doc.add(FeatureKind::Chamfer(Chamfer {
+        edges: vec![c],
+        faces: vec![],
+        mode: ChamferMode::Equal { distance: 5.0 },
+        flip: false,
+    }));
+    m.doc.add(FeatureKind::Fillet(Fillet {
+        edges: vec![f],
+        faces: vec![],
+        radius: 8.0,
+    }));
+    m.rebuild();
+    assert!(m.statuses().iter().all(|s| s.error.is_none()));
+    save(&m.doc, &dir.path("chamfered.ofp"))
+}
+
+#[test]
+fn every_dimension_scheme_and_symbol_draws() {
+    let dir = Scratch::new("schemes");
+    let path = chamfered(&dir);
+    let mut d = drawing(
+        of_drawing::standard::Standard::iso(),
+        vec![model_view(FRONT, &path, Orientation::Front, [150.0, 150.0])],
+    );
+    let r0 = render(&mut d);
+    // Model edges drawn in the view, by their paper geometry.
+    let find = |f: &dyn Fn(&Prim) -> bool| -> CompRef {
+        r0.graphics
+            .items
+            .iter()
+            .find_map(|i| match &i.owner {
+                Owner::View {
+                    view: FRONT,
+                    entity: Some(e),
+                } if f(&i.prim) => Some(e.clone()),
+                _ => None,
+            })
+            .expect("edge drawn")
+    };
+    let line = |p: &Prim, dx: f64, dy: f64| match p {
+        Prim::Line { a, b } => {
+            let (ux, uy) = (b[0] - a[0], b[1] - a[1]);
+            let len = (ux * ux + uy * uy).sqrt();
+            len > 2.0 && (ux * dy - uy * dx).abs() < 1e-6 * len
+        }
+        _ => false,
+    };
+    // Front view: model origin at (150, 150), y up.
+    let chamfer = find(&|p| line(p, 1.0, 1.0));
+    let bottom = find(&|p| {
+        line(p, 1.0, 0.0) && matches!(p, Prim::Line { a, .. } if (a[1] - 150.0).abs() < 1e-6)
+    });
+    let left = find(&|p| {
+        line(p, 0.0, 1.0) && matches!(p, Prim::Line { a, .. } if (a[0] - 150.0).abs() < 1e-6)
+    });
+    let right = find(&|p| {
+        line(p, 0.0, 1.0) && matches!(p, Prim::Line { a, .. } if (a[0] - 250.0).abs() < 1e-6)
+    });
+    let top = find(&|p| {
+        line(p, 1.0, 0.0) && matches!(p, Prim::Line { a, .. } if (a[1] - 210.0).abs() < 1e-6)
+    });
+    let arc = find(&|p| matches!(p, Prim::Arc { radius, .. } if (radius - 8.0).abs() < 1e-6));
+    let dim = |d: &mut Drawing, kind: DimKind, at: [f64; 2]| {
+        add(
+            d,
+            Some(FRONT),
+            AnnotationKind::Dimension(Box::new(Dimension::new(kind, at))),
+        )
+    };
+    let chamfer_id = dim(
+        &mut d,
+        DimKind::Chamfer {
+            edge: pick(FRONT, chamfer.clone()),
+            adjacent: pick(FRONT, bottom.clone()),
+        },
+        [120.0, -15.0],
+    );
+    let arc_id = dim(
+        &mut d,
+        DimKind::ArcLength {
+            target: pick(FRONT, arc.clone()),
+        },
+        [-12.0, 72.0],
+    );
+    let baseline = dim(
+        &mut d,
+        DimKind::Baseline {
+            base: pick(FRONT, left.clone()),
+            points: vec![pick(FRONT, right.clone())],
+            orientation: Orient::Horizontal,
+            spacing: 8.0,
+        },
+        [50.0, -25.0],
+    );
+    let chain = dim(
+        &mut d,
+        DimKind::Chain {
+            points: vec![pick(FRONT, bottom.clone()), pick(FRONT, top.clone())],
+            orientation: Orient::Vertical,
+        },
+        [-20.0, 30.0],
+    );
+    let running = dim(
+        &mut d,
+        DimKind::AngularRunning {
+            base: pick(FRONT, bottom.clone()),
+            lines: vec![pick(FRONT, chamfer.clone())],
+        },
+        // Right of the chamfer's foot, inside the acute angle.
+        [110.0, 8.0],
+    );
+    let on = |e: CompRef, at: [f64; 2]| Anchor::Model {
+        target: ViewRef {
+            view: FRONT,
+            entity: e,
+        },
+        at,
+    };
+    let weld = add(
+        &mut d,
+        None,
+        AnnotationKind::Weld {
+            at: [280.0, 120.0],
+            leader: on(right.clone(), [100.0, 30.0]),
+            arrow: Some(of_drawing::symbols::WeldSide {
+                symbol: of_drawing::symbols::WeldSymbol::Fillet,
+                contour: Default::default(),
+                length: "50".into(),
+                size: "a5".into(),
+            }),
+            other: None,
+            all_around: true,
+            field: true,
+            tail: "111".into(),
+        },
+    );
+    let target = add(
+        &mut d,
+        None,
+        AnnotationKind::DatumTarget {
+            at: [120.0, 100.0],
+            label: "A1".into(),
+            size: "⌀6".into(),
+            target: on(bottom.clone(), [30.0, 0.0]),
+            kind: TargetKind::Area,
+        },
+    );
+    let stacked = add(
+        &mut d,
+        None,
+        AnnotationKind::Balloon {
+            at: [120.0, 240.0],
+            leader: on(top.clone(), [40.0, 60.0]),
+            content: BalloonText::Text { text: "1".into() },
+            lower: Some(BalloonText::Text { text: "4".into() }),
+            shape: BalloonShape::SplitCircle,
+            size: None,
+            stacked: vec![BalloonText::Text { text: "2".into() }],
+            table: None,
+        },
+    );
+    let r = render(&mut d);
+    assert_eq!(text_of(&r, chamfer_id), "5 × 45°");
+    // A quarter circle of radius 8.
+    assert_eq!(
+        text_of(&r, arc_id),
+        plain(&format!("⌒{:.1}", 8.0 * std::f64::consts::FRAC_PI_2))
+    );
+    assert_eq!(text_of(&r, baseline), "100");
+    assert_eq!(text_of(&r, chain), "60");
+    assert_eq!(text_of(&r, running), "45°");
+    let w = text_of(&r, weld);
+    assert!(
+        w.contains("a5") && w.contains("50") && w.contains("111"),
+        "{w}"
+    );
+    assert_eq!(text_of(&r, target), "6 A1");
+    assert_eq!(text_of(&r, stacked), "1 4 2");
+
+    // Auto-inserted axes: the fillet face is a cylinder seen end-on, so
+    // model items with axes add a center mark for it.
+    let items = d
+        .model_items(
+            SHEET,
+            &[FRONT],
+            &ModelItems {
+                dimensions: false,
+                hole_callouts: false,
+                threads: false,
+                axes: true,
+            },
+        )
+        .unwrap();
+    assert!(
+        items
+            .iter()
+            .any(|a| matches!(a.kind, AnnotationKind::CenterMark { .. })),
+        "{items:?}"
+    );
+}

@@ -1007,13 +1007,25 @@ impl Drawing {
                 let Geo::Circle {
                     center,
                     radius,
+                    axis,
                     ends: Some((s, e)),
-                    ..
                 } = l.geo
                 else {
                     return Err("an arc length needs an arc".into());
                 };
-                let value = (s - center).angle_between(e - center) * radius;
+                // The arc runs counter-clockwise about its axis from s to e.
+                let (u, v) = (s - center, e - center);
+                let mut sweep = u.cross(v).dot(axis).atan2(u.dot(v));
+                if sweep <= 0.0 {
+                    sweep += std::f64::consts::TAU;
+                }
+                let value = sweep * radius;
+                // On paper it turns the other way when the axis faces away.
+                let (s, e) = if axis.dot(l.view.frame.toward) >= 0.0 {
+                    (s, e)
+                } else {
+                    (e, s)
+                };
                 let dd = with_prefix("⌒");
                 let t = value_text(&dd, value, &std, false, value);
                 dims::draw_arc_length(
@@ -1986,6 +1998,7 @@ impl Drawing {
         let margin = 12.0;
         let n = picks.len().max(1);
         let mut out = Vec::new();
+        let mut places: Vec<P2> = Vec::new();
         for (next, (i, (key, entity, on))) in
             (self.doc.next_id..).zip(picks.into_iter().enumerate())
         {
@@ -2039,6 +2052,7 @@ impl Drawing {
                 }
             };
             let local = r.from_sheet(on);
+            places.push(at);
             out.push(Annotation {
                 id: next,
                 attach: Some(view),
@@ -2058,7 +2072,48 @@ impl Drawing {
                 },
             });
         }
+        // Balloons must not overlap: spread them along their side.
+        let size = self.doc.standard.text_height() * 3.0;
+        spread(&mut places, size + 2.0);
+        for (a, at) in out.iter_mut().zip(places) {
+            if let AnnotationKind::Balloon { at: rel, .. } = &mut a.kind {
+                *rel = [at[0] - r.origin.x, at[1] - r.origin.y];
+            }
+        }
         Ok(out)
+    }
+}
+
+/// Push points apart until none are closer than `gap`. Points on a common
+/// horizontal or vertical line move along it, so balloons stay on their side
+/// of a view.
+fn spread(points: &mut [P2], gap: f64) {
+    for _ in 0..200 {
+        let mut moved = false;
+        for i in 0..points.len() {
+            for j in i + 1..points.len() {
+                let (a, b) = (DVec2::from(points[i]), DVec2::from(points[j]));
+                let d = b - a;
+                let len = d.length();
+                if len >= gap - 1e-9 {
+                    continue;
+                }
+                let dir = if (a.x - b.x).abs() < 1e-9 {
+                    DVec2::new(0.0, if d.y >= 0.0 { 1.0 } else { -1.0 })
+                } else if (a.y - b.y).abs() < 1e-9 {
+                    DVec2::new(if d.x >= 0.0 { 1.0 } else { -1.0 }, 0.0)
+                } else {
+                    d / len
+                };
+                let push = dir * ((gap - len) / 2.0 + 1e-6);
+                points[i] = p(a - push);
+                points[j] = p(b + push);
+                moved = true;
+            }
+        }
+        if !moved {
+            break;
+        }
     }
 }
 
@@ -2382,5 +2437,24 @@ pub fn picks_of(k: &DimKind) -> Vec<&Pick> {
         DimKind::Chain { points, .. } => points.iter().collect(),
         DimKind::AngularRunning { base, lines } => std::iter::once(base).chain(lines).collect(),
         DimKind::Model { .. } => Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn balloons_spread_along_their_side() {
+        let mut pts = vec![[0.0, 10.0], [0.0, 11.0], [0.0, 10.5], [50.0, 30.0]];
+        spread(&mut pts, 12.0);
+        for i in 0..pts.len() {
+            for j in i + 1..pts.len() {
+                let d = DVec2::from(pts[i]).distance(DVec2::from(pts[j]));
+                assert!(d >= 12.0 - 1e-6, "{pts:?}");
+            }
+        }
+        // Balloons on the left side stay on it.
+        assert!(pts[..3].iter().all(|q| q[0] == 0.0), "{pts:?}");
     }
 }

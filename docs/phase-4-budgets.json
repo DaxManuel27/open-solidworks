@@ -1,0 +1,41 @@
+{
+  "recorded_at_utc": "2026-10-15T02:17:53.992Z",
+  "machine": "Apple M3 Max, darwin arm64",
+  "build_profile": "debug",
+  "fixture": "Shelled 240 x 120 x 90 housing with 3 bores and 16 bolt holes (A2 sheet: standard 3 view, isometric, full section); gearbox of 23 components (front, top, side, isometric, indented BOM, auto balloons, revision table)",
+  "rule": "Each budget is three times the slowest of three runs (at least 50 ms). Scale with OPENFORGE_BUDGET_SCALE on slower machines.",
+  "budgets": {
+    "standard_views_ms": 272,
+    "section_view_ms": 62,
+    "open_ms": 202,
+    "gearbox_sheet_ms": 577,
+    "pdf_export_ms": 518,
+    "dxf_export_ms": 237
+  },
+  "observed": [
+    {
+      "standard_views_ms": 90.60949999999997,
+      "section_view_ms": 20.32391700000005,
+      "open_ms": 67.116625,
+      "gearbox_sheet_ms": 192.077584,
+      "pdf_export_ms": 170.6909159999999,
+      "dxf_export_ms": 78.69362500000011
+    },
+    {
+      "standard_views_ms": 90.28774999999996,
+      "section_view_ms": 20.411749999999984,
+      "open_ms": 66.64875000000006,
+      "gearbox_sheet_ms": 185.91866600000003,
+      "pdf_export_ms": 172.61516700000038,
+      "dxf_export_ms": 76.9253749999998
+    },
+    {
+      "standard_views_ms": 89.79104099999995,
+      "section_view_ms": 20.267333000000235,
+      "open_ms": 64.80166700000018,
+      "gearbox_sheet_ms": 185.93795799999998,
+      "pdf_export_ms": 169.63999999999987,
+      "dxf_export_ms": 76.20954200000006
+    }
+  ]
+}
