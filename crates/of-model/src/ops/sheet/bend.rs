@@ -164,7 +164,7 @@ fn cut(prev: &State, sketch: FeatureId, fixed: Option<&Ref>, reverse: bool) -> R
             hi = hi.max(zz);
         }
     }
-    if !(hi - lo > 1e-6) {
+    if hi - lo <= 1e-6 || hi.is_nan() || lo.is_nan() {
         return Err("the line does not cross the sheet".into());
     }
     frame.length = hi;
