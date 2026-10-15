@@ -165,6 +165,10 @@ fn changes_material(kind: &FeatureKind) -> bool {
             | Jog(_)
             | SweptFlange(_)
             | LoftedBend(_)
+            | Rip(_)
+            | InsertBends(_)
+            | ConvertToSheetMetal(_)
+            | NormalCut(_)
     )
 }
 

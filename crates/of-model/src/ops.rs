@@ -1002,7 +1002,7 @@ fn sketch_of(prev: &State, id: FeatureId) -> RResult<&(Plane, Sketch)> {
 }
 
 /// A sketch's closed regions as profile faces, outer loops with their holes.
-fn closed_regions(contours: &of_sketch::Contours) -> RResult<Vec<ProfileFace>> {
+pub(crate) fn closed_regions(contours: &of_sketch::Contours) -> RResult<Vec<ProfileFace>> {
     if contours.regions.is_empty() {
         return Err("the sketch has no closed contours".into());
     }
@@ -1231,7 +1231,7 @@ fn sweep_names<'a>(
 }
 
 /// A length that reaches past everything in the model from this plane.
-fn through_all_length(state: &State, plane: &Plane) -> f64 {
+pub(crate) fn through_all_length(state: &State, plane: &Plane) -> f64 {
     match state.body.as_ref().and_then(|b| b.shape.bbox()) {
         Some(b) => b.diagonal() * 2.0 + (b.center() - plane.origin).length() * 2.0 + 10.0,
         None => 1000.0,
@@ -1814,7 +1814,12 @@ fn edge_set(prev: &State, edges: &[Ref], faces: &[Ref]) -> RResult<Vec<u32>> {
     Ok(out)
 }
 
-fn dressup_names(fid: FeatureId, tag: &str, body: &Body, r: &of_geom::OpResult) -> Naming {
+pub(crate) fn dressup_names(
+    fid: FeatureId,
+    tag: &str,
+    body: &Body,
+    r: &of_geom::OpResult,
+) -> Naming {
     let mut generate = |h: &HistoryEntry| match h.from_kind {
         Kind::Edge => body
             .names

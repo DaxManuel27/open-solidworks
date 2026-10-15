@@ -340,3 +340,120 @@ std::unique_ptr<Shape> polyhedron(rust::Slice<const double> points,
 }
 
 } // namespace ofk
+
+#include <BRepAlgoAPI_Common.hxx>
+#include <GeomAPI.hxx>
+#include <Geom_TrimmedCurve.hxx>
+
+namespace ofk {
+
+namespace {
+
+// The face of `s` mapped into the plane, as in `flatten`.
+TopoDS_Face flat_image(const TopoDS_Face &face, const Affine &m, const Handle(Geom_Plane) &plane) {
+  TopoDS_Wire outer = BRepTools::OuterWire(face);
+  TopoDS_Wire outer_new;
+  std::vector<TopoDS_Wire> inner;
+  for (TopExp_Explorer wx(face, TopAbs_WIRE); wx.More(); wx.Next()) {
+    const TopoDS_Wire &w = TopoDS::Wire(wx.Current());
+    BRepBuilderAPI_MakeWire mw;
+    for (BRepTools_WireExplorer ex(w, face); ex.More(); ex.Next()) {
+      const TopoDS_Edge &e = ex.Current();
+      if (BRep_Tool::Degenerated(e)) continue;
+      double f, l, nf, nl;
+      Handle(Geom2d_Curve) pc = BRep_Tool::CurveOnSurface(e, face, f, l);
+      if (pc.IsNull()) throw std::runtime_error("a face edge has no parameter curve");
+      BRepBuilderAPI_MakeEdge me(mapped(pc, f, l, m, nf, nl), plane, nf, nl);
+      TopoDS_Edge ne = me.Edge();
+      BRepLib::BuildCurves3d(ne);
+      mw.Add(ne);
+    }
+    if (!mw.IsDone()) continue;
+    if (w.IsSame(outer))
+      outer_new = mw.Wire();
+    else
+      inner.push_back(mw.Wire());
+  }
+  BRepBuilderAPI_MakeFace mf(plane, outer_new, true);
+  for (const TopoDS_Wire &w : inner) mf.Add(w);
+  ShapeFix_Face fixer(mf.Face());
+  fixer.FixOrientation();
+  return fixer.Face();
+}
+
+} // namespace
+
+std::unique_ptr<Shape> fold_faces(const Shape &s, rust::Slice<const uint32_t> faces,
+                                  rust::Slice<const double> maps, const Frame &frame,
+                                  const Shape &region, rust::Vec<uint32_t> &owners) {
+  if (maps.size() != faces.size() * 6) throw std::invalid_argument("one map per face");
+  gp_Ax3 ax(gp_Pnt(frame.origin.x, frame.origin.y, frame.origin.z),
+            gp_Dir(frame.normal.x, frame.normal.y, frame.normal.z),
+            gp_Dir(frame.x_dir.x, frame.x_dir.y, frame.x_dir.z));
+  Handle(Geom_Plane) plane = new Geom_Plane(ax);
+  gp_Pln pln(ax);
+  TopoDS_Compound out;
+  BRep_Builder builder;
+  builder.MakeCompound(out);
+  owners.clear();
+  for (size_t i = 0; i < faces.size(); ++i) {
+    TopoDS_Face face = oriented_face(s.shape, faces[i]);
+    Affine m{maps[6 * i], maps[6 * i + 1], maps[6 * i + 2],
+             maps[6 * i + 3], maps[6 * i + 4], maps[6 * i + 5]};
+    double det = m.a * m.e - m.b * m.d;
+    if (std::abs(det) < 1e-15) throw std::invalid_argument("a face map is singular");
+    // The inverse map, from the plane back to the face's (u, v).
+    Affine inv{m.e / det, -m.b / det, 0, -m.d / det, m.a / det, 0};
+    inv.c = -(inv.a * m.c + inv.b * m.f);
+    inv.f = -(inv.d * m.c + inv.e * m.f);
+    TopoDS_Face image = flat_image(face, m, plane);
+    BRepAlgoAPI_Common common(region.shape, image);
+    common.SetFuzzyValue(1e-7);
+    common.Build();
+    if (!common.IsDone() || common.HasErrors()) throw std::runtime_error("could not intersect a cut with the flat");
+    Handle(Geom_Surface) surface = BRep_Tool::Surface(face);
+    for (TopExp_Explorer px(common.Shape(), TopAbs_FACE); px.More(); px.Next()) {
+      const TopoDS_Face &piece = TopoDS::Face(px.Current());
+      TopoDS_Wire outer = BRepTools::OuterWire(piece);
+      TopoDS_Wire outer_new;
+      std::vector<TopoDS_Wire> inner;
+      for (TopExp_Explorer wx(piece, TopAbs_WIRE); wx.More(); wx.Next()) {
+        const TopoDS_Wire &w = TopoDS::Wire(wx.Current());
+        BRepBuilderAPI_MakeWire mw;
+        for (BRepTools_WireExplorer ex(w, piece); ex.More(); ex.Next()) {
+          const TopoDS_Edge &e = ex.Current();
+          if (BRep_Tool::Degenerated(e)) continue;
+          double f, l, nf, nl;
+          Handle(Geom_Curve) c3 = BRep_Tool::Curve(e, f, l);
+          if (c3.IsNull()) continue;
+          Handle(Geom2d_Curve) c2 = GeomAPI::To2d(new Geom_TrimmedCurve(c3, f, l), pln);
+          BRepBuilderAPI_MakeEdge me(mapped(c2, c2->FirstParameter(), c2->LastParameter(), inv, nf, nl),
+                                     surface, nf, nl);
+          if (!me.IsDone()) throw std::runtime_error("could not map a cut edge onto the sheet");
+          TopoDS_Edge ne = me.Edge();
+          BRepLib::BuildCurves3d(ne);
+          mw.Add(ne);
+          if (!mw.IsDone()) throw std::runtime_error("a mapped cut boundary is not connected");
+        }
+        if (!mw.IsDone()) continue;
+        if (w.IsSame(outer))
+          outer_new = mw.Wire();
+        else
+          inner.push_back(mw.Wire());
+      }
+      if (outer_new.IsNull()) continue;
+      BRepBuilderAPI_MakeFace mf(surface, outer_new, true);
+      for (const TopoDS_Wire &w : inner) mf.Add(w);
+      if (!mf.IsDone()) throw std::runtime_error("could not map a cut onto the sheet");
+      ShapeFix_Face fixer(mf.Face());
+      fixer.Perform();
+      TopoDS_Face mapped_face = fixer.Face();
+      if (face.Orientation() == TopAbs_REVERSED) mapped_face.Reverse();
+      builder.Add(out, mapped_face);
+      owners.push_back(faces[i]);
+    }
+  }
+  return std::make_unique<Shape>(out);
+}
+
+} // namespace ofk

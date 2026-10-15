@@ -109,6 +109,34 @@ pub enum FlatSource {
 }
 
 impl Shape {
+    /// The inverse of [`Shape::flatten`]: the parts of `region` (planar faces
+    /// in `plane`) over each face's flat image, mapped back onto that face's
+    /// surface, with the face each piece lies on.
+    pub fn fold(
+        &self,
+        faces: &[(u32, UvMap)],
+        plane: &Plane,
+        region: &Shape,
+    ) -> Result<Vec<(Shape, u32)>> {
+        let indices: Vec<u32> = faces.iter().map(|f| f.0).collect();
+        let maps: Vec<f64> = faces.iter().flat_map(|f| f.1.0).collect();
+        let mut owners = Vec::new();
+        let all = ffi::fold_faces(
+            &self.0,
+            &indices,
+            &maps,
+            &plane.to_ffi(),
+            &region.0,
+            &mut owners,
+        )?;
+        let all = Shape(all);
+        owners
+            .iter()
+            .enumerate()
+            .map(|(i, o)| Ok((all.sub_shape(crate::Kind::Face, i as u32)?, *o)))
+            .collect()
+    }
+
     /// A solid bounded by planar polygons, each a list of indices into
     /// `points`. Faces are sewn together; their order in the result may differ.
     pub fn polyhedron(points: &[DVec3], faces: &[Vec<u32>]) -> Result<Shape> {

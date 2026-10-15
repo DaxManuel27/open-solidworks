@@ -217,6 +217,18 @@ pub enum FeatureKind {
     SweptFlange(sheet_metal::SweptFlange),
     /// A faceted sheet metal transition between two open profiles.
     LoftedBend(sheet_metal::LoftedBend),
+    /// Cut gaps along corner edges so walls can unfold.
+    Rip(sheet_metal::Rip),
+    /// Turn a thin-walled solid's sharp corners into bends.
+    InsertBends(sheet_metal::InsertBends),
+    /// Make sheet metal walls from a solid's faces.
+    ConvertToSheetMetal(sheet_metal::ConvertToSheetMetal),
+    /// Flatten a sheet metal body until the next Fold.
+    Unfold(sheet_metal::Unfold),
+    /// Form an unfolded body again, keeping cuts made while flat.
+    Fold(sheet_metal::Fold),
+    /// A cut through sheet metal square to the sheet.
+    NormalCut(sheet_metal::NormalCut),
 }
 
 impl FeatureKind {
@@ -273,6 +285,12 @@ impl FeatureKind {
             FeatureKind::CrossBreak(_) => "Cross-Break",
             FeatureKind::SweptFlange(_) => "Swept Flange",
             FeatureKind::LoftedBend(_) => "Lofted-Bend",
+            FeatureKind::Rip(_) => "Rip",
+            FeatureKind::InsertBends(_) => "Insert Bends",
+            FeatureKind::ConvertToSheetMetal(_) => "Convert-Solid",
+            FeatureKind::Unfold(_) => "Unfold",
+            FeatureKind::Fold(_) => "Fold",
+            FeatureKind::NormalCut(_) => "Cut-Normal",
         }
     }
 
@@ -381,6 +399,18 @@ impl FeatureKind {
                 refs.push(&s.path);
             }
             FeatureKind::LoftedBend(l) => out.extend([l.profile1, l.profile2]),
+            FeatureKind::Rip(r) => refs.extend(r.edges.iter().map(|e| &e.edge)),
+            FeatureKind::InsertBends(b) => {
+                refs.push(&b.fixed_face);
+                refs.extend(b.rips.iter().map(|e| &e.edge));
+            }
+            FeatureKind::ConvertToSheetMetal(c) => {
+                refs.push(&c.fixed_face);
+                refs.extend(&c.bend_edges);
+            }
+            FeatureKind::Unfold(u) => refs.extend(&u.fixed_face),
+            FeatureKind::Fold(_) => {}
+            FeatureKind::NormalCut(n) => out.push(n.sketch),
             FeatureKind::Wrap(w) => {
                 out.push(w.sketch);
                 refs.push(&w.face);

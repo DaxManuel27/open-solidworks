@@ -129,7 +129,59 @@ fn leaving(f: &FaceFrame, roll: &Roll, exit: f64) -> DAffine3 {
         * rotation_about(f.origin, spin(f), -turn)
 }
 
+/// How one side of a sheet metal body lays flat.
+pub(crate) struct Layout {
+    /// The fixed face's plane, normal out of the material.
+    pub plane: Plane,
+    /// Each face on the fixed face's side, with its map into `plane`.
+    pub faces: Vec<(u32, UvMap)>,
+    /// Per face of the body: whether it is on that side.
+    pub side: Vec<bool>,
+    pub bend_lines: Vec<BendLine>,
+    pub fixed: u32,
+}
+
 pub(crate) fn flatten(body: &Body, record: &SheetMetalBody, fixed: Option<u32>) -> RResult<Flat> {
+    let Layout {
+        plane: flat,
+        faces,
+        side,
+        bend_lines: lines,
+        fixed,
+    } = layout(body, record, fixed)?;
+    let shape = &body.shape;
+    let t = record.params.thickness;
+    let edge_faces = shape.edge_faces();
+    let (solid, sources) = shape
+        .flatten(&faces, &flat, -flat.normal * t)
+        .map_err(|e| format!("can't flatten: {}", e.0))?;
+    let fixed_name = body.names.face_name(fixed).unwrap_or("flat").to_string();
+    let names: Vec<Vec<String>> = sources
+        .iter()
+        .map(|s| {
+            vec![match *s {
+                FlatSource::Plane => fixed_name.clone(),
+                FlatSource::Back => format!("{}.flat.back", record.feature),
+                FlatSource::Edge(e) => edge_faces
+                    .get(e as usize)
+                    .and_then(|fs| fs.iter().find(|f| !side[**f as usize]))
+                    .and_then(|f| body.names.face_name(*f))
+                    .map(str::to_string)
+                    .unwrap_or_else(|| format!("{}.flat.e{e}", record.feature)),
+                FlatSource::Unknown => format!("{}.flat.u", record.feature),
+            }]
+        })
+        .collect();
+    let names = Naming::from_faces(&solid, names);
+    Ok(Flat {
+        shape: solid,
+        names,
+        plane: flat,
+        bend_lines: lines,
+    })
+}
+
+pub(crate) fn layout(body: &Body, record: &SheetMetalBody, fixed: Option<u32>) -> RResult<Layout> {
     let shape = &body.shape;
     let t = record.params.thickness;
     let nfaces = shape.count(Kind::Face);
@@ -326,32 +378,12 @@ pub(crate) fn flatten(body: &Body, record: &SheetMetalBody, fixed: Option<u32>) 
     }
     lines.extend(hinges.into_iter().filter(|h| h.angle > 1e-6));
     let side: Vec<bool> = place.iter().map(Option::is_some).collect();
-    let (solid, sources) = shape
-        .flatten(&faces, &flat, -outward * t)
-        .map_err(|e| format!("can't flatten: {}", e.0))?;
-    let fixed_name = body.names.face_name(fixed).unwrap_or("flat").to_string();
-    let names: Vec<Vec<String>> = sources
-        .iter()
-        .map(|s| {
-            vec![match *s {
-                FlatSource::Plane => fixed_name.clone(),
-                FlatSource::Back => format!("{}.flat.back", record.feature),
-                FlatSource::Edge(e) => edge_faces
-                    .get(e as usize)
-                    .and_then(|fs| fs.iter().find(|f| !side[**f as usize]))
-                    .and_then(|f| body.names.face_name(*f))
-                    .map(str::to_string)
-                    .unwrap_or_else(|| format!("{}.flat.e{e}", record.feature)),
-                FlatSource::Unknown => format!("{}.flat.u", record.feature),
-            }]
-        })
-        .collect();
-    let names = Naming::from_faces(&solid, names);
-    Ok(Flat {
-        shape: solid,
-        names,
+    Ok(Layout {
         plane: flat,
+        faces,
+        side,
         bend_lines: lines,
+        fixed,
     })
 }
 

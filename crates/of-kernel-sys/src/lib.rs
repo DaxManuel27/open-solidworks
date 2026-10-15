@@ -451,6 +451,17 @@ pub mod ffi {
         /// repeated, except those on the silhouette seen along `view`.
         fn seam_edges(s: &Shape, view: &Vec3) -> Vec<u32>;
         fn face_frame(s: &Shape, face: u32) -> Result<FaceFrame>;
+        /// The inverse of `flatten`: the parts of `region` (planar faces in
+        /// `frame`'s plane) over each face's flat image, mapped back onto the
+        /// face's surface. `owners` gets the face each result came from.
+        fn fold_faces(
+            s: &Shape,
+            faces: &[u32],
+            maps: &[f64],
+            frame: &Frame,
+            region: &Shape,
+            owners: &mut Vec<u32>,
+        ) -> Result<UniquePtr<Shape>>;
         /// A solid bounded by planar polygons: `points` are xyz triples and
         /// `faces` is, per face, its vertex count then its vertex indices.
         fn polyhedron(points: &[f64], faces: &[u32]) -> Result<UniquePtr<Shape>>;

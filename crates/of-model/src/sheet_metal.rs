@@ -250,6 +250,8 @@ pub enum FlangeLength {
         #[schemars(range(min = 0.0))]
         offset: f64,
     },
+    /// Up to an edge of another sheet metal body, joining the two bodies.
+    UpToEdgeAndMerge { target: Ref },
 }
 
 impl FlangeLength {
@@ -258,7 +260,8 @@ impl FlangeLength {
             FlangeLength::Blind { .. } => None,
             FlangeLength::UpToVertex { target }
             | FlangeLength::UpToSurface { target }
-            | FlangeLength::OffsetFromSurface { target, .. } => Some(target),
+            | FlangeLength::OffsetFromSurface { target, .. }
+            | FlangeLength::UpToEdgeAndMerge { target } => Some(target),
         }
     }
 }
@@ -711,4 +714,91 @@ fn facets() -> u32 {
 
 fn deviation() -> f64 {
     0.05
+}
+
+/// Which side of a ripped edge the gap goes.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RipDirection {
+    /// Half the gap into each face.
+    #[default]
+    Both,
+    /// All of it into the first face of the edge.
+    First,
+    /// All of it into the second face.
+    Second,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct RipEdge {
+    /// A sharp edge where two walls meet.
+    pub edge: Ref,
+    #[serde(default)]
+    pub direction: RipDirection,
+}
+
+/// Cuts a gap along edges where walls meet, so the part can unfold.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Rip {
+    #[schemars(length(min = 1))]
+    pub edges: Vec<RipEdge>,
+    /// mm.
+    #[serde(default = "default_gap")]
+    #[schemars(extend("exclusiveMinimum" = 0))]
+    pub gap: f64,
+}
+
+/// Turns a thin-walled solid (such as a shell) into sheet metal: its sharp
+/// corners become bends of the given radius, after ripping `rips`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct InsertBends {
+    /// A flat face of the wall that stays put; its opposite face sets the
+    /// thickness.
+    pub fixed_face: Ref,
+    /// Bend radius, allowance and relief; the thickness is measured.
+    pub sheet: SheetMetalParams,
+    #[serde(default)]
+    pub rips: Vec<RipEdge>,
+    #[serde(default = "default_gap")]
+    #[schemars(extend("exclusiveMinimum" = 0))]
+    pub rip_gap: f64,
+}
+
+/// Makes sheet metal from any solid: the faces joined to the fixed face
+/// through `bend_edges` become walls of the given thickness inside the
+/// solid, those edges become bends and the other edges between them rips.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ConvertToSheetMetal {
+    pub fixed_face: Ref,
+    pub sheet: SheetMetalParams,
+    #[schemars(length(min = 1))]
+    pub bend_edges: Vec<Ref>,
+    #[serde(default = "default_gap")]
+    #[schemars(extend("exclusiveMinimum" = 0))]
+    pub rip_gap: f64,
+    /// Keep the original solid as a separate body.
+    #[serde(default)]
+    pub keep_body: bool,
+}
+
+/// Flattens a sheet metal body so that features can cut across its bends;
+/// the next Fold forms it again with those cuts.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Unfold {
+    /// The face that stays put; it also chooses the body.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fixed_face: Option<Ref>,
+}
+
+/// Forms the body flattened by the last Unfold again, carrying through the
+/// cuts made while it was flat.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Fold {}
+
+/// A cut through sheet metal whose walls are square to the sheet, even
+/// across bends: closed sketch regions projected along the sketch normal.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct NormalCut {
+    #[schemars(range(min = 1))]
+    pub sketch: FeatureId,
 }

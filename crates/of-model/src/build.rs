@@ -65,6 +65,8 @@ pub struct State {
     pub sheet_metal: Vec<crate::sheet_metal::SheetMetalBody>,
     /// The part's material, for features that take defaults from it.
     pub material: Option<String>,
+    /// A sheet metal body flattened by Unfold, waiting for its Fold.
+    pub(crate) unfolded: Option<crate::ops::sheet::Unfolded>,
     pub(crate) tool_order: Vec<FeatureId>,
 }
 
@@ -499,6 +501,12 @@ fn build_kind(id: FeatureId, kind: &FeatureKind, prev: &State, state: &mut State
         FeatureKind::SketchedBend(p) => return ops::sheet::sketched_bend(id, p, prev, state),
         FeatureKind::Jog(p) => return ops::sheet::jog(id, p, prev, state),
         FeatureKind::CrossBreak(p) => return ops::sheet::cross_break(id, p, prev, state),
+        FeatureKind::Rip(p) => return ops::sheet::rip(id, p, prev, state),
+        FeatureKind::InsertBends(p) => return ops::sheet::insert_bends(id, p, prev, state),
+        FeatureKind::ConvertToSheetMetal(p) => return ops::sheet::convert(id, p, prev, state),
+        FeatureKind::Unfold(p) => return ops::sheet::unfold(id, p, prev, state),
+        FeatureKind::Fold(p) => return ops::sheet::fold(id, p, prev, state),
+        FeatureKind::NormalCut(p) => return ops::sheet::normal_cut(id, p, prev, state),
         _ => {
             ops::build(id, kind, prev, state)?;
             return state.refresh_bodies(id, prev);

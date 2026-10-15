@@ -175,6 +175,9 @@ std::unique_ptr<Shape> step_read_shape(const StepRead &r, uint32_t i);
 rust::Vec<HlrEdge> hlr(const Shape &s, const Frame &view, bool exact, bool hidden,
                        double deflection);
 FaceFrame face_frame(const Shape &s, uint32_t face);
+std::unique_ptr<Shape> fold_faces(const Shape &s, rust::Slice<const uint32_t> faces,
+                                  rust::Slice<const double> maps, const Frame &frame,
+                                  const Shape &region, rust::Vec<uint32_t> &owners);
 std::unique_ptr<Shape> polyhedron(rust::Slice<const double> points,
                                   rust::Slice<const uint32_t> faces);
 std::unique_ptr<Shape> flatten(const Shape &s, rust::Slice<const uint32_t> faces,

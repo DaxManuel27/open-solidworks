@@ -2,6 +2,8 @@
 //! pattern. See [`crate::sheet_metal`] for the bend records they write.
 
 mod bend;
+mod convert;
+mod fold;
 mod hem;
 mod lofted;
 mod miter;
@@ -27,6 +29,8 @@ use crate::sheet_metal::{
 use crate::{EndCondition, FeatureId, Ref};
 
 pub(crate) use bend::{jog, sketched_bend};
+pub(crate) use convert::{convert, insert_bends, rip};
+pub(crate) use fold::{Unfolded, fold, normal_cut, unfold};
 pub(super) use hem::hem;
 pub(super) use lofted::lofted_bend;
 pub(super) use miter::miter_flange;
@@ -845,8 +849,11 @@ pub(super) fn edge_flange(
                         LengthMeasure::TangentToBend => 0.0,
                     }
             }
-            FlangeLength::UpToVertex { target } => {
-                let q = resolve(prev, target)?.point()?;
+            FlangeLength::UpToVertex { target } | FlangeLength::UpToEdgeAndMerge { target } => {
+                let q = match resolve(prev, target)? {
+                    Resolved::Edge { info, .. } => info.mid,
+                    other => other.point()?,
+                };
                 let (x, y, _) = f.local(q);
                 (DVec2::new(x, y) - b_in).dot(d)
             }
@@ -985,7 +992,30 @@ pub(super) fn apply_flanges(
     for (record, bend) in bends {
         state.sheet_metal[record].bends.push(bend);
     }
+    merge_records(state);
     Ok(())
+}
+
+/// Records whose bodies were joined into one become one record, keeping the
+/// first one's parameters and fixed face.
+pub(super) fn merge_records(state: &mut State) {
+    let mut i = 0;
+    while i < state.sheet_metal.len() {
+        let body = record_body(state, &state.sheet_metal[i]);
+        let mut j = i + 1;
+        while j < state.sheet_metal.len() {
+            if body.is_some() && record_body(state, &state.sheet_metal[j]) == body {
+                let other = state.sheet_metal.remove(j);
+                let first = &mut state.sheet_metal[i];
+                first.bends.extend(other.bends);
+                first.cross_breaks.extend(other.cross_breaks);
+                first.facets.extend(other.facets);
+            } else {
+                j += 1;
+            }
+        }
+        i += 1;
+    }
 }
 
 /// Split the corners a flange shares with the other flanges of its feature,
