@@ -236,3 +236,136 @@ fn cross_break_is_recorded() {
     assert_eq!(m.state().sheet_metal[0].cross_breaks.len(), 1);
     close(volume(&m), v, 1e-9);
 }
+
+#[test]
+fn swept_flange_rolls_out_along_its_path() {
+    let (t, h) = (1.0, 15.0);
+    let mut doc = Document::new();
+    // Path: 40 along x, a quarter turn of radius 20 to the left, 40 along y.
+    let mut path = Sketch::new();
+    let p0 = path.add_point(DVec2::ZERO);
+    let p1 = path.add_point(DVec2::new(40.0, 0.0));
+    let c = path.add_point(DVec2::new(40.0, 20.0));
+    let p2 = path.add_point(DVec2::new(60.0, 20.0));
+    let p3 = path.add_point(DVec2::new(60.0, 60.0));
+    path.add_line(p0, p1).unwrap();
+    path.add_arc(c, p1, p2).unwrap();
+    path.add_line(p2, p3).unwrap();
+    let path = doc.add(FeatureKind::Sketch(SketchFeature {
+        plane: Ref::FrontPlane,
+        sketch: path,
+    }));
+    // Profile: straight up h from the path start, on the right plane.
+    let mut profile = Sketch::new();
+    profile.add_line_at(DVec2::ZERO, DVec2::new(-h, 0.0));
+    let profile = doc.add(FeatureKind::Sketch(SketchFeature {
+        plane: Ref::RightPlane,
+        sketch: profile,
+    }));
+    doc.add(FeatureKind::SweptFlange(SweptFlange {
+        profile,
+        path: Ref::Feature { id: path },
+        sheet: Some(params(t, 1.0, 0.5)),
+        side: ThicknessSide::Normal,
+        bend: BendOverride::default(),
+    }));
+    let mut m = Model::new(doc);
+    ok(&m);
+    let formed = volume(&m);
+    flatten(&mut m);
+    ok(&m);
+    let radius = 20.0;
+    let length = 40.0 + FRAC_PI_2 * (radius + 0.5 * t) + 40.0;
+    let [a, b, c] = sizes(&m);
+    close(a, t, 1e-6);
+    close(b, h, 1e-6);
+    close(c, length, 1e-6);
+    close(volume(&m), formed, 1e-6 * formed);
+}
+
+/// An open square of side `s` with its seam in the middle of one side, on a
+/// plane `z` up.
+fn square_profile(doc: &mut Document, s: f64) -> FeatureId {
+    let h = s / 2.0;
+    polyline(
+        doc,
+        &[
+            DVec2::new(1.0, -h),
+            DVec2::new(h, -h),
+            DVec2::new(h, h),
+            DVec2::new(-h, h),
+            DVec2::new(-h, -h),
+            DVec2::new(-1.0, -h),
+        ],
+    )
+}
+
+fn round_profile(doc: &mut Document, r: f64, z: f64) -> FeatureId {
+    let plane = doc.add(FeatureKind::Plane(PlaneDef::Offset {
+        reference: Ref::FrontPlane,
+        distance: z,
+        flip: false,
+    }));
+    let mut sk = Sketch::new();
+    let gap = 1.0 / r;
+    let c = sk.add_point(DVec2::ZERO);
+    let start = -FRAC_PI_2 + gap;
+    let end = -FRAC_PI_2 - gap;
+    let a = sk.add_point(DVec2::from_angle(start) * r);
+    let b = sk.add_point(DVec2::from_angle(end) * r);
+    sk.add_arc(c, a, b).unwrap();
+    doc.add(FeatureKind::Sketch(SketchFeature {
+        plane: Ref::Feature { id: plane },
+        sketch: sk,
+    }))
+}
+
+#[test]
+fn lofted_bend_square_to_round_unfolds() {
+    for method in [LoftMethod::Bent, LoftMethod::Formed] {
+        let mut doc = Document::new();
+        let square = square_profile(&mut doc, 40.0);
+        let round = round_profile(&mut doc, 15.0, 30.0);
+        doc.add(FeatureKind::LoftedBend(LoftedBend {
+            profile1: square,
+            profile2: round,
+            method,
+            facets: 4,
+            deviation: 0.1,
+            sheet: params(1.0, 1.0, 0.5),
+            reverse: false,
+        }));
+        let mut m = Model::new(doc);
+        ok(&m);
+        let formed = volume(&m);
+        flatten(&mut m);
+        ok(&m);
+        close(thickness_of(&m), 1.0, 1e-6);
+        // Facets unfold without stretching: the flat holds about the same
+        // material (the offset side of a facet strip is only nearly parallel).
+        assert!(
+            (volume(&m) - formed).abs() < 0.03 * formed,
+            "{} vs {formed}",
+            volume(&m)
+        );
+        assert!(!m.state().sheet_metal[0].bend_lines.is_empty());
+    }
+}
+
+/// The body's extent along the normal of its largest face.
+fn thickness_of(m: &Model) -> f64 {
+    let shape = &m.state().body.as_ref().unwrap().shape;
+    let big = (0..shape.count(Kind::Face))
+        .max_by(|a, b| {
+            let fa = shape.face_info(*a).unwrap().area;
+            let fb = shape.face_info(*b).unwrap().area;
+            fa.total_cmp(&fb)
+        })
+        .unwrap();
+    let n = shape.face_info(big).unwrap().normal;
+    let d: Vec<f64> = (0..shape.count(Kind::Vertex))
+        .map(|v| shape.vertex_point(v).unwrap().dot(n))
+        .collect();
+    d.iter().copied().fold(f64::NEG_INFINITY, f64::max)
+        - d.iter().copied().fold(f64::INFINITY, f64::min)
+}

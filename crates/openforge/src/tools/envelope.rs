@@ -163,6 +163,8 @@ fn changes_material(kind: &FeatureKind) -> bool {
             | Hem(_)
             | MiterFlange(_)
             | Jog(_)
+            | SweptFlange(_)
+            | LoftedBend(_)
     )
 }
 

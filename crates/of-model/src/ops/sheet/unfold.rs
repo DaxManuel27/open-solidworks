@@ -161,6 +161,14 @@ pub(crate) fn flatten(body: &Body, record: &SheetMetalBody, fixed: Option<u32>) 
         }
     };
 
+    let facets: std::collections::HashSet<&str> =
+        record.facets.iter().map(|n| base_name(n)).collect();
+    let is_facet = |f: u32| {
+        body.names.faces[f as usize]
+            .iter()
+            .any(|n| facets.contains(base_name(n)))
+    };
+    let mut hinges: Vec<BendLine> = Vec::new();
     let mut place: Vec<Option<Place>> = vec![None; nfaces as usize];
     place[fixed as usize] = Some(Place::Wall(DAffine3::IDENTITY));
     let mut queue = VecDeque::from([fixed]);
@@ -172,11 +180,34 @@ pub(crate) fn flatten(body: &Body, record: &SheetMetalBody, fixed: Option<u32>) 
                 if g == f || place[g as usize].is_some() {
                     continue;
                 }
-                // Only tangent neighbours are on this side of the sheet.
+                // Only tangent neighbours are on this side of the sheet,
+                // except across the edges between facets.
+                let gf = &frames[g as usize];
                 if normal_at(f, info.mid).dot(normal_at(g, info.mid)) < 1.0 - 1e-6 {
+                    let (Place::Wall(m), true) = (here, is_facet(f) && is_facet(g)) else {
+                        continue;
+                    };
+                    if gf.surface != FaceSurface::Plane || info.kind != CurveKind::Line {
+                        continue;
+                    }
+                    let (nf, ng) = (normal_at(f, info.mid), normal_at(g, info.mid));
+                    let axis = (info.end - info.start).normalize();
+                    let angle = ng.cross(nf).dot(axis).atan2(ng.dot(nf));
+                    let turn = rotation_about(info.start, axis, angle);
+                    place[g as usize] = Some(Place::Wall(m * turn));
+                    let centroid = shape.face_info(g).map_err(geo)?.centroid;
+                    hinges.push(BendLine {
+                        a: m.transform_point3(info.start).to_array(),
+                        b: m.transform_point3(info.end).to_array(),
+                        up: (centroid - info.start).dot(nf) > 0.0,
+                        angle: angle.abs(),
+                        radius: 0.0,
+                        feature: Some(record.feature),
+                        index: None,
+                    });
+                    queue.push_back(g);
                     continue;
                 }
-                let gf = &frames[g as usize];
                 let next = match (here, gf.surface) {
                     (Place::Wall(m), FaceSurface::Plane) => Place::Wall(m),
                     (Place::Wall(m), FaceSurface::Cylinder { radius }) => {
@@ -293,6 +324,7 @@ pub(crate) fn flatten(body: &Body, record: &SheetMetalBody, fixed: Option<u32>) 
             }
         }
     }
+    lines.extend(hinges.into_iter().filter(|h| h.angle > 1e-6));
     let side: Vec<bool> = place.iter().map(Option::is_some).collect();
     let (solid, sources) = shape
         .flatten(&faces, &flat, -outward * t)

@@ -56,6 +56,8 @@ pub(crate) fn build(
         FeatureKind::EdgeFlange(p) => sheet::edge_flange(fid, p, prev, state),
         FeatureKind::Hem(p) => sheet::hem(fid, p, prev, state),
         FeatureKind::MiterFlange(p) => sheet::miter_flange(fid, p, prev, state),
+        FeatureKind::SweptFlange(p) => sheet::swept_flange(fid, p, prev, state),
+        FeatureKind::LoftedBend(p) => sheet::lofted_bend(fid, p, prev, state),
         _ => Ok(()),
     };
     if result.is_ok() && state.tools.contains_key(&fid) {
@@ -502,7 +504,7 @@ fn section_names(prev: &State, id: FeatureId, shape: &Shape) -> RResult<Vec<Stri
 }
 
 /// How a sweep orients its section along the path.
-enum SweepFrame<'a> {
+pub(crate) enum SweepFrame<'a> {
     Mode(u8),
     Guided {
         guide: Option<&'a Shape>,
@@ -519,7 +521,7 @@ enum SweepFrame<'a> {
 /// Sweep one closed section wire, naming its side faces after `edges` (one per
 /// section edge) and its caps with `cap_prefix`.
 #[allow(clippy::too_many_arguments)]
-fn sweep_section(
+pub(crate) fn sweep_section(
     fid: FeatureId,
     section: &Shape,
     plane: &Plane,

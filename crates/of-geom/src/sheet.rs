@@ -109,6 +109,18 @@ pub enum FlatSource {
 }
 
 impl Shape {
+    /// A solid bounded by planar polygons, each a list of indices into
+    /// `points`. Faces are sewn together; their order in the result may differ.
+    pub fn polyhedron(points: &[DVec3], faces: &[Vec<u32>]) -> Result<Shape> {
+        let xyz: Vec<f64> = points.iter().flat_map(|p| [p.x, p.y, p.z]).collect();
+        let mut list = Vec::new();
+        for f in faces {
+            list.push(f.len() as u32);
+            list.extend(f);
+        }
+        Ok(Shape(ffi::polyhedron(&xyz, &list)?))
+    }
+
     pub fn face_frame(&self, face: u32) -> Result<FaceFrame> {
         let f = ffi::face_frame(&self.0, face)?;
         Ok(FaceFrame {

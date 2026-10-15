@@ -347,6 +347,10 @@ pub struct SheetMetalBody {
     pub bend_lines: Vec<BendLine>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cross_breaks: Vec<CrossBreakRecord>,
+    /// Faces of faceted regions (lofted bends) on the fixed face's side;
+    /// flattening unfolds across the sharp edges between them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub facets: Vec<String>,
 }
 
 /// The flat length of a bend.
@@ -643,4 +647,68 @@ pub struct CrossBreakRecord {
     pub angle: f64,
     pub radius: f64,
     pub up: bool,
+}
+
+/// An open profile swept along a path into a flange. Flattening works when
+/// the swept faces are planes and cylinders: a straight profile along any
+/// path of lines and arcs in a plane square to it, or any profile along a
+/// straight path.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SweptFlange {
+    /// A sketch with one open chain of lines and arcs, square to the path at
+    /// its start.
+    #[schemars(range(min = 1))]
+    pub profile: FeatureId,
+    pub path: Ref,
+    /// The new body's defaults when it does not join a sheet metal body.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sheet: Option<SheetMetalParams>,
+    #[serde(default)]
+    pub side: ThicknessSide,
+    #[serde(default)]
+    pub bend: BendOverride,
+}
+
+/// How a lofted bend is made.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum LoftMethod {
+    /// Flat facets with bend lines between, as brake formed.
+    #[default]
+    Bent,
+    /// A smooth (rolled) transition, modelled with facets fine enough to
+    /// stay within `deviation`.
+    Formed,
+}
+
+/// A sheet metal transition between two open profiles, such as round to
+/// square. Each profile is a nearly closed chain whose gap is the seam.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LoftedBend {
+    #[schemars(range(min = 1))]
+    pub profile1: FeatureId,
+    #[schemars(range(min = 1))]
+    pub profile2: FeatureId,
+    #[serde(default)]
+    pub method: LoftMethod,
+    /// Bent: facets per profile segment.
+    #[serde(default = "facets")]
+    #[schemars(range(min = 1, max = 64))]
+    pub facets: u32,
+    /// Formed: the most the facets may stray from the smooth surface, mm.
+    #[serde(default = "deviation")]
+    #[schemars(extend("exclusiveMinimum" = 0))]
+    pub deviation: f64,
+    pub sheet: SheetMetalParams,
+    /// Thickness toward the other side of the profiles.
+    #[serde(default)]
+    pub reverse: bool,
+}
+
+fn facets() -> u32 {
+    4
+}
+
+fn deviation() -> f64 {
+    0.05
 }

@@ -3,7 +3,9 @@
 
 mod bend;
 mod hem;
+mod lofted;
 mod miter;
+mod swept;
 mod unfold;
 
 use std::f64::consts::{PI, TAU};
@@ -26,7 +28,9 @@ use crate::{EndCondition, FeatureId, Ref};
 
 pub(crate) use bend::{jog, sketched_bend};
 pub(super) use hem::hem;
+pub(super) use lofted::lofted_bend;
 pub(super) use miter::miter_flange;
+pub(super) use swept::swept_flange;
 pub(crate) use unfold::flatten;
 
 /// Strip a split suffix (`~2`) from a face name.
@@ -194,6 +198,7 @@ fn closed_base(
         bends: Vec::new(),
         bend_lines: Vec::new(),
         cross_breaks: Vec::new(),
+        facets: Vec::new(),
     });
     Ok(())
 }
@@ -242,6 +247,19 @@ impl Seg {
                 let t = DVec2::new(-a.sin(), a.cos());
                 if sweep > 0.0 { t } else { -t }
             }
+        }
+    }
+    pub(crate) fn length(&self) -> f64 {
+        match *self {
+            Seg::Line { a, b } => (b - a).length(),
+            Seg::Arc { r, sweep, .. } => r * sweep.abs(),
+        }
+    }
+    /// The point at fraction `f` of the length.
+    pub(crate) fn point_at(&self, f: f64) -> DVec2 {
+        match *self {
+            Seg::Line { a, b } => a.lerp(b, f),
+            Seg::Arc { c, r, a0, sweep } => Seg::at(c, r, a0 + sweep * f),
         }
     }
     fn reversed(&self) -> Seg {
@@ -593,6 +611,7 @@ fn open_base(
         bends,
         bend_lines: Vec::new(),
         cross_breaks: Vec::new(),
+        facets: Vec::new(),
     });
     Ok(())
 }

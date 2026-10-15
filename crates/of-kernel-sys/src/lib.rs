@@ -451,6 +451,9 @@ pub mod ffi {
         /// repeated, except those on the silhouette seen along `view`.
         fn seam_edges(s: &Shape, view: &Vec3) -> Vec<u32>;
         fn face_frame(s: &Shape, face: u32) -> Result<FaceFrame>;
+        /// A solid bounded by planar polygons: `points` are xyz triples and
+        /// `faces` is, per face, its vertex count then its vertex indices.
+        fn polyhedron(points: &[f64], faces: &[u32]) -> Result<UniquePtr<Shape>>;
         /// Faces of `s` mapped into `frame`'s plane, each by an affine map of
         /// its (u, v) parameters (six values per face: x = a u + b v + c,
         /// y = d u + e v + f), joined into one region and extruded along

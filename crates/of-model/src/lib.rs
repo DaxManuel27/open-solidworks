@@ -213,6 +213,10 @@ pub enum FeatureKind {
     Jog(sheet_metal::Jog),
     /// Cosmetic stiffening crosses on a flat sheet face.
     CrossBreak(sheet_metal::CrossBreak),
+    /// An open sheet metal profile swept along a path.
+    SweptFlange(sheet_metal::SweptFlange),
+    /// A faceted sheet metal transition between two open profiles.
+    LoftedBend(sheet_metal::LoftedBend),
 }
 
 impl FeatureKind {
@@ -267,6 +271,8 @@ impl FeatureKind {
             FeatureKind::SketchedBend(_) => "Sketched Bend",
             FeatureKind::Jog(_) => "Jog",
             FeatureKind::CrossBreak(_) => "Cross-Break",
+            FeatureKind::SweptFlange(_) => "Swept Flange",
+            FeatureKind::LoftedBend(_) => "Lofted-Bend",
         }
     }
 
@@ -370,6 +376,11 @@ impl FeatureKind {
                 refs.extend(&j.fixed);
             }
             FeatureKind::CrossBreak(c) => refs.push(&c.face),
+            FeatureKind::SweptFlange(s) => {
+                out.push(s.profile);
+                refs.push(&s.path);
+            }
+            FeatureKind::LoftedBend(l) => out.extend([l.profile1, l.profile2]),
             FeatureKind::Wrap(w) => {
                 out.push(w.sketch);
                 refs.push(&w.face);

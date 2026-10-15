@@ -292,3 +292,51 @@ std::unique_ptr<Shape> flatten(const Shape &s, rust::Slice<const uint32_t> faces
 }
 
 } // namespace ofk
+
+#include <BRepBuilderAPI_MakePolygon.hxx>
+#include <BRepBuilderAPI_MakeSolid.hxx>
+#include <BRepBuilderAPI_Sewing.hxx>
+#include <ShapeFix_Solid.hxx>
+
+namespace ofk {
+
+std::unique_ptr<Shape> polyhedron(rust::Slice<const double> points,
+                                  rust::Slice<const uint32_t> faces) {
+  auto at = [&](uint32_t i) {
+    if (3 * static_cast<size_t>(i) + 2 >= points.size())
+      throw std::out_of_range("polyhedron vertex out of range");
+    return gp_Pnt(points[3 * i], points[3 * i + 1], points[3 * i + 2]);
+  };
+  BRepBuilderAPI_Sewing sewing(1e-6);
+  size_t i = 0;
+  while (i < faces.size()) {
+    uint32_t n = faces[i++];
+    if (n < 3 || i + n > faces.size()) throw std::invalid_argument("bad polyhedron face");
+    BRepBuilderAPI_MakePolygon poly;
+    for (uint32_t k = 0; k < n; ++k) poly.Add(at(faces[i + k]));
+    poly.Close();
+    i += n;
+    BRepBuilderAPI_MakeFace mf(poly.Wire(), true);
+    if (!mf.IsDone()) throw std::runtime_error("a polyhedron face is not planar");
+    sewing.Add(mf.Face());
+  }
+  sewing.Perform();
+  TopoDS_Shape sewn = sewing.SewedShape();
+  TopoDS_Shell shell;
+  int shells = 0;
+  for (TopExp_Explorer ex(sewn, TopAbs_SHELL); ex.More(); ex.Next()) {
+    shell = TopoDS::Shell(ex.Current());
+    ++shells;
+  }
+  if (shells != 1) throw std::runtime_error("the faces do not close into one solid");
+  BRepBuilderAPI_MakeSolid ms(shell);
+  if (!ms.IsDone()) throw std::runtime_error("could not make a solid from the faces");
+  ShapeFix_Solid fix(ms.Solid());
+  fix.Perform();
+  TopoDS_Shape out = fix.Solid();
+  BRepCheck_Analyzer check(out);
+  if (!check.IsValid()) throw std::runtime_error("the faceted solid is not valid");
+  return std::make_unique<Shape>(out);
+}
+
+} // namespace ofk
