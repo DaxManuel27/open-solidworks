@@ -254,11 +254,11 @@ fn closed_corner_and_weld() {
     }
 }
 
-#[test]
-fn tabs_go_through_slots() {
+/// An 80 × 40 × 2 plate with an upright 60 × 38 × 2 plate standing on it at
+/// y = 20..22: the upright's bottom edge, the base's top face and the volume.
+fn tab_setup() -> (Model, Ref, Ref, f64) {
     let t = 2.0;
     let mut m = plate(80.0, 40.0, t);
-    // An upright plate standing on the base's top face at y = 20..22.
     let mut sk = Sketch::new();
     tools::corner_rectangle(&mut sk, DVec2::new(10.0, -40.0), DVec2::new(70.0, -t));
     let wall_plane = m.doc.add(FeatureKind::Plane(PlaneDef::Offset {
@@ -293,18 +293,31 @@ fn tabs_go_through_slots() {
         m.state().ref_for(Kind::Face, f).unwrap()
     };
     let before = volume(&m);
-    add(
-        &mut m,
-        FeatureKind::TabAndSlot(TabAndSlot {
-            edge,
-            face: top,
-            count: 3,
-            spacing: None,
-            length: 8.0,
-            height: None,
-            clearance: 0.1,
-        }),
-    );
+    (m, edge, top, before)
+}
+
+fn tabs(edge: Ref, face: Ref) -> TabAndSlot {
+    TabAndSlot {
+        edge,
+        face,
+        count: 3,
+        spacing: None,
+        length: 8.0,
+        height: None,
+        clearance: 0.1,
+        length_clearance: None,
+        width_clearance: None,
+        start: None,
+        end: None,
+        corners: TabCorner::Sharp,
+        through_all: false,
+    }
+}
+
+#[test]
+fn tabs_go_through_slots() {
+    let (mut m, edge, top, before) = tab_setup();
+    add(&mut m, FeatureKind::TabAndSlot(tabs(edge, top)));
     // Three tabs of 8 × 2 × 2 added; three slots of 8.2 × 2.2 × 2 cut.
     close(
         volume(&m),
@@ -312,6 +325,48 @@ fn tabs_go_through_slots() {
         1e-6,
     );
     assert_eq!(m.state().bodies.len(), 2);
+}
+
+#[test]
+fn tab_corners_clearances_and_span() {
+    use std::f64::consts::PI;
+    let (m0, edge, top, before) = tab_setup();
+    // Filleted corners: each tab loses two, each slot four, of (1 - π/4) r².
+    let r: f64 = 0.5;
+    let corner = (1.0 - PI / 4.0) * r * r;
+    let mut m = Model::new(m0.doc.clone());
+    let mut p = tabs(edge.clone(), top.clone());
+    p.corners = TabCorner::Fillet { radius: r };
+    add(&mut m, FeatureKind::TabAndSlot(p));
+    let tab = 32.0 - 2.0 * corner * 2.0;
+    let slot = (8.2 * 2.2 - 4.0 * corner) * 2.0;
+    close(volume(&m), before + 3.0 * tab - 3.0 * slot, 1e-6);
+
+    // Length and width clearances apart; two tabs between x = 30 and 70.
+    let mut m = Model::new(m0.doc.clone());
+    let a = m.doc.add(FeatureKind::Point(PointDef::Coordinates {
+        x: 30.0,
+        y: 20.0,
+        z: 2.0,
+    }));
+    let mut p = tabs(edge, top);
+    p.count = 2;
+    p.length_clearance = Some(0.3);
+    p.width_clearance = Some(0.0);
+    p.start = Some(Ref::Feature { id: a });
+    p.through_all = true;
+    add(&mut m, FeatureKind::TabAndSlot(p));
+    close(
+        volume(&m),
+        before + 2.0 * 32.0 - 2.0 * 8.6 * 2.0 * 2.0,
+        1e-6,
+    );
+    // The first tab starts at 30 + 40 / 4 - 4 = 36.
+    let shape = &m.state().body.as_ref().unwrap().shape;
+    assert!((0..shape.count(Kind::Vertex)).any(|v| {
+        let q = shape.vertex_point(v).unwrap();
+        (q.x - 36.0).abs() < 1e-6 && q.z < 2.0 + 1e-6
+    }));
 }
 
 /// A 90° L bracket from an open profile.
@@ -352,6 +407,9 @@ fn gusset_stiffens_the_bend_but_not_the_flat() {
             bend,
             position: 0.5,
             depth: 8.0,
+            depth2: None,
+            angle: None,
+            rounded_back: false,
             width: 3.0,
             punch_id: None,
         }),
@@ -508,4 +566,129 @@ fn welded_corner_stops_and_rounds_the_outside() {
     close(volume(&m), before, 1e-9);
     flatten(&mut m);
     ok(&m);
+}
+
+#[test]
+fn gusset_legs_angle_and_rounded_back() {
+    let m0 = bracket();
+    let shape = &m0.state().body.as_ref().unwrap().shape;
+    let bend = (0..shape.count(Kind::Face))
+        .find(|f| shape.face_info(*f).unwrap().kind == of_model::geom::SurfaceKind::Cylinder)
+        .unwrap();
+    let bend = m0.state().ref_for(Kind::Face, bend).unwrap();
+    let gusset = |depth2: Option<f64>, angle: Option<f64>, rounded_back: bool| {
+        let mut m = Model::new(m0.doc.clone());
+        add(
+            &mut m,
+            FeatureKind::SheetMetalGusset(SheetMetalGusset {
+                bend: bend.clone(),
+                position: 0.5,
+                depth: 8.0,
+                depth2,
+                angle,
+                rounded_back,
+                width: 3.0,
+                punch_id: None,
+            }),
+        );
+        volume(&m)
+    };
+    // Legs from the inside sharp: 10 and 10, then 10 and 6.
+    let even = gusset(None, None, false);
+    let uneven = gusset(Some(4.0), None, false);
+    close(even - uneven, (50.0 - 30.0) * 3.0, 1e-6);
+    // The same rib by its angle off the first wall.
+    let by_angle = gusset(None, Some(6f64.atan2(10.0)), false);
+    assert!((by_angle - uneven).abs() < 1e-6, "{by_angle} vs {uneven}");
+    assert!(gusset(None, None, true) < even);
+}
+
+/// A forming tool part: a Ø10 cylinder `depth` deep under its top face (the
+/// stopping face), with a configuration 2 that makes it 1.5 deep.
+fn tool_part(path: &std::path::Path, depth: f64) {
+    let mut doc = Document::new();
+    let mut sk = Sketch::new();
+    sk.add_circle_at(DVec2::ZERO, 5.0);
+    let s = doc.add(FeatureKind::Sketch(SketchFeature {
+        plane: Ref::FrontPlane,
+        sketch: sk,
+    }));
+    let e = doc.add(FeatureKind::Extrude(Extrude {
+        sketch: s,
+        cut: false,
+        start_offset: 0.0,
+        end1: EndCondition::Blind { depth },
+        reverse: false,
+        end2: None,
+        thin: None,
+        flip_side_to_cut: false,
+        merge: true,
+    }));
+    let m = Model::new(doc.clone());
+    let shape = &m.state().body.as_ref().unwrap().shape;
+    let top = (0..shape.count(Kind::Face))
+        .find(|f| {
+            let i = shape.face_info(*f).unwrap();
+            i.normal.z > 1.0 - 1e-9 && (i.point.z - depth).abs() < 1e-9
+        })
+        .unwrap();
+    doc.add(FeatureKind::FormingTool(FormingToolDef {
+        stopping_face: m.state().ref_for(Kind::Face, top).unwrap(),
+        remove_faces: Vec::new(),
+        insertion_point: None,
+    }));
+    let mut shallow = of_model::configurations::Configuration::new(2, "Shallow".into());
+    shallow.parameters.insert(format!("f{e}.end1.depth"), 1.5);
+    doc.configurations.items.push(shallow);
+    doc.configurations.next_id = 3;
+    of_model::file::save(&doc, path).unwrap();
+}
+
+#[test]
+fn forming_tools_from_a_part_follow_its_configuration_and_edits() {
+    let dir = std::env::temp_dir().join(format!("of-tool-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("tool.ofp");
+    tool_part(&path, 3.0);
+    let m0 = plate(60.0, 40.0, 1.0);
+    let top = {
+        let shape = &m0.state().body.as_ref().unwrap().shape;
+        let f = (0..shape.count(Kind::Face))
+            .find(|f| shape.face_info(*f).unwrap().normal.z > 0.999)
+            .unwrap();
+        m0.state().ref_for(Kind::Face, f).unwrap()
+    };
+    let pressed = |configuration: Option<u32>| {
+        let mut m = Model::new(m0.doc.clone());
+        add(
+            &mut m,
+            FeatureKind::FormTool(FormTool {
+                shape: FormShape::File {
+                    path: path.to_string_lossy().into_owned(),
+                    configuration,
+                },
+                face: top.clone(),
+                sketch: None,
+                rotation: 0.0,
+                flip: false,
+                punch_id: Some("P1".into()),
+            }),
+        );
+        m
+    };
+    let base = volume(&m0);
+    let mut deep = pressed(None);
+    let shallow = pressed(Some(2));
+    assert!(volume(&deep) > volume(&shallow));
+    assert!(volume(&shallow) > base);
+    // The tool file changes: the part follows on refresh, once.
+    let before = volume(&deep);
+    assert!(!deep.refresh_files());
+    tool_part(&path, 1.5);
+    assert!(deep.refresh_files());
+    ok(&deep);
+    close(volume(&deep), volume(&shallow), 1e-6);
+    assert!(volume(&deep) < before);
+    assert!(!deep.refresh_files());
+    std::fs::remove_dir_all(&dir).ok();
 }

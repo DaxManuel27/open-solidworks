@@ -230,8 +230,8 @@ run `cargo run -p openforge -- generate` instead. -->
 | `circular_pattern` | `features`, `axis`, `count`, `angle`, `equal_spacing?`, `reverse?`, `scope?` | Repeat features around an axis. |
 | `mirror` | `plane`, `features?`, `keep_original?`, `scope?` | Mirror features, or the whole body, about a plane. |
 | `base_flange` | `sketch`, `sheet`, `end1?`, `end2?`, `reverse?`, `scope?`, `side?` | The first sheet metal feature, or a tab on a sheet metal face. |
-| `edge_flange` | `edges`, `length`, `angle?`, `bend?`, `end_offset?`, `gap?`, `measure?`, `position?`, `position_offset?`, `reverse?`, `scope?`, `start_offset?` | Walls bent up from edges of a sheet metal body. |
-| `flat_pattern` | `break_corners?`, `fixed_face?`, `scope?` | Every sheet metal body flattened; suppress it to show the part formed. |
+| `edge_flange` | `edges`, `length`, `angle?`, `angle_from?`, `bend?`, `end_offset?`, `gap?`, `measure?`, `position?`, `position_offset?`, `profiles?`, `reverse?`, `scope?`, `start_offset?` | Walls bent up from edges of a sheet metal body. |
+| `flat_pattern` | `break_corners?`, `corner_treatment?`, `exclude?`, `fixed_face?`, `scope?`, `simplify_bends?`, `split_bend_regions?` | Every sheet metal body flattened; suppress it to show the part formed. |
 | `hem` | `edges`, `kind`, `allowance?`, `gap?`, `length?`, `position?`, `reverse?`, `scope?` | Fold sheet edges back on themselves. |
 | `miter_flange` | `sketch`, `edges`, `bend?`, `end_offset?`, `gap?`, `position?`, `scope?`, `start_offset?` | Flanges from one profile along a chain of edges, mitered at corners. |
 | `sketched_bend` | `sketch`, `angle?`, `bend?`, `fixed?`, `position?`, `reverse?`, `scope?` | Bend the sheet along a sketched line. |
@@ -245,13 +245,13 @@ run `cargo run -p openforge -- generate` instead. -->
 | `unfold` | `fixed_face?`, `scope?` | Flatten a sheet metal body until the next Fold. |
 | `fold` | `scope?` | Form an unfolded body again, keeping cuts made while flat. |
 | `normal_cut` | `sketch`, `scope?` | A cut through sheet metal square to the sheet. |
-| `corner_relief` | `bends?`, `centered?`, `kind?`, `ratio?`, `scope?` | Relief cuts where two bends meet at a corner. |
-| `closed_corner` | `faces`, `gap?`, `kind?`, `overlap_ratio?`, `scope?` | Extend flanges so they close a corner. |
-| `welded_corner` | `edge`, `scope?`, `size?`, `symbol?` | A weld bead along a closed corner's seam. |
+| `corner_relief` | `bends?`, `centered?`, `kind?`, `ratio?`, `scope?`, `slit?` | Relief cuts where two bends meet at a corner. |
+| `closed_corner` | `faces`, `coplanar?`, `gap?`, `kind?`, `overlap_ratio?`, `scope?` | Extend flanges so they close a corner. |
+| `welded_corner` | `edge`, `fillet?`, `scope?`, `size?`, `stop?`, `symbol?` | A weld bead along a closed corner's seam. |
 | `break_corner` | `corner`, `edges?`, `internal_only?`, `scope?` | Chamfer or round corners of the sheet's outline. |
 | `bend_notch` | `bends?`, `both_ends?`, `depth?`, `scope?`, `shape?`, `width?` | Notches at the ends of bend lines. |
-| `tab_and_slot` | `edge`, `face`, `length`, `clearance?`, `count?`, `height?`, `scope?`, `spacing?` | Tabs on one sheet metal body through slots in another. |
-| `sheet_metal_gusset` | `bend`, `depth`, `width`, `position?`, `punch_id?`, `scope?` | A stiffening rib pressed across a bend. |
+| `tab_and_slot` | `edge`, `face`, `length`, `clearance?`, `corners?`, `count?`, `end?`, `height?`, `length_clearance?`, `scope?`, `spacing?`, `start?`, `through_all?`, `width_clearance?` | Tabs on one sheet metal body through slots in another. |
+| `sheet_metal_gusset` | `bend`, `depth`, `width`, `angle?`, `depth2?`, `position?`, `punch_id?`, `rounded_back?`, `scope?` | A stiffening rib pressed across a bend. |
 | `form_tool` | `shape`, `face`, `flip?`, `punch_id?`, `rotation?`, `scope?`, `sketch?` | Forming tools pressed into a sheet metal face. |
 | `forming_tool` | `stopping_face`, `insertion_point?`, `remove_faces?`, `scope?` | Marks this part as a forming tool for other parts to use. |
 

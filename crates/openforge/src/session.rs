@@ -162,6 +162,8 @@ impl Session {
     }
 
     fn snapshot(&mut self) -> Value {
+        // Forming tool files may have changed on disk.
+        self.model.refresh_files();
         self.model.rebuild();
         let mut v = views::snapshot(&self.model);
         v["path"] = json!(self.path);

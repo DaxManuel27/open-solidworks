@@ -40,6 +40,14 @@ export type Anchor =
     at: [number, number]
   }
 
+/** A face that sets an edge flange's angle. */
+export type AngleFrom = {
+  /** A planar face. */
+  face: Ref
+  /** Run parallel to the face; square to it otherwise. */
+  parallel?: boolean
+}
+
 export type AnnotationKind =
   | {
     type: 'note'
@@ -1878,6 +1886,11 @@ export type Feature =
     length: FlangeLength
     /** Bend angle in radians, between 0 and π (default 90°). */
     angle?: number
+    /**
+     * Set the angle from a face instead: the flanges run parallel or square
+     * to it.
+     */
+    angle_from?: AngleFrom | null
     bend?: BendOverride
     end_offset?: number
     /** Gap between flanges that meet at a corner, mm. */
@@ -1886,6 +1899,8 @@ export type Feature =
     position?: FlangePosition
     /** Move the flange away from the edge into the face, mm. */
     position_offset?: number
+    /** Outlines replacing the rectangular wall of some flanges. */
+    profiles?: FlangeProfile[]
     /** Rise from the other face of the sheet. */
     reverse?: boolean
     /** Body IDs this feature acts on; omitted acts on the whole part. */
@@ -1897,10 +1912,24 @@ export type Feature =
     type: 'flat_pattern'
     /** Round or bevel the flat's outside corners. */
     break_corners?: CornerBreak | null
+    /**
+     * Round the inside corners of the flat's outline (relief corners) by
+     * half the thickness.
+     */
+    corner_treatment?: boolean
+    /** Faces whose regions are left out of the flat. */
+    exclude?: Ref[]
     /** The face that stays in place; each body's default otherwise. */
     fixed_face?: Ref | null
     /** Body IDs this feature acts on; omitted acts on the whole part. */
     scope?: string[] | null
+    /** Straighten curved edges in bend regions (cuts across bends). */
+    simplify_bends?: boolean
+    /**
+     * Keep the bend regions as faces of their own, split from the walls
+     * along their boundaries, instead of one merged face per side.
+     */
+    split_bend_regions?: boolean
   }
   | {
     type: 'hem'
@@ -2076,11 +2105,18 @@ export type Feature =
     ratio?: number
     /** Body IDs this feature acts on; omitted acts on the whole part. */
     scope?: string[] | null
+    /**
+     * Add a narrow slit from each corner outward, so the bends close up
+     * without tearing.
+     */
+    slit?: boolean
   }
   | {
     type: 'closed_corner'
     /** End faces of flanges to extend toward the flange beside them. */
     faces: Ref[]
+    /** Also close the corners of end faces coplanar with the selected ones. */
+    coplanar?: boolean
     /** mm. */
     gap?: number
     kind?: ClosedCornerKind
@@ -2096,10 +2132,17 @@ export type Feature =
     type: 'welded_corner'
     /** An edge of the seam. */
     edge: Ref
+    /**
+     * Fillet radius of the bead's outside, mm (shown with the bead; the
+     * solid is not changed).
+     */
+    fillet?: number | null
     /** Body IDs this feature acts on; omitted acts on the whole part. */
     scope?: string[] | null
     /** Bead leg size, mm. */
     size?: number
+    /** A point where the bead stops along the seam; the whole seam otherwise. */
+    stop?: Ref | null
     /** Weld symbol text shown with the bead. */
     symbol?: string | null
   }
@@ -2140,14 +2183,28 @@ export type Feature =
     length: number
     /** Extra slot length and width, mm. */
     clearance?: number
+    /** Corners of the tabs' ends and of the slots. */
+    corners?: TabCorner
     /** Number of tabs, spread evenly along the edge. */
     count?: number
+    end?: Ref | null
     /** How far tabs stick out past the slot body; through it when omitted. */
     height?: number | null
+    /** Extra slot length only, in place of `clearance`, mm. */
+    length_clearance?: number | null
     /** Body IDs this feature acts on; omitted acts on the whole part. */
     scope?: string[] | null
     /** Spacing between tab centers instead of `count`, mm. */
     spacing?: number | null
+    /**
+     * Points along the edge where the tabs start and end; the whole edge
+     * otherwise. With only one, the tabs run to the edge's farther end.
+     */
+    start?: Ref | null
+    /** Cut the slots through the whole slot body, not just its sheet. */
+    through_all?: boolean
+    /** Extra slot width only, in place of `clearance`, mm. */
+    width_clearance?: number | null
   }
   | {
     type: 'sheet_metal_gusset'
@@ -2157,9 +2214,18 @@ export type Feature =
     depth: number
     /** Width of the rib across the bend, mm. */
     width: number
+    /**
+     * Instead of `depth2`: the rib's back leaves the first wall at this
+     * angle, radians.
+     */
+    angle?: number | null
+    /** Leg along the second wall, mm; `depth` on both when omitted. */
+    depth2?: number | null
     /** Where along the bend, as a fraction of its length. */
     position?: number
     punch_id?: string | null
+    /** Round the rib's back across its width instead of leaving it flat. */
+    rounded_back?: boolean
     /** Body IDs this feature acts on; omitted acts on the whole part. */
     scope?: string[] | null
   }
@@ -2228,6 +2294,18 @@ export type FlangePosition =
   | 'bend_from_virtual_sharp'
   | 'tangent_to_bend'
 
+/**
+ * The wall outline of one flange of an edge flange, in the flange's plane:
+ * `u` runs along the edge from its start and `v` up the wall from the end of
+ * the bend, mm. The outline must rest on `v = 0`, which sets the bend's
+ * extent; its highest point sets the flange length.
+ */
+export type FlangeProfile = {
+  /** Index into `edges`. */
+  edge: number
+  points: ([number, number])[]
+}
+
 /** What a flat pattern view draws beside the outline. */
 export type FlatView = {
   /** Bend lines, up and down on their own layers. */
@@ -2269,6 +2347,7 @@ export type FormShape =
   | {
     type: 'file'
     path: string
+    configuration?: number | null
   }
 
 /** A gauge chosen from a gauge table. */
@@ -3259,6 +3338,20 @@ export type Standard = {
 export type StandardBase = 'iso' | 'ansi'
 
 export type SweepOrientation = 'minimum_twist' | 'frenet' | 'fixed'
+
+/** How tab and slot corners are finished. */
+export type TabCorner =
+  | {
+    type: 'sharp'
+  }
+  | {
+    type: 'fillet'
+    radius: number
+  }
+  | {
+    type: 'chamfer'
+    distance: number
+  }
 
 export type Tags = 'alphabetic' | 'numeric'
 

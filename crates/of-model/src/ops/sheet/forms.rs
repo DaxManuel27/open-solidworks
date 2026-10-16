@@ -18,8 +18,10 @@ use super::{RResult, geo, record_body, record_for_face, sketch_of};
 use crate::build::{Body, State};
 use crate::naming::{Inputs, Naming};
 use crate::resolve::{Resolved, resolve};
-use crate::sheet_metal::{FormRecord, FormShape, FormTool, SheetMetalGusset, TabAndSlot};
-use crate::{FeatureId, FeatureKind};
+use crate::sheet_metal::{
+    FormRecord, FormShape, FormTool, SheetMetalGusset, TabAndSlot, TabCorner,
+};
+use crate::{FeatureId, FeatureKind, Ref};
 
 /// A tool in its own frame: the stopping face on z = 0 facing +z, the tool
 /// below it; and the faces to leave open.
@@ -180,7 +182,10 @@ fn library(shape: &FormShape, t: f64) -> RResult<Tool> {
                 outline,
             }
         }
-        FormShape::File { ref path } => return file_tool(path),
+        FormShape::File {
+            ref path,
+            configuration,
+        } => return file_tool(path, configuration),
     };
     if t <= 0.0 {
         return Err("the sheet has no thickness".into());
@@ -189,9 +194,15 @@ fn library(shape: &FormShape, t: f64) -> RResult<Tool> {
 }
 
 /// A tool from a part file with a Forming Tool feature.
-fn file_tool(path: &str) -> RResult<Tool> {
-    let doc = crate::file::load(std::path::Path::new(path))
+fn file_tool(path: &str, configuration: Option<u32>) -> RResult<Tool> {
+    let mut doc = crate::file::load(std::path::Path::new(path))
         .map_err(|e| format!("can't open forming tool {path}: {e}"))?;
+    if let Some(c) = configuration {
+        if !doc.configurations.items.iter().any(|i| i.id == c) {
+            return Err(format!("forming tool {path} has no configuration {c}"));
+        }
+        doc.configurations.active = c;
+    }
     let def = doc
         .features
         .iter()
@@ -201,6 +212,9 @@ fn file_tool(path: &str) -> RResult<Tool> {
         })
         .ok_or_else(|| format!("{path} has no Forming Tool feature"))?;
     let model = crate::Model::new(doc);
+    if let Some(e) = model.statuses().into_iter().find_map(|s| s.error) {
+        return Err(format!("forming tool {path} doesn't build: {e}"));
+    }
     let state = model.state();
     let body = state
         .body
@@ -320,6 +334,12 @@ pub(crate) fn form_tool(
         None => vec![info.centroid],
     };
     let tool = library(&p.shape, t)?;
+    if let FormShape::File { path, .. } = &p.shape {
+        let path = std::path::PathBuf::from(path);
+        if let Some(hash) = crate::build::file_hash(&path) {
+            state.files.push((fid, path, hash));
+        }
+    }
     // The tool pushes the sheet away from the face, or toward it when flipped.
     let (normal, offset) = if p.flip {
         (-info.normal, -t)
@@ -372,7 +392,6 @@ pub(crate) fn gusset(
     };
     let record = record_for_face(prev, global)?;
     let rec = &prev.sheet_metal[record];
-    let t = rec.params.thickness;
     let b = record_body(prev, rec).unwrap();
     let body = prev.bodies[b].geometry.clone();
     let name = prev
@@ -410,9 +429,6 @@ pub(crate) fn gusset(
     let (u0, u1) = fr.u;
     let tangent = |u: f64| (fr.y * u.cos() - fr.x * u.sin()).normalize();
     let at = |u: f64| fr.point(u, v);
-    // Legs along the walls from the bend's ends, away from it.
-    let q0 = at(u0) - tangent(u0) * p.depth;
-    let q1 = at(u1) + tangent(u1) * p.depth;
     // The inside virtual sharp: where the two walls' inside lines meet.
     let half = (u1 - u0) / 2.0;
     let mid = (u0 + u1) / 2.0;
@@ -422,6 +438,42 @@ pub(crate) fn gusset(
     if half >= PI / 2.0 - 1e-9 {
         return Err("a gusset needs a bend of less than 180°".into());
     }
+    // Legs along the walls from the bend's ends, away from it.
+    let (w0, w1) = (-tangent(u0), tangent(u1));
+    let q0 = at(u0) + w0 * p.depth;
+    let q1 = match (p.depth2, p.angle) {
+        (Some(d2), _) => at(u1) + w1 * d2,
+        (None, Some(alpha)) => {
+            // From q0, back toward the sharp turned by `alpha`, to wall 1.
+            let toward = (sharp - q0).normalize();
+            let mut normal = w0.cross(w1).normalize_or_zero();
+            // Turn toward the second wall.
+            if normal.cross(toward).dot(w1) < 0.0 {
+                normal = -normal;
+            }
+            if normal == DVec3::ZERO || !(alpha > 1e-6 && alpha < PI - 2.0 * half - 1e-6) {
+                return Err("the gusset angle doesn't meet the other wall".into());
+            }
+            // Rodrigues' rotation of `toward` about `normal` by `alpha`.
+            let (sa, ca) = alpha.sin_cos();
+            let dir =
+                toward * ca + normal.cross(toward) * sa + normal * normal.dot(toward) * (1.0 - ca);
+            // Intersect q0 + s dir with the line at(u1) + k w1.
+            let (o, k) = (at(u1), w1);
+            let m = dir.cross(k);
+            let denom = m.length_squared();
+            if denom < 1e-12 {
+                return Err("the gusset angle runs parallel to the other wall".into());
+            }
+            let along = (o - q0).cross(k).dot(m) / denom;
+            let q = q0 + dir * along;
+            if (q - o).dot(k) <= 1e-6 {
+                return Err("the gusset angle meets the other wall inside the bend".into());
+            }
+            q
+        }
+        (None, None) => at(u1) + w1 * p.depth,
+    };
     let tri = [q0, sharp, q1].map(|q| plane.to_local(q));
     let face = region(
         plane,
@@ -432,11 +484,28 @@ pub(crate) fn gusset(
             })
             .collect(),
     )?;
-    let rib = face.prism(axis * p.width).map_err(geo)?.shape;
+    let mut rib = face.prism(axis * p.width).map_err(geo)?.shape;
+    if p.rounded_back {
+        // The two long edges of the back (q0 to q1), rounded nearly to a
+        // half round.
+        let back = (q1 - q0).normalize();
+        let edges: Vec<u32> = (0..rib.count(Kind::Edge))
+            .filter(|e| {
+                rib.edge_info(*e).is_ok_and(|i| {
+                    i.kind == of_geom::CurveKind::Line
+                        && (i.end - i.start).normalize().dot(back).abs() > 1.0 - 1e-9
+                })
+            })
+            .collect();
+        let radius = (p.width / 2.0) * 0.98;
+        rib = rib
+            .fillet(&edges, radius)
+            .map_err(|e| format!("can't round the gusset's back: {}", e.0))?
+            .shape;
+    }
     let added = rib.boolean(BoolOp::Cut, &body.shape).map_err(geo)?.shape;
     let fused = body.shape.boolean(BoolOp::Fuse, &rib).map_err(geo)?;
     let result = named(fid, &body.names, fused, "gusset");
-    let _ = t;
     state.bodies[b].geometry = result;
     state.sheet_metal[record].forms.push(FormRecord {
         feature: fid,
@@ -529,16 +598,57 @@ pub(crate) fn tab_and_slot(
     let st = thickness(prev, sb, slot_local)?;
     let height = p.height.unwrap_or(st);
     let e = (info.end - info.start).normalize();
-    let len = info.length;
+    // The span along the edge the tabs share.
+    let along = |r: &Option<Ref>, default: f64| -> RResult<f64> {
+        match r {
+            Some(r) => Ok((resolve(prev, r)?.point()? - info.start)
+                .dot(e)
+                .clamp(0.0, info.length)),
+            None => Ok(default),
+        }
+    };
+    // With one reference, run to the end of the edge farther from it.
+    let far = |s: f64| {
+        if s < info.length / 2.0 {
+            info.length
+        } else {
+            0.0
+        }
+    };
+    let (s0, s1) = match (&p.start, &p.end) {
+        (Some(_), None) => {
+            let s = along(&p.start, 0.0)?;
+            (s, far(s))
+        }
+        (None, Some(_)) => {
+            let s = along(&p.end, 0.0)?;
+            (far(s), s)
+        }
+        _ => (along(&p.start, 0.0)?, along(&p.end, info.length)?),
+    };
+    let (s0, s1) = (s0.min(s1), s0.max(s1));
+    let len = s1 - s0;
+    if len <= p.length {
+        return Err("the tabs don't fit between their start and end".into());
+    }
     let centers: Vec<f64> = match p.spacing {
         Some(s) if s > 0.0 => {
             let n = ((len - p.length) / s).floor() as i64 + 1;
             let first = (len - (n - 1) as f64 * s) / 2.0;
-            (0..n.max(1)).map(|i| first + i as f64 * s).collect()
+            (0..n.max(1)).map(|i| s0 + first + i as f64 * s).collect()
         }
         _ => (0..p.count)
-            .map(|i| len * (i as f64 + 0.5) / p.count as f64)
+            .map(|i| s0 + len * (i as f64 + 0.5) / p.count as f64)
             .collect(),
+    };
+    let (cl_len, cl_wid) = (
+        p.length_clearance.unwrap_or(p.clearance),
+        p.width_clearance.unwrap_or(p.clearance),
+    );
+    let reach = if p.through_all {
+        whole.shape.bbox().map_or(1e3, |b| b.diagonal() * 2.0)
+    } else {
+        st + 2e-3 + height
     };
     // Into the slot body, from the face the tab body rests on.
     let into = -sf.normal;
@@ -549,42 +659,29 @@ pub(crate) fn tab_and_slot(
     for c in centers {
         let a = c - p.length / 2.0;
         let b = c + p.length / 2.0;
-        if a < -1e-9 || b > len + 1e-9 {
+        if a < s0 - 1e-9 || b > s1 + 1e-9 {
             return Err("the tabs don't fit along the edge".into());
         }
-        // Tab: in the tab body's wall, from the slot face through it.
+        // Tab: in the tab body's wall, from the slot face through it; only
+        // its far end's corners are finished.
         let pts = [(a, 0.0), (b, 0.0), (b, height), (a, height)]
             .map(|(x, h)| tab_plane.to_local(on_face + e * x + into * h));
         let face = region(
             tab_plane,
-            (0..4)
-                .map(|i| GCurve::Line {
-                    a: pts[i],
-                    b: pts[(i + 1) % 4],
-                })
-                .collect(),
+            finished(&pts, &[false, false, true, true], p.corners)?,
         )?;
         tabs.push(face.prism(-side.normal * tt).map_err(geo)?.shape);
-        // Slot: the tab's footprint grown by the clearance, through the slot body.
-        let cl = p.clearance;
+        // Slot: the tab's footprint grown by the clearances, through the slot body.
         let slot_plane = Plane::new(on_face + sf.normal * 1e-3, e, sf.normal);
         let corner = |x: f64, w: f64| slot_plane.to_local(on_face + e * x - side.normal * w);
         let pts = [
-            corner(a - cl, -cl),
-            corner(b + cl, -cl),
-            corner(b + cl, tt + cl),
-            corner(a - cl, tt + cl),
+            corner(a - cl_len, -cl_wid),
+            corner(b + cl_len, -cl_wid),
+            corner(b + cl_len, tt + cl_wid),
+            corner(a - cl_len, tt + cl_wid),
         ];
-        let face = region(
-            slot_plane,
-            (0..4)
-                .map(|i| GCurve::Line {
-                    a: pts[i],
-                    b: pts[(i + 1) % 4],
-                })
-                .collect(),
-        )?;
-        slots.push(face.prism(into * (st + 2e-3 + height)).map_err(geo)?.shape);
+        let face = region(slot_plane, finished(&pts, &[true; 4], p.corners)?)?;
+        slots.push(face.prism(into * reach).map_err(geo)?.shape);
     }
     let mut tab_body = prev.bodies[tb].geometry.clone();
     for (k, tab) in tabs.iter().enumerate() {
@@ -599,4 +696,64 @@ pub(crate) fn tab_and_slot(
     state.bodies[tb].geometry = tab_body;
     state.bodies[sb].geometry = slot_body;
     state.aggregate_bodies()
+}
+
+/// A closed polygon's outline with the corners marked in `which` filleted or
+/// chamfered.
+fn finished(pts: &[DVec2], which: &[bool], corner: TabCorner) -> RResult<Vec<GCurve>> {
+    let n = pts.len();
+    // Arcs run counter-clockwise: walk the polygon that way.
+    let area: f64 = (0..n).map(|i| pts[i].perp_dot(pts[(i + 1) % n])).sum();
+    let (pts, which): (Vec<DVec2>, Vec<bool>) = if area < 0.0 {
+        (
+            pts.iter().rev().copied().collect(),
+            which.iter().rev().copied().collect(),
+        )
+    } else {
+        (pts.to_vec(), which.to_vec())
+    };
+    let size = match corner {
+        TabCorner::Sharp => 0.0,
+        TabCorner::Fillet { radius } => radius,
+        TabCorner::Chamfer { distance } => distance,
+    };
+    // Each corner's points where its two sides now end.
+    let mut ends: Vec<(DVec2, DVec2)> = Vec::with_capacity(n);
+    for i in 0..n {
+        let p = pts[i];
+        if !which[i] || size <= 0.0 {
+            ends.push((p, p));
+            continue;
+        }
+        let (prev, next) = (pts[(i + n - 1) % n], pts[(i + 1) % n]);
+        let shortest = (prev - p).length().min((next - p).length());
+        if size * 2.0 > shortest + 1e-9 {
+            return Err("the tab corner size is more than half a side".into());
+        }
+        ends.push((
+            p + (prev - p).normalize() * size,
+            p + (next - p).normalize() * size,
+        ));
+    }
+    let mut out = Vec::new();
+    for i in 0..n {
+        let (t_in, t_out) = ends[i];
+        if t_in != t_out {
+            match corner {
+                TabCorner::Fillet { .. } => {
+                    let p = pts[i];
+                    let center = t_in + t_out - p;
+                    out.push(GCurve::Arc {
+                        center,
+                        start: t_in,
+                        end: t_out,
+                    });
+                }
+                _ => out.push(GCurve::Line { a: t_in, b: t_out }),
+            }
+        }
+        let next = ends[(i + 1) % n].0;
+        out.push(GCurve::Line { a: t_out, b: next });
+    }
+    Ok(out)
 }

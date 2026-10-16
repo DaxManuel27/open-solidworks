@@ -1109,6 +1109,42 @@ pub struct TabAndSlot {
     #[serde(default = "clearance")]
     #[schemars(range(min = 0.0))]
     pub clearance: f64,
+    /// Extra slot length only, in place of `clearance`, mm.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(range(min = 0.0))]
+    pub length_clearance: Option<f64>,
+    /// Extra slot width only, in place of `clearance`, mm.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(range(min = 0.0))]
+    pub width_clearance: Option<f64>,
+    /// Points along the edge where the tabs start and end; the whole edge
+    /// otherwise. With only one, the tabs run to the edge's farther end.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start: Option<Ref>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end: Option<Ref>,
+    /// Corners of the tabs' ends and of the slots.
+    #[serde(default)]
+    pub corners: TabCorner,
+    /// Cut the slots through the whole slot body, not just its sheet.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub through_all: bool,
+}
+
+/// How tab and slot corners are finished.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum TabCorner {
+    #[default]
+    Sharp,
+    Fillet {
+        #[schemars(extend("exclusiveMinimum" = 0))]
+        radius: f64,
+    },
+    Chamfer {
+        #[schemars(extend("exclusiveMinimum" = 0))]
+        distance: f64,
+    },
 }
 
 fn two() -> u32 {
@@ -1131,6 +1167,17 @@ pub struct SheetMetalGusset {
     /// Leg along each side from the inside of the bend, mm.
     #[schemars(extend("exclusiveMinimum" = 0))]
     pub depth: f64,
+    /// Leg along the second wall, mm; `depth` on both when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(extend("exclusiveMinimum" = 0))]
+    pub depth2: Option<f64>,
+    /// Instead of `depth2`: the rib's back leaves the first wall at this
+    /// angle, radians.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub angle: Option<f64>,
+    /// Round the rib's back across its width instead of leaving it flat.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub rounded_back: bool,
     /// Width of the rib across the bend, mm.
     #[schemars(extend("exclusiveMinimum" = 0))]
     pub width: f64,
@@ -1168,8 +1215,13 @@ pub enum FormShape {
         width: f64,
         height: f64,
     },
-    /// A part file whose Forming Tool feature defines the tool.
-    File { path: String },
+    /// A part file whose Forming Tool feature defines the tool, in one of its
+    /// configurations (its active one when omitted).
+    File {
+        path: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        configuration: Option<u32>,
+    },
 }
 
 /// What makes a part a forming tool: the face that rests on the sheet, faces

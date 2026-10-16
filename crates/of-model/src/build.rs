@@ -68,6 +68,18 @@ pub struct State {
     /// A sheet metal body flattened by Unfold, waiting for its Fold.
     pub(crate) unfolded: Option<crate::ops::sheet::Unfolded>,
     pub(crate) tool_order: Vec<FeatureId>,
+    /// Files features read (forming tools), with their content hash when
+    /// built, so edits to them can rebuild the features.
+    pub files: Vec<(FeatureId, std::path::PathBuf, u64)>,
+}
+
+/// A content hash for change detection.
+pub(crate) fn file_hash(path: &std::path::Path) -> Option<u64> {
+    use std::hash::{Hash, Hasher};
+    let bytes = std::fs::read(path).ok()?;
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    bytes.hash(&mut h);
+    Some(h.finish())
 }
 
 /// How a feature's rebuild went.
@@ -214,6 +226,29 @@ impl Model {
     pub fn rebuild_all(&mut self) {
         self.invalidate_from(0);
         self.rebuild();
+    }
+
+    /// Rebuild from the first feature whose files (forming tools) changed on
+    /// disk since it was built. Returns whether any had.
+    pub fn refresh_files(&mut self) -> bool {
+        // Only features already built can be stale.
+        let Some(built) = self.states.last() else {
+            return false;
+        };
+        let changed = built
+            .files
+            .iter()
+            .filter(|(_, path, hash)| file_hash(path) != Some(*hash))
+            .filter_map(|(id, _, _)| self.doc.index_of(*id))
+            .min();
+        match changed {
+            Some(i) => {
+                self.invalidate_from(i);
+                self.rebuild();
+                true
+            }
+            None => false,
+        }
     }
 
     /// The model at the rollback bar (or the end).

@@ -270,4 +270,47 @@ mod tests {
         assert!((v - 3.75).abs() < 1e-9, "{v}");
         assert!(bend_table_allowance(p, 45f64.to_radians(), 1.0, 1.0).is_err());
     }
+
+    #[test]
+    fn user_gauge_tables_and_radius_interpolation() {
+        let dir = std::env::temp_dir().join(format!("of-gauge-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let gauges = dir.join("gauges.csv");
+        std::fs::write(
+            &gauges,
+            "gauge,thickness,radii,k_factor\n10,3.0,3;4.5,0.41\n12,2.5,2.5,0.42\n",
+        )
+        .unwrap();
+        let params = SheetMetalParams {
+            gauge: Some(crate::sheet_metal::GaugeChoice {
+                table: gauges.to_string_lossy().into_owned(),
+                gauge: "10".into(),
+                radius: Some(4.5),
+            }),
+            ..Default::default()
+        };
+        let p = resolve(&params).unwrap();
+        assert_eq!((p.thickness, p.radius), (3.0, 4.5));
+        assert_eq!(p.allowance, Allowance::KFactor { k: 0.41 });
+        let mut bad = params.clone();
+        bad.gauge.as_mut().unwrap().radius = Some(9.0);
+        assert!(resolve(&bad).unwrap_err().contains("does not allow radius"));
+
+        // Radius between 1 and 3 at one thickness and angle.
+        let table = dir.join("bends.csv");
+        std::fs::write(
+            &table,
+            "thickness,radius,angle,allowance\n1,1,90,2\n1,3,90,5\n",
+        )
+        .unwrap();
+        let t = table.to_str().unwrap();
+        let v = bend_table_allowance(t, 90f64.to_radians(), 2.0, 1.0).unwrap();
+        assert!((v - 3.5).abs() < 1e-9, "{v}");
+        // A deduction table gives the allowance from the virtual sharps.
+        let ded = dir.join("deduction.csv");
+        std::fs::write(&ded, "thickness,radius,angle,deduction\n1,1,90,1.5\n").unwrap();
+        let v = bend_table_allowance(ded.to_str().unwrap(), 90f64.to_radians(), 1.0, 1.0).unwrap();
+        assert!((v - (2.0 * 2.0 * 1.0 - 1.5)).abs() < 1e-9, "{v}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }

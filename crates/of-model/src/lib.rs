@@ -451,7 +451,10 @@ impl FeatureKind {
             }
             FeatureKind::BreakCorner(b) => refs.extend(&b.edges),
             FeatureKind::BendNotch(b) => refs.extend(&b.bends),
-            FeatureKind::TabAndSlot(t) => refs.extend([&t.edge, &t.face]),
+            FeatureKind::TabAndSlot(t) => {
+                refs.extend([&t.edge, &t.face]);
+                refs.extend(t.start.iter().chain(&t.end));
+            }
             FeatureKind::SheetMetalGusset(g) => refs.push(&g.bend),
             FeatureKind::FormTool(f) => {
                 refs.push(&f.face);

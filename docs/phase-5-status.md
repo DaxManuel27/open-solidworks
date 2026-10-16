@@ -24,4 +24,9 @@ Recorded behaviour, not open items:
   existing bend fuse with it.
 - Closed corner **open bend region** off and **narrow corner** are not offered: only the
   flange walls are closed.
+- Sheet metal gussets are solid wedges in the bend's inside (legs, angle, width, flat or
+  rounded back); **draft** and **inner/outer fillets** of a pressed gusset are not
+  offered.
+- Forming tools from part files rebuild when their file changes (checked on each core
+  snapshot by content hash); paths are as given, not relative to the part.
 - A part's flat pattern view takes its frame from its first flattened body.
