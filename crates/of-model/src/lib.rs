@@ -406,8 +406,12 @@ impl FeatureKind {
             FeatureKind::EdgeFlange(e) => {
                 refs.extend(&e.edges);
                 refs.extend(e.length.target());
+                refs.extend(e.angle_from.iter().map(|a| &a.face));
             }
-            FeatureKind::FlatPattern(f) => refs.extend(&f.fixed_face),
+            FeatureKind::FlatPattern(f) => {
+                refs.extend(&f.fixed_face);
+                refs.extend(&f.exclude);
+            }
             FeatureKind::Hem(h) => refs.extend(&h.edges),
             FeatureKind::MiterFlange(m) => {
                 out.push(m.sketch);

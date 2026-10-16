@@ -77,7 +77,7 @@ fn slot(plane: &Plane, a: DVec2, b: DVec2, w: f64, round: bool) -> RResult<Shape
 }
 
 /// The flat width (bend allowance) of a bend line.
-fn width(line: &BendLine, record: &SheetMetalBody) -> RResult<f64> {
+pub(super) fn width(line: &BendLine, record: &SheetMetalBody) -> RResult<f64> {
     let allowance = record
         .bends
         .iter()

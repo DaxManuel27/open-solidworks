@@ -101,5 +101,7 @@ pub fn flange(edges: Vec<Ref>, length: f64) -> EdgeFlange {
         end_offset: 0.0,
         position_offset: 0.0,
         bend: BendOverride::default(),
+        angle_from: None,
+        profiles: Vec::new(),
     }
 }

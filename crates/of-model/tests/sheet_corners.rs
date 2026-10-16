@@ -114,6 +114,7 @@ fn break_corners_formed_and_in_the_flat() {
     let id = m.doc.add(FeatureKind::FlatPattern(FlatPattern {
         fixed_face: None,
         break_corners: Some(CornerBreak::Chamfer { distance: 2.0 }),
+        ..Default::default()
     }));
     m.rebuild();
     ok(&m);

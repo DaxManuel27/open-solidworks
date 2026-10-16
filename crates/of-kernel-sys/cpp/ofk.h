@@ -182,7 +182,7 @@ std::unique_ptr<Shape> polyhedron(rust::Slice<const double> points,
                                   rust::Slice<const uint32_t> faces);
 std::unique_ptr<Shape> flatten(const Shape &s, rust::Slice<const uint32_t> faces,
                                rust::Slice<const double> maps, const Frame &frame,
-                               const Vec3 &thickness, rust::Vec<int64_t> &sources);
+                               const Vec3 &thickness, rust::Vec<int64_t> &sources, bool simplify);
 rust::Vec<uint32_t> seam_edges(const Shape &s, const Vec3 &view);
 
 } // namespace ofk

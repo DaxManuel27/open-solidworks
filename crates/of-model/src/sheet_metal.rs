@@ -301,6 +301,35 @@ pub struct EdgeFlange {
     pub position_offset: f64,
     #[serde(default)]
     pub bend: BendOverride,
+    /// Set the angle from a face instead: the flanges run parallel or square
+    /// to it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub angle_from: Option<AngleFrom>,
+    /// Outlines replacing the rectangular wall of some flanges.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub profiles: Vec<FlangeProfile>,
+}
+
+/// A face that sets an edge flange's angle.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct AngleFrom {
+    /// A planar face.
+    pub face: Ref,
+    /// Run parallel to the face; square to it otherwise.
+    #[serde(default)]
+    pub parallel: bool,
+}
+
+/// The wall outline of one flange of an edge flange, in the flange's plane:
+/// `u` runs along the edge from its start and `v` up the wall from the end of
+/// the bend, mm. The outline must rest on `v = 0`, which sets the bend's
+/// extent; its highest point sets the flange length.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct FlangeProfile {
+    /// Index into `edges`.
+    pub edge: usize,
+    #[schemars(length(min = 3))]
+    pub points: Vec<[f64; 2]>,
 }
 
 fn right_angle() -> f64 {
@@ -325,6 +354,24 @@ pub struct FlatPattern {
     /// Round or bevel the flat's outside corners.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub break_corners: Option<CornerBreak>,
+    /// Keep the bend regions as faces of their own, split from the walls
+    /// along their boundaries, instead of one merged face per side.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub split_bend_regions: bool,
+    /// Straighten curved edges in bend regions (cuts across bends).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub simplify_bends: bool,
+    /// Round the inside corners of the flat's outline (relief corners) by
+    /// half the thickness.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub corner_treatment: bool,
+    /// Faces whose regions are left out of the flat.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub exclude: Vec<Ref>,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 /// One bend of a sheet metal body, written by the feature that made it.

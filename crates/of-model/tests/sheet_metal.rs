@@ -85,6 +85,8 @@ fn edge_flange_on_a_tab() {
         end_offset: 0.0,
         position_offset: 0.0,
         bend: BendOverride::default(),
+        angle_from: None,
+        profiles: Vec::new(),
     }));
     m.rebuild();
     ok(&m);

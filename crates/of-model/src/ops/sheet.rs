@@ -25,8 +25,9 @@ use crate::build::{Body, State};
 use crate::naming::{Inputs, Naming};
 use crate::resolve::{Resolved, resolve};
 use crate::sheet_metal::{
-    BaseFlange, BendRecord, CrossBreak, CrossBreakRecord, EdgeFlange, FlangeLength, FlangePosition,
-    FlatPattern, LengthMeasure, ReliefKind, SheetMetalBody, SheetMetalParams, ThicknessSide,
+    AngleFrom, BaseFlange, BendRecord, CrossBreak, CrossBreakRecord, EdgeFlange, FlangeLength,
+    FlangePosition, FlatPattern, LengthMeasure, ReliefKind, SheetMetalBody, SheetMetalParams,
+    ThicknessSide,
 };
 use crate::{EndCondition, FeatureId, Ref};
 
@@ -812,19 +813,30 @@ pub(super) fn edge_flange(
     prev: &State,
     state: &mut State,
 ) -> RResult<()> {
-    let theta = p.angle;
-    if !(theta > 1e-6 && theta < PI - 1e-6) {
-        return Err("the flange angle must be between 0° and 180°; use a hem to fold back".into());
-    }
     let frames: Vec<FlangeFrame> = p
         .edges
         .iter()
         .map(|r| flange_frame(prev, r, p.reverse))
         .collect::<RResult<_>>()?;
+    for profile in &p.profiles {
+        if profile.edge >= frames.len() {
+            return Err(format!("flange profile {} names no edge", profile.edge));
+        }
+    }
     let mut cuts = Vec::new();
     let mut flanges = Vec::new();
     let mut new_bends = Vec::new();
     for (k, f) in frames.iter().enumerate() {
+        let theta = match &p.angle_from {
+            Some(a) => angle_from(prev, a, f)?,
+            None => p.angle,
+        };
+        if !(theta > 1e-6 && theta < PI - 1e-6) {
+            return Err(
+                "the flange angle must be between 0° and 180°; use a hem to fold back".into(),
+            );
+        }
+        let outline = p.profiles.iter().find(|q| q.edge == k);
         let params = &prev.sheet_metal[f.record].params;
         let t = f.thickness;
         let r = p.bend.radius.unwrap_or(params.radius);
@@ -852,8 +864,9 @@ pub(super) fn edge_flange(
         let radial = |rad: f64| center + DVec2::new(s, -c) * rad;
         let d = DVec2::new(c, s);
         let (b_in, b_out) = (radial(r), radial(r + t));
-        let straight = match &p.length {
-            FlangeLength::Blind { length } => {
+        let straight = match (&p.length, outline) {
+            (_, Some(o)) => o.points.iter().map(|q| q[1]).fold(f64::MIN, f64::max),
+            (FlangeLength::Blind { length }, None) => {
                 length
                     - match p.measure {
                         LengthMeasure::OuterVirtualSharp => (r + t) * half,
@@ -861,7 +874,10 @@ pub(super) fn edge_flange(
                         LengthMeasure::TangentToBend => 0.0,
                     }
             }
-            FlangeLength::UpToVertex { target } | FlangeLength::UpToEdgeAndMerge { target } => {
+            (
+                FlangeLength::UpToVertex { target } | FlangeLength::UpToEdgeAndMerge { target },
+                None,
+            ) => {
                 let q = match resolve(prev, target)? {
                     Resolved::Edge { info, .. } => info.mid,
                     other => other.point()?,
@@ -869,8 +885,11 @@ pub(super) fn edge_flange(
                 let (x, y, _) = f.local(q);
                 (DVec2::new(x, y) - b_in).dot(d)
             }
-            FlangeLength::UpToSurface { target }
-            | FlangeLength::OffsetFromSurface { target, .. } => {
+            (
+                FlangeLength::UpToSurface { target }
+                | FlangeLength::OffsetFromSurface { target, .. },
+                None,
+            ) => {
                 let plane = resolve(prev, target)?.plane()?;
                 let start = f.world(b_in.x, b_in.y, 0.0);
                 let dir = f.x * d.x + f.y * d.y;
@@ -888,7 +907,26 @@ pub(super) fn edge_flange(
         if straight <= 1e-6 {
             return Err("the flange is too short for its bend".into());
         }
-        let (z0, z1) = (p.start_offset, f.length - p.end_offset);
+        let (z0, z1) = match outline {
+            Some(o) => {
+                let base: Vec<f64> = o
+                    .points
+                    .iter()
+                    .filter(|q| q[1].abs() < 1e-9)
+                    .map(|q| q[0])
+                    .collect();
+                if base.len() < 2 {
+                    return Err("a flange profile must rest on the bend line (v = 0)".into());
+                }
+                let lo = base.iter().copied().fold(f64::MAX, f64::min);
+                let hi = base.iter().copied().fold(f64::MIN, f64::max);
+                if lo < -1e-9 || hi > f.length + 1e-9 {
+                    return Err("a flange profile reaches past its edge".into());
+                }
+                (lo.max(0.0), hi.min(f.length))
+            }
+            None => (p.start_offset, f.length - p.end_offset),
+        };
         if z1 - z0 <= 1e-6 {
             return Err("the offsets leave nothing of the flange".into());
         }
@@ -962,6 +1000,15 @@ pub(super) fn edge_flange(
         ));
         let prefix = format!("e{k}.");
         let tool = flange_prism(fid, &prefix, f, &profile, z0, z1)?;
+        let tool = match outline {
+            Some(o) => {
+                let (wall, below) = wall_outline(f, b_in, b_out, d, &o.points)?;
+                let upper = common_named(fid, tool.clone(), &wall)?;
+                let lower = common_named(fid, tool, &below)?;
+                fuse_named(fid, lower, upper)?
+            }
+            None => tool,
+        };
         let tool = corner_trims(fid, tool, k, &frames, p.gap)?;
         flanges.push(tool);
         cuts.extend(bend_cuts(fid, &prefix, f, x_end, z0, z1, relief)?);
@@ -978,6 +1025,74 @@ pub(super) fn edge_flange(
         ));
     }
     apply_flanges(fid, state, cuts, flanges, new_bends)
+}
+
+/// The bend angle that makes a flange from frame `f` run parallel or square
+/// to a planar face.
+fn angle_from(prev: &State, a: &AngleFrom, f: &FlangeFrame) -> RResult<f64> {
+    let plane = resolve(prev, &a.face)?.plane()?;
+    let n = plane.normal;
+    if n.dot(f.z).abs() > 1e-6 {
+        return Err("the angle face must be square to the flange's edge".into());
+    }
+    // The wall runs along (cos θ, sin θ) in the frame's x, y.
+    let (nx, ny) = (n.dot(f.x), n.dot(f.y));
+    let theta = if a.parallel {
+        // Square to the face normal.
+        (-nx).atan2(ny)
+    } else {
+        ny.atan2(nx)
+    };
+    // Either direction along the line is the same wall: take the one in (0, π).
+    let theta = theta.rem_euclid(PI);
+    if theta < 1e-6 {
+        return Err("the angle face lies in the sheet's plane: the flange would be flat".into());
+    }
+    Ok(theta)
+}
+
+/// What a flange profile keeps: its outline across the wall's thickness, and
+/// the half-space below the bend line (the bend and the sheet).
+fn wall_outline(
+    f: &FlangeFrame,
+    b_in: DVec2,
+    b_out: DVec2,
+    d: DVec2,
+    points: &[[f64; 2]],
+) -> RResult<(Shape, Shape)> {
+    let t = f.thickness;
+    let eps = 1e-3 * t.max(1.0);
+    let along = f.x * d.x + f.y * d.y;
+    let across = (f.x * (b_out - b_in).x + f.y * (b_out - b_in).y).normalize();
+    let base = f.world(b_in.x, b_in.y, 0.0) - across * eps;
+    let plane = Plane::new(base, f.z, along.cross(f.z));
+    let at = |u: f64, v: f64| plane.to_local(base + f.z * u + along * v);
+    let region = |pts: Vec<DVec2>| -> RResult<Shape> {
+        let outer = (0..pts.len())
+            .map(|i| GCurve::Line {
+                a: pts[i],
+                b: pts[(i + 1) % pts.len()],
+            })
+            .collect();
+        let face = Profile {
+            plane,
+            faces: vec![ProfileFace {
+                outer,
+                holes: Vec::new(),
+            }],
+        }
+        .to_shape()
+        .map_err(geo)?;
+        Ok(face.prism(across * (t + 2.0 * eps)).map_err(geo)?.shape)
+    };
+    let wall = region(points.iter().map(|q| at(q[0], q[1])).collect())?;
+    let line = Plane::new(f.world(b_in.x, b_in.y, 0.0), f.z, along);
+    let below = Shape::half_space(
+        &Shape::plane_face(&line).map_err(geo)?,
+        f.world(b_in.x, b_in.y, 0.0) - along,
+    )
+    .map_err(geo)?;
+    Ok((wall, below))
 }
 
 /// Cut away the material bends replace, add the flanges and record the bends.
@@ -1169,13 +1284,39 @@ pub(crate) fn flat_pattern(
                 .map(|l| l as u32),
             None => None,
         };
-        let flat = flatten(body, record, local)?;
+        let flat = unfold::flatten_with(body, record, local, p.simplify_bends)?;
         let mut geometry = Body {
             shape: flat.shape,
             names: flat.names,
         };
+        let t = record.params.thickness;
+        if !p.exclude.is_empty() {
+            geometry = exclude_faces(
+                fid,
+                prev,
+                body,
+                record,
+                local,
+                &geometry,
+                &flat.plane,
+                &p.exclude,
+            )?;
+        }
+        if p.corner_treatment {
+            let inside: Vec<u32> = corners::outline_corners(&geometry, t)?
+                .into_iter()
+                .filter(|(_, convex)| !*convex)
+                .map(|(e, _)| e)
+                .collect();
+            let edges = corners::fitting_corners(&geometry, t, &inside, t / 2.0)?;
+            geometry = corners::break_edges(
+                fid,
+                &geometry,
+                &edges,
+                crate::sheet_metal::CornerBreak::Fillet { radius: t / 2.0 },
+            )?;
+        }
         if let Some(corner) = p.break_corners {
-            let t = record.params.thickness;
             let outside: Vec<u32> = corners::outline_corners(&geometry, t)?
                 .into_iter()
                 .filter(|(_, convex)| *convex)
@@ -1185,6 +1326,9 @@ pub(crate) fn flat_pattern(
                 corners::fitting_corners(&geometry, t, &outside, corners::break_size(corner))?;
             geometry = corners::break_edges(fid, &geometry, &edges, corner)?;
         }
+        if p.split_bend_regions {
+            geometry = split_bend_regions(fid, &geometry, &flat.plane, &flat.bend_lines, record)?;
+        }
         state.bodies[b].geometry = geometry;
         state.sheet_metal[i].bend_lines = flat.bend_lines;
         state.sheet_metal[i].form_marks = flat.marks;
@@ -1192,6 +1336,197 @@ pub(crate) fn flat_pattern(
         state.sheet_metal[i].flat_plane = Some(flat.plane);
     }
     state.aggregate_bodies()
+}
+
+/// Cut the regions of `exclude` (faces of the formed `body`) out of `flat`.
+#[allow(clippy::too_many_arguments)]
+fn exclude_faces(
+    fid: FeatureId,
+    prev: &State,
+    body: &Body,
+    record: &SheetMetalBody,
+    fixed: Option<u32>,
+    flat: &Body,
+    plane: &Plane,
+    exclude: &[Ref],
+) -> RResult<Body> {
+    let t = record.params.thickness;
+    let laid = unfold::layout(body, record, fixed)?;
+    let whole = body_of(prev)?;
+    let local = body
+        .shape
+        .indices_in(&whole.shape, Kind::Face)
+        .map_err(geo)?;
+    let eps = 1e-3 * t.max(1.0);
+    let mut tools = Vec::new();
+    for r in exclude {
+        let (Kind::Face, g) = prev.index_of(r)? else {
+            return Err("select faces to leave out of the flat".into());
+        };
+        let Some(f) = local.iter().position(|x| *x == g) else {
+            continue;
+        };
+        // The face's boundary, sampled and mapped into the flat.
+        let mut pts: Vec<DVec2> = Vec::new();
+        let face = body.shape.sub_shape(Kind::Face, f as u32).map_err(geo)?;
+        for e in 0..face.count(Kind::Edge) {
+            for q in face.edge_samples(e, 0.01, 0.05).map_err(geo)? {
+                if let Some(p) = unfold::flat_point(body, &laid, t, q) {
+                    pts.push(plane.to_local(p));
+                }
+            }
+        }
+        let hull = convex_outline(pts);
+        if hull.len() < 3 {
+            return Err("an excluded face has no area in the flat".into());
+        }
+        let outer = (0..hull.len())
+            .map(|i| GCurve::Line {
+                a: hull[i],
+                b: hull[(i + 1) % hull.len()],
+            })
+            .collect();
+        let region = Profile {
+            plane: Plane::new(plane.origin + plane.normal * eps, plane.x_dir, plane.normal),
+            faces: vec![ProfileFace {
+                outer,
+                holes: Vec::new(),
+            }],
+        }
+        .to_shape()
+        .map_err(geo)?;
+        tools.push(
+            region
+                .prism(-plane.normal * (t + 2.0 * eps))
+                .map_err(geo)?
+                .shape,
+        );
+    }
+    if tools.is_empty() {
+        return Ok(flat.clone());
+    }
+    let tool = Shape::compound(&tools);
+    let r = flat.shape.boolean(BoolOp::Cut, &tool).map_err(geo)?;
+    Ok(Body {
+        names: Naming::from_history(
+            &r.shape,
+            &r.history,
+            Inputs {
+                named: [Some(&flat.names), None],
+            },
+            &mut |_| Some(format!("{fid}.excluded")),
+            &fid.to_string(),
+        ),
+        shape: r.shape,
+    })
+}
+
+/// The convex outline of points (excluded faces are walls: convex regions).
+fn convex_outline(mut pts: Vec<DVec2>) -> Vec<DVec2> {
+    pts.sort_by(|a, b| a.x.total_cmp(&b.x).then(a.y.total_cmp(&b.y)));
+    pts.dedup_by(|a, b| (*a - *b).length() < 1e-7);
+    if pts.len() < 3 {
+        return pts;
+    }
+    let mut hull: Vec<DVec2> = Vec::new();
+    for pass in 0..2 {
+        let start = hull.len();
+        let order: Vec<DVec2> = if pass == 0 {
+            pts.clone()
+        } else {
+            pts.iter().rev().copied().collect()
+        };
+        for p in order {
+            while hull.len() >= start + 2 {
+                let (a, b) = (hull[hull.len() - 2], hull[hull.len() - 1]);
+                if (b - a).perp_dot(p - a) > 1e-12 {
+                    break;
+                }
+                hull.pop();
+            }
+            hull.push(p);
+        }
+        hull.pop();
+    }
+    hull
+}
+
+/// Split the flat's front and back faces along the edges of every bend
+/// region (the solid stays one piece).
+fn split_bend_regions(
+    fid: FeatureId,
+    flat: &Body,
+    plane: &Plane,
+    lines: &[crate::sheet_metal::BendLine],
+    record: &SheetMetalBody,
+) -> RResult<Body> {
+    let t = record.params.thickness;
+    let eps = 1e-3 * t.max(1.0);
+    let mut body = flat.clone();
+    for l in lines {
+        let w = corners::width(l, record)?;
+        if w <= 1e-9 {
+            continue;
+        }
+        let (a, b) = (DVec3::from(l.a), DVec3::from(l.b));
+        let along = (b - a).normalize();
+        let across = plane.normal.cross(along);
+        for side in [-0.5, 0.5] {
+            for depth in [0.0, t] {
+                let level = Plane::new(
+                    plane.origin - plane.normal * depth,
+                    plane.x_dir,
+                    plane.normal,
+                );
+                let shift = across * (w * side) - plane.normal * depth;
+                let (p0, p1) = (a + shift - along * eps, b + shift + along * eps);
+                let wire = Shape::wire(
+                    &level,
+                    &[GCurve::Line {
+                        a: level.to_local(p0),
+                        b: level.to_local(p1),
+                    }],
+                )
+                .map_err(geo)?;
+                body = split_on_level(fid, body, &level, &wire)?;
+            }
+        }
+    }
+    Ok(body)
+}
+
+/// Split whichever face of `body` on `level` the wire crosses.
+fn split_on_level(fid: FeatureId, body: Body, level: &Plane, wire: &Shape) -> RResult<Body> {
+    let shape = &body.shape;
+    let before = shape.count(Kind::Face);
+    for f in 0..before {
+        let Ok(i) = shape.face_info(f) else { continue };
+        if i.kind != of_geom::SurfaceKind::Plane
+            || i.normal.cross(level.normal).length() > 1e-9
+            || (i.point - level.origin).dot(level.normal).abs() > 1e-6
+        {
+            continue;
+        }
+        let Ok(r) = shape.split_face(f, wire) else {
+            continue;
+        };
+        if r.shape.count(Kind::Face) <= before || !r.shape.is_valid() {
+            continue;
+        }
+        return Ok(Body {
+            names: Naming::from_history(
+                &r.shape,
+                &r.history,
+                Inputs {
+                    named: [Some(&body.names), None],
+                },
+                &mut |_| Some(format!("{fid}.bend_region")),
+                &fid.to_string(),
+            ),
+            shape: r.shape,
+        });
+    }
+    Ok(body)
 }
 
 /// Record a cross break on a flat face of a sheet metal body.

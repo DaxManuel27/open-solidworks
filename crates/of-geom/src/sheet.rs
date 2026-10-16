@@ -173,12 +173,14 @@ impl Shape {
 
     /// Map `faces` into `plane` by their (u, v) maps, join them into one
     /// region and extrude it by `thickness`. Returns the solid and, per face
-    /// of it, where it came from.
+    /// of it, where it came from. With `simplify`, curved edges mapped from
+    /// curved (bend) faces become straight lines.
     pub fn flatten(
         &self,
         faces: &[(u32, UvMap)],
         plane: &Plane,
         thickness: DVec3,
+        simplify: bool,
     ) -> Result<(Shape, Vec<FlatSource>)> {
         let indices: Vec<u32> = faces.iter().map(|f| f.0).collect();
         let maps: Vec<f64> = faces.iter().flat_map(|f| f.1.0).collect();
@@ -190,6 +192,7 @@ impl Shape {
             &plane.to_ffi(),
             &v3(thickness),
             &mut sources,
+            simplify,
         )?;
         let sources = sources
             .into_iter()

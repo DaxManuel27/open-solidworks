@@ -175,7 +175,7 @@ pub(crate) fn unformed(body: &Body, record: &SheetMetalBody) -> RResult<Body> {
 
 /// Where a 3D point on the sheet lands in the flat: through the flat face on
 /// the fixed side nearest to it.
-fn flat_point(body: &Body, layout: &Layout, t: f64, p: DVec3) -> Option<DVec3> {
+pub(crate) fn flat_point(body: &Body, layout: &Layout, t: f64, p: DVec3) -> Option<DVec3> {
     let mut best: Option<(f64, DVec3)> = None;
     for (f, map) in &layout.faces {
         let fr = body.shape.face_frame(*f).ok()?;
@@ -201,6 +201,16 @@ fn flat_point(body: &Body, layout: &Layout, t: f64, p: DVec3) -> Option<DVec3> {
 }
 
 pub(crate) fn flatten(body: &Body, record: &SheetMetalBody, fixed: Option<u32>) -> RResult<Flat> {
+    flatten_with(body, record, fixed, false)
+}
+
+/// [`flatten`], straightening curved edges in bend regions when `simplify`.
+pub(crate) fn flatten_with(
+    body: &Body,
+    record: &SheetMetalBody,
+    fixed: Option<u32>,
+    simplify: bool,
+) -> RResult<Flat> {
     let fixed_name = fixed.and_then(|f| body.names.face_name(f).map(str::to_string));
     let restored;
     let (body, fixed) = if record.forms.is_empty() {
@@ -240,7 +250,7 @@ pub(crate) fn flatten(body: &Body, record: &SheetMetalBody, fixed: Option<u32>) 
     let t = record.params.thickness;
     let edge_faces = shape.edge_faces();
     let (solid, sources) = shape
-        .flatten(&faces, &flat, -flat.normal * t)
+        .flatten(&faces, &flat, -flat.normal * t, simplify)
         .map_err(|e| format!("can't flatten: {}", e.0))?;
     let fixed_name = body.names.face_name(fixed).unwrap_or("flat").to_string();
     let names: Vec<Vec<String>> = sources

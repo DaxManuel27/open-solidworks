@@ -65,6 +65,8 @@ fn tray() -> Model {
         end_offset: 0.0,
         position_offset: 0.0,
         bend: BendOverride::default(),
+        angle_from: None,
+        profiles: Vec::new(),
     }));
     m.rebuild();
     for s in m.statuses() {

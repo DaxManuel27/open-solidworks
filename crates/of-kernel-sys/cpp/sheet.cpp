@@ -147,7 +147,8 @@ FaceFrame face_frame(const Shape &s, uint32_t index) {
 
 std::unique_ptr<Shape> flatten(const Shape &s, rust::Slice<const uint32_t> faces,
                                rust::Slice<const double> maps, const Frame &frame,
-                               const Vec3 &thickness, rust::Vec<int64_t> &sources) {
+                               const Vec3 &thickness, rust::Vec<int64_t> &sources,
+                               bool simplify) {
   if (maps.size() != faces.size() * 6) throw std::invalid_argument("one map per face");
   TopTools_IndexedMapOfShape edges;
   TopExp::MapShapes(s.shape, TopAbs_EDGE, edges);
@@ -162,6 +163,8 @@ std::unique_ptr<Shape> flatten(const Shape &s, rust::Slice<const uint32_t> faces
     TopoDS_Face face = oriented_face(s.shape, faces[i]);
     Affine m{maps[6 * i], maps[6 * i + 1], maps[6 * i + 2],
              maps[6 * i + 3], maps[6 * i + 4], maps[6 * i + 5]};
+    // Simplified bends: curved edges of bend faces become straight.
+    const bool straighten = simplify && BRepAdaptor_Surface(face).GetType() != GeomAbs_Plane;
     TopoDS_Wire outer = BRepTools::OuterWire(face);
     TopoDS_Wire outer_new;
     std::vector<TopoDS_Wire> inner;
@@ -176,6 +179,15 @@ std::unique_ptr<Shape> flatten(const Shape &s, rust::Slice<const uint32_t> faces
         if (pc.IsNull()) throw std::runtime_error("a face edge has no parameter curve");
         double nf, nl;
         Handle(Geom2d_Curve) c = mapped(pc, f, l, m, nf, nl);
+        if (straighten && !c->IsKind(STANDARD_TYPE(Geom2d_Line)) &&
+            !c->IsKind(STANDARD_TYPE(Geom2d_Circle))) {
+          gp_Pnt2d a = c->Value(nf), b = c->Value(nl);
+          if (a.Distance(b) > 1e-9) {
+            c = new Geom2d_Line(a, gp_Dir2d(gp_Vec2d(a, b)));
+            nf = 0;
+            nl = a.Distance(b);
+          }
+        }
         BRepBuilderAPI_MakeEdge me(c, plane, nf, nl);
         if (!me.IsDone()) throw std::runtime_error("could not map an edge into the flat");
         TopoDS_Edge ne = me.Edge();

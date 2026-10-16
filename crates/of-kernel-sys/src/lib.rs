@@ -478,6 +478,7 @@ pub mod ffi {
             frame: &Frame,
             thickness: &Vec3,
             sources: &mut Vec<i64>,
+            simplify: bool,
         ) -> Result<UniquePtr<Shape>>;
 
         fn write_step(s: &Shape, path: &str) -> Result<()>;
