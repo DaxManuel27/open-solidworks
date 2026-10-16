@@ -3665,14 +3665,41 @@ export interface ToolArgs {
     /** Omitted saves to the path the part was opened from. */
     path?: string | null
   }
-  /** Export a configuration (default: active) to STEP, IGES or STL, chosen by extension. Fails while active features have errors. Hidden bodies are included. An open drawing exports every sheet to .pdf or .dxf. */
+  /** Export a configuration (default: active) to STEP, IGES or STL, chosen by extension. Fails while active features have errors. Hidden bodies are included. A part exported to .dxf writes its sheet metal flat patterns at true size (layers CUT, BEND_UP, BEND_DOWN, FORM, BEND_NOTES). An open drawing exports every sheet to .pdf or .dxf. */
   export: {
-    /** `.step`, `.stp`, `.iges`, `.igs` or `.stl`; the extension picks the format. */
+    /**
+     * `.step`, `.stp`, `.iges`, `.igs` or `.stl`; the extension picks the
+     * format. `.dxf` writes the flat patterns of the part's sheet metal bodies.
+     */
     path: string
+    /** Flat pattern DXF: write bend notes (`UP 90° R1`) beside the bend lines. */
+    bend_notes?: boolean
+    /**
+     * Flat pattern DXF: the sheet metal bodies to write (IDs from part_info
+     * `bodies`); omitted writes every sheet metal body.
+     */
+    bodies?: string[] | null
     /** Configuration ID; omitted exports the active configuration. */
     configuration?: number | null
     /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
     detail?: 'summary' | 'full'
+    /** Flat pattern DXF version. */
+    dxf_version?: DxfVersion | null
+    /**
+     * Flat pattern DXF: one file per body (`name-Body 1.dxf`, ...) instead of
+     * all side by side in one.
+     */
+    per_body?: boolean
+  }
+  /** Sheet metal bodies: parameters, bends (radians, mm) and cut list properties (flat bounding box, cutting lengths, cut-outs, bend count, gauge). With outline, each flat pattern's loops, bend lines and form marks in flat mm. */
+  sheet_metal_info: {
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+    /**
+     * Include each flat pattern's outline, bend lines and form marks in
+     * flat millimetres.
+     */
+    outline?: boolean
   }
   /** Set part custom properties used by BOMs and drawing title blocks ($PRP:"PartNo"); values may link to {mass}, {material}, {volume} or {param:KEY}. Null removes one. */
   set_part_properties: {
@@ -4207,6 +4234,7 @@ export const TOOL_METHODS = {
   open_part: 'doc.open',
   save_part: 'doc.save',
   export: 'export',
+  sheet_metal_info: 'doc.sheet_metal',
   set_part_properties: 'doc.properties.set',
   set_dimension_display: 'doc.dimension_display.set',
   import: 'import',
@@ -4285,6 +4313,7 @@ export const TOOL_EXAMPLES: { [K in ToolName]: ToolArgs[K][] } = {
   open_part: [{"path":"part.ofp"}],
   save_part: [{"path":"part.ofp"}],
   export: [{"path":"part.step"}, {"configuration":2,"path":"part.stl"}],
+  sheet_metal_info: [{}, {"outline":true}],
   set_part_properties: [{"properties":{"PartNo":{"value":"BRK-1"},"Weight":{"value":"{mass}"}}}],
   set_dimension_display: [{"key":"f2.end1.depth","show":false}, {"key":"f2.end1.depth","name":"THICKNESS"}],
   import: [{"path":"part.step"}],

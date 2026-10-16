@@ -108,7 +108,8 @@ pub struct SavePath {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct Export {
-    /// `.step`, `.stp`, `.iges`, `.igs` or `.stl`; the extension picks the format.
+    /// `.step`, `.stp`, `.iges`, `.igs` or `.stl`; the extension picks the
+    /// format. `.dxf` writes the flat patterns of the part's sheet metal bodies.
     pub path: PathBuf,
     /// Configuration ID; omitted exports the active configuration.
     #[schemars(range(min = 1))]
@@ -116,6 +117,32 @@ pub struct Export {
     #[serde(default)]
     #[schemars(skip)]
     pub format: Option<of_io::ExportFormat>,
+    /// Flat pattern DXF: the sheet metal bodies to write (IDs from part_info
+    /// `bodies`); omitted writes every sheet metal body.
+    #[serde(default)]
+    pub bodies: Option<Vec<BodyId>>,
+    /// Flat pattern DXF: one file per body (`name-Body 1.dxf`, ...) instead of
+    /// all side by side in one.
+    #[serde(default)]
+    pub per_body: bool,
+    /// Flat pattern DXF: write bend notes (`UP 90° R1`) beside the bend lines.
+    #[serde(default = "yes")]
+    pub bend_notes: bool,
+    /// Flat pattern DXF version.
+    #[serde(default)]
+    pub dxf_version: Option<of_drawing::dxf::DxfVersion>,
+}
+
+fn yes() -> bool {
+    true
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct SheetMetalInfo {
+    /// Include each flat pattern's outline, bend lines and form marks in
+    /// flat millimetres.
+    #[serde(default)]
+    pub outline: bool,
 }
 
 #[derive(Deserialize, JsonSchema)]

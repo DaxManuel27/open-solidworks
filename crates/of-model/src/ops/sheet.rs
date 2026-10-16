@@ -210,6 +210,7 @@ fn closed_base(
         forms: Vec::new(),
         welds: Vec::new(),
         form_marks: Vec::new(),
+        flat_plane: None,
     });
     Ok(())
 }
@@ -626,6 +627,7 @@ fn open_base(
         forms: Vec::new(),
         welds: Vec::new(),
         form_marks: Vec::new(),
+        flat_plane: None,
     });
     Ok(())
 }
@@ -1136,7 +1138,7 @@ pub(super) fn bend_cuts(
 
 /// Flatten every sheet metal body.
 pub(crate) fn flat_pattern(
-    _fid: FeatureId,
+    fid: FeatureId,
     p: &FlatPattern,
     prev: &State,
     state: &mut State,
@@ -1181,11 +1183,13 @@ pub(crate) fn flat_pattern(
                 .collect();
             let edges =
                 corners::fitting_corners(&geometry, t, &outside, corners::break_size(corner))?;
-            geometry = corners::break_edges(_fid, &geometry, &edges, corner)?;
+            geometry = corners::break_edges(fid, &geometry, &edges, corner)?;
         }
         state.bodies[b].geometry = geometry;
         state.sheet_metal[i].bend_lines = flat.bend_lines;
         state.sheet_metal[i].form_marks = flat.marks;
+        state.sheet_metal[i].flat_plane = Some(flat.plane);
+        state.sheet_metal[i].flat_plane = Some(flat.plane);
     }
     state.aggregate_bodies()
 }

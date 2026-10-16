@@ -254,6 +254,7 @@ pub(in crate::ops) fn lofted_bend(
         forms: Vec::new(),
         welds: Vec::new(),
         form_marks: Vec::new(),
+        flat_plane: None,
     });
     Ok(())
 }

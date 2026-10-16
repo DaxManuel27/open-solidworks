@@ -360,7 +360,8 @@ run `cargo run -p openforge -- generate` instead. -->
 | `new_part` | `doc.new` | file/session (not in drafts) | `detail?` |
 | `open_part` | `doc.open` | file/session (not in drafts) | `path`, `detail?` |
 | `save_part` | `doc.save` | file/session (not in drafts) | `detail?`, `path?` |
-| `export` | `export` | file/session (not in drafts) | `path`, `configuration?`, `detail?` |
+| `export` | `export` | file/session (not in drafts) | `path`, `bend_notes?`, `bodies?`, `configuration?`, `detail?`, `dxf_version?`, `per_body?` |
+| `sheet_metal_info` | `doc.sheet_metal` | read | `detail?`, `outline?` |
 | `set_part_properties` | `doc.properties.set` | edit (draft) | `properties`, `additionalProperties?`, `detail?` |
 | `set_dimension_display` | `doc.dimension_display.set` | edit (draft) | `key`, `detail?`, `name?`, `show?` |
 | `import` | `import` | file/session (not in drafts) | `path`, `detail?` |

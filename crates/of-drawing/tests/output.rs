@@ -6,6 +6,9 @@ use of_drawing::graphics::{Graphics, HAlign, LineStyle, Owner, Pen, Prim, layers
 use of_drawing::standard::Standard;
 use of_drawing::{dxf, pdf, text};
 
+mod common;
+use common::{entities, get, num, pairs};
+
 fn sample() -> Graphics {
     let mut g = Graphics::new(420.0, 297.0);
     let owner = Owner::Format;
@@ -164,39 +167,6 @@ fn dxf_round_trips_entities_layers_and_line_types() {
         heights.iter().any(|h| (h - 3.5).abs() < 1e-6),
         "{heights:?}"
     );
-}
-
-/// Group-code pairs of a DXF file.
-fn pairs(text: &str) -> Vec<(i32, String)> {
-    let lines: Vec<&str> = text.lines().collect();
-    lines
-        .chunks(2)
-        .filter(|c| c.len() == 2)
-        .map(|c| (c[0].trim().parse().unwrap(), c[1].to_string()))
-        .collect()
-}
-
-/// Entities of one kind: their pairs up to the next entity.
-fn entities<'a>(p: &'a [(i32, String)], kind: &str) -> Vec<&'a [(i32, String)]> {
-    let mut out = Vec::new();
-    for (i, (c, v)) in p.iter().enumerate() {
-        if *c == 0 && v == kind {
-            let end = p[i + 1..]
-                .iter()
-                .position(|(c, _)| *c == 0)
-                .map_or(p.len(), |k| i + 1 + k);
-            out.push(&p[i + 1..end]);
-        }
-    }
-    out
-}
-
-fn get(e: &[(i32, String)], code: i32) -> Option<&str> {
-    e.iter().find(|(c, _)| *c == code).map(|(_, v)| v.as_str())
-}
-
-fn num(e: &[(i32, String)], code: i32) -> f64 {
-    get(e, code).unwrap().parse().unwrap()
 }
 
 #[test]

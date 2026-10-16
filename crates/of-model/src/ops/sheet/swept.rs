@@ -129,6 +129,7 @@ pub(in crate::ops) fn swept_flange(
                 forms: Vec::new(),
                 welds: Vec::new(),
                 form_marks: Vec::new(),
+                flat_plane: None,
             });
         }
     }

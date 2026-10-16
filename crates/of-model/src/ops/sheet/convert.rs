@@ -424,6 +424,7 @@ fn finish(
         forms: Vec::new(),
         welds: Vec::new(),
         form_marks: Vec::new(),
+        flat_plane: None,
     });
     state.aggregate_bodies()
 }

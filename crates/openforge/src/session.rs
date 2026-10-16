@@ -1147,6 +1147,11 @@ impl Session {
                         .map_err(|e| RpcError::coded(ErrorCode::UnknownRef, e))?
                 ))
             }
+            "doc.sheet_metal" => {
+                let p: SheetMetalInfo = args(params)?;
+                self.model.rebuild();
+                Ok(crate::sheet::info(&self.model, p.outline))
+            }
             "mass_properties" => {
                 let state = self.model.state().clone();
                 Ok(json!(
@@ -1155,10 +1160,16 @@ impl Session {
             }
             "export" => {
                 let p: Export = args(params)?;
-                let format = p
-                    .format
-                    .or_else(|| of_io::ExportFormat::from_path(&p.path))
-                    .ok_or_else(|| RpcError::params("export as .step, .iges or .stl"))?;
+                let flat = p
+                    .path
+                    .extension()
+                    .is_some_and(|e| e.eq_ignore_ascii_case("dxf"));
+                let format = p.format.or_else(|| of_io::ExportFormat::from_path(&p.path));
+                if format.is_none() && !flat {
+                    return Err(RpcError::params(
+                        "export as .step, .iges or .stl, or a flat pattern as .dxf",
+                    ));
+                }
                 let export_model;
                 let model = if let Some(configuration) = p.configuration {
                     let mut doc = self.model.doc.clone();
@@ -1178,6 +1189,11 @@ impl Session {
                         "resolve feature errors before exporting this configuration",
                     ));
                 }
+                let Some(format) = format else {
+                    // A part's .dxf is its flat patterns.
+                    let files = crate::sheet::export_dxf(model, &p).map_err(fail)?;
+                    return Ok(json!({ "path": p.path, "files": files }));
+                };
                 let body = model
                     .state()
                     .body

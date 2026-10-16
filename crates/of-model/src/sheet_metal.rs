@@ -370,6 +370,10 @@ pub struct SheetMetalBody {
     /// Form marks, once the body is flattened.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub form_marks: Vec<FormMark>,
+    /// The flat's front plane while the Flat-Pattern feature has flattened
+    /// the body.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flat_plane: Option<of_geom::Plane>,
 }
 
 /// A form's place in a flat pattern.
@@ -477,6 +481,18 @@ pub fn flattened(state: &State, index: usize) -> Result<Flattened, String> {
         .ok_or("no such sheet metal body")?;
     let body = crate::ops::sheet::record_body(state, record)
         .ok_or("the sheet metal body no longer exists")?;
+    if let Some(plane) = record.flat_plane {
+        // Already flat: the body as it is, with what flattening recorded.
+        let geometry = &state.bodies[body].geometry;
+        return Ok(Flattened {
+            shape: geometry.shape.clone(),
+            names: geometry.names.clone(),
+            plane,
+            thickness: record.params.thickness,
+            bend_lines: record.bend_lines.clone(),
+            marks: record.form_marks.clone(),
+        });
+    }
     let flat = crate::ops::sheet::flatten(&state.bodies[body].geometry, record, None)?;
     Ok(Flattened {
         shape: flat.shape,

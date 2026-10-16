@@ -193,22 +193,40 @@ pub fn scene(doc: &Document, state: &State) -> Result<Value, String> {
     }))
 }
 
+/// A body's display name, or `Body N` by its position.
+pub fn body_name(doc: &Document, state: &State, index: usize) -> String {
+    doc.body_display
+        .get(&state.bodies[index].id)
+        .and_then(|d| d.name.clone())
+        .unwrap_or_else(|| format!("Body {}", index + 1))
+}
+
 fn body_views(doc: &Document, state: &State) -> Result<Vec<Value>, String> {
     let Some(whole) = &state.body else {
         return Ok(Vec::new());
     };
-    state.bodies.iter().enumerate().map(|(i, body)| {
-        let display = doc.body_display.get(&body.id);
-        let indices = |kind| body.geometry.shape.indices_in(&whole.shape, kind).map_err(|e| e.0);
-        Ok(json!({
-            "id": body.id,
-            "name": display.and_then(|d| d.name.as_deref()).map(str::to_owned).unwrap_or_else(|| format!("Body {}", i + 1)),
-            "hidden": display.is_some_and(|d| d.hidden),
-            "faces": indices(of_model::geom::Kind::Face)?,
-            "edges": indices(of_model::geom::Kind::Edge)?,
-            "vertices": indices(of_model::geom::Kind::Vertex)?,
-        }))
-    }).collect()
+    state
+        .bodies
+        .iter()
+        .enumerate()
+        .map(|(i, body)| {
+            let display = doc.body_display.get(&body.id);
+            let indices = |kind| {
+                body.geometry
+                    .shape
+                    .indices_in(&whole.shape, kind)
+                    .map_err(|e| e.0)
+            };
+            Ok(json!({
+                "id": body.id,
+                "name": body_name(doc, state, i),
+                "hidden": display.is_some_and(|d| d.hidden),
+                "faces": indices(of_model::geom::Kind::Face)?,
+                "edges": indices(of_model::geom::Kind::Edge)?,
+                "vertices": indices(of_model::geom::Kind::Vertex)?,
+            }))
+        })
+        .collect()
 }
 
 fn definition(d: Option<&Definition>) -> &'static str {

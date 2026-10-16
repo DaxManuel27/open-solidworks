@@ -161,3 +161,36 @@ pub fn texts(items: &[Item]) -> Vec<&str> {
         })
         .collect()
 }
+
+/// Group-code pairs of a DXF file.
+pub fn pairs(text: &str) -> Vec<(i32, String)> {
+    let lines: Vec<&str> = text.lines().collect();
+    lines
+        .chunks(2)
+        .filter(|c| c.len() == 2)
+        .map(|c| (c[0].trim().parse().unwrap(), c[1].to_string()))
+        .collect()
+}
+
+/// Entities of one kind: their pairs up to the next entity.
+pub fn entities<'a>(p: &'a [(i32, String)], kind: &str) -> Vec<&'a [(i32, String)]> {
+    let mut out = Vec::new();
+    for (i, (c, v)) in p.iter().enumerate() {
+        if *c == 0 && v == kind {
+            let end = p[i + 1..]
+                .iter()
+                .position(|(c, _)| *c == 0)
+                .map_or(p.len(), |k| i + 1 + k);
+            out.push(&p[i + 1..end]);
+        }
+    }
+    out
+}
+
+pub fn get(e: &[(i32, String)], code: i32) -> Option<&str> {
+    e.iter().find(|(c, _)| *c == code).map(|(_, v)| v.as_str())
+}
+
+pub fn num(e: &[(i32, String)], code: i32) -> f64 {
+    get(e, code).unwrap().parse().unwrap()
+}

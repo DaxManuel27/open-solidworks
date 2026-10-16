@@ -24,6 +24,7 @@ pub use curves::{
 pub mod equations;
 mod features;
 pub mod file;
+pub mod flat;
 pub mod materials;
 pub mod measure;
 pub mod naming;

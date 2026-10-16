@@ -11,6 +11,7 @@ pub mod dxf;
 mod dxf2018;
 pub mod file;
 pub mod fits;
+pub mod flat;
 pub mod formats;
 pub mod graphics;
 pub mod hatch;

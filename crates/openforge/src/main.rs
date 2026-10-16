@@ -6,6 +6,7 @@ mod bench;
 mod drawing;
 mod mcp;
 mod session;
+mod sheet;
 mod tools;
 mod views;
 
