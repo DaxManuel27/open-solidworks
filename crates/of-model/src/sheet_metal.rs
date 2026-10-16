@@ -442,6 +442,8 @@ pub struct CornerWeld {
     pub b: [f64; 3],
     pub size: f64,
     pub symbol: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fillet: Option<f64>,
 }
 
 impl PartialEq for FormRecord {
@@ -952,6 +954,10 @@ pub struct CornerRelief {
     /// lines.
     #[serde(default = "yes")]
     pub centered: bool,
+    /// Add a narrow slit from each corner outward, so the bends close up
+    /// without tearing.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub slit: bool,
 }
 
 /// Rounds or bevels corners of the sheet's outline.
@@ -1014,6 +1020,9 @@ pub struct ClosedCorner {
     #[serde(default = "one")]
     #[schemars(range(min = 0.0, max = 1.0))]
     pub overlap_ratio: f64,
+    /// Also close the corners of end faces coplanar with the selected ones.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub coplanar: bool,
 }
 
 /// A weld bead along a closed corner's seam (shown in views and weld tables).
@@ -1028,6 +1037,14 @@ pub struct WeldedCorner {
     /// Weld symbol text shown with the bead.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub symbol: Option<String>,
+    /// A point where the bead stops along the seam; the whole seam otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stop: Option<Ref>,
+    /// Fillet radius of the bead's outside, mm (shown with the bead; the
+    /// solid is not changed).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(extend("exclusiveMinimum" = 0))]
+    pub fillet: Option<f64>,
 }
 
 fn weld_size() -> f64 {

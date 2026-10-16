@@ -268,3 +268,33 @@ fn flat_pattern_corner_treatment_rounds_inside_corners() {
     let added = (1.0 - std::f64::consts::PI / 4.0) * t;
     close(volume(&treated) - volume(&plain), added, 1e-6);
 }
+
+#[test]
+fn hems_meeting_at_a_corner_are_mitered() {
+    let t = 1.0;
+    let m = plate(60.0, 40.0, t);
+    let top = edge_at(&m, DVec3::new(30.0, 40.0, t));
+    let side = edge_at(&m, DVec3::new(60.0, 20.0, t));
+    let hem = |edges: Vec<Ref>| {
+        FeatureKind::Hem(Hem {
+            edges,
+            kind: HemKind::Open { gap: 1.0 },
+            length: 8.0,
+            position: HemPosition::MaterialInside,
+            reverse: false,
+            gap: 0.3,
+            allowance: None,
+        })
+    };
+    let base = volume(&m);
+    let a = with(&m, hem(vec![top.clone()]));
+    let b = with(&m, hem(vec![side.clone()]));
+    let both = with(&m, hem(vec![top, side]));
+    ok(&both);
+    // Each hem loses a mitered corner where they meet.
+    let separate = (volume(&a) - base) + (volume(&b) - base);
+    assert!(volume(&both) - base < separate - 0.1);
+    let mut both = both;
+    flatten(&mut both);
+    ok(&both);
+}

@@ -68,6 +68,7 @@ fn corner_reliefs_of_every_kind_cut_and_flatten() {
                 kind,
                 ratio: 0.5,
                 centered: true,
+                slit: false,
             }),
         );
         assert!(volume(&m) < before, "{kind:?} cut nothing");
@@ -178,6 +179,7 @@ fn closed_corner_and_weld() {
                 kind,
                 gap: 0.2,
                 overlap_ratio: ratio,
+                coplanar: false,
             }),
         );
         // A full cover adds the corner column's material; a part cover's two
@@ -242,6 +244,8 @@ fn closed_corner_and_weld() {
                 edge: seam,
                 size: 1.0,
                 symbol: None,
+                stop: None,
+                fillet: None,
             }),
         );
         assert_eq!(m.state().sheet_metal[0].welds.len(), 1);
@@ -424,4 +428,84 @@ fn forming_tools_press_and_flatten_back() {
         assert_eq!(marks.len(), 2);
         assert_eq!(marks[0].punch_id.as_deref(), Some("P1"));
     }
+}
+
+#[test]
+fn welded_corner_stops_and_rounds_the_outside() {
+    let mut m = corner_tray();
+    let shape = &m.state().body.as_ref().unwrap().shape;
+    let f = (0..shape.count(Kind::Face))
+        .filter(|f| {
+            let i = shape.face_info(*f).unwrap();
+            i.kind == of_model::geom::SurfaceKind::Plane
+                && i.centroid.y > 37.0
+                && i.centroid.x > 55.0
+                && i.centroid.z > 2.0
+                && i.normal.x > 0.3
+        })
+        .max_by(|a, b| {
+            shape
+                .face_info(*a)
+                .unwrap()
+                .area
+                .total_cmp(&shape.face_info(*b).unwrap().area)
+        })
+        .unwrap();
+    let face = m.state().ref_for(Kind::Face, f).unwrap();
+    add(
+        &mut m,
+        FeatureKind::ClosedCorner(ClosedCorner {
+            faces: vec![face],
+            kind: ClosedCornerKind::Overlap,
+            gap: 0.2,
+            overlap_ratio: 1.0,
+            coplanar: true,
+        }),
+    );
+    let before = volume(&m);
+    // The seam: the inside vertical edge of the joint; stop halfway up.
+    let shape = &m.state().body.as_ref().unwrap().shape;
+    let vertical = |e: u32| {
+        let i = shape.edge_info(e).unwrap();
+        i.kind == of_model::geom::CurveKind::Line
+            && (i.end - i.start).normalize().z.abs() > 1.0 - 1e-9
+            && i.mid.z > 2.0
+    };
+    let seam = (0..shape.count(Kind::Edge))
+        .filter(|e| vertical(*e))
+        .min_by(|a, b| {
+            let d = |e: u32| {
+                let m = shape.edge_info(e).unwrap().mid;
+                (m.x - 59.0).hypot(m.y - 39.0)
+            };
+            d(*a).total_cmp(&d(*b))
+        })
+        .unwrap();
+    let info = shape.edge_info(seam).unwrap();
+    let seam = m.state().ref_for(Kind::Edge, seam).unwrap();
+    let stop_z = (info.start.z + info.end.z) / 2.0;
+    let point = m.doc.add(FeatureKind::Point(PointDef::Coordinates {
+        x: 59.0,
+        y: 39.0,
+        z: stop_z,
+    }));
+    let stop = Ref::Feature { id: point };
+    add(
+        &mut m,
+        FeatureKind::WeldedCorner(WeldedCorner {
+            edge: seam,
+            size: 1.0,
+            symbol: Some("FILLET 1".into()),
+            stop: Some(stop),
+            fillet: Some(0.5),
+        }),
+    );
+    let w = &m.state().sheet_metal[0].welds[0];
+    // The bead runs from the seam's start to the stop point's height.
+    assert!((w.b[2] - stop_z).abs() < 1e-6, "{w:?} vs {stop_z}");
+    assert_eq!(w.fillet, Some(0.5));
+    // The bead is cosmetic: the solid is unchanged.
+    close(volume(&m), before, 1e-9);
+    flatten(&mut m);
+    ok(&m);
 }

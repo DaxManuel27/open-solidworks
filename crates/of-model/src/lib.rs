@@ -445,7 +445,10 @@ impl FeatureKind {
             FeatureKind::NormalCut(n) => out.push(n.sketch),
             FeatureKind::CornerRelief(c) => refs.extend(&c.bends),
             FeatureKind::ClosedCorner(c) => refs.extend(&c.faces),
-            FeatureKind::WeldedCorner(w) => refs.push(&w.edge),
+            FeatureKind::WeldedCorner(w) => {
+                refs.push(&w.edge);
+                refs.extend(&w.stop);
+            }
             FeatureKind::BreakCorner(b) => refs.extend(&b.edges),
             FeatureKind::BendNotch(b) => refs.extend(&b.bends),
             FeatureKind::TabAndSlot(t) => refs.extend([&t.edge, &t.face]),

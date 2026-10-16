@@ -150,6 +150,156 @@ fn cut_in_flats(
     state.aggregate_bodies()
 }
 
+/// A relief outline in the flat's 2D coordinates.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum Relief2 {
+    Polygon(Vec<DVec2>),
+    Circle(DVec2, f64),
+    /// From, to, width, round ends.
+    Slot(DVec2, DVec2, f64, bool),
+}
+
+/// A bend line in the flat: its ends and the width of its bend region.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Line2 {
+    pub a: DVec2,
+    pub b: DVec2,
+    pub width: f64,
+}
+
+/// The reliefs for corners where bend lines meet: each corner is a cluster
+/// of two or more bend lines with an end near the same point.
+pub(crate) fn relief_outlines(
+    lines: &[Line2],
+    kind: CornerReliefKind,
+    ratio: f64,
+    centered: bool,
+    slit: bool,
+    t: f64,
+) -> Vec<Relief2> {
+    // Corner points of pairs of lines whose ends lie near their crossing.
+    let mut corners: Vec<(DVec2, Vec<usize>)> = Vec::new();
+    for i in 0..lines.len() {
+        for j in i + 1..lines.len() {
+            let (l1, l2) = (&lines[i], &lines[j]);
+            let (d1, d2) = ((l1.b - l1.a).normalize(), (l2.b - l2.a).normalize());
+            let cross = d1.perp_dot(d2);
+            if cross.abs() < 1e-6 {
+                continue;
+            }
+            let s = (l2.a - l1.a).perp_dot(d2) / cross;
+            let q = l1.a + d1 * s;
+            let reach = l1.width.max(l2.width) + 4.0 * t;
+            let near = |l: &Line2| (l.a - q).length().min((l.b - q).length()) <= reach;
+            if !near(l1) || !near(l2) {
+                continue;
+            }
+            // Join a corner already found nearby (a 3-bend corner).
+            match corners.iter_mut().find(|(c, _)| (*c - q).length() <= reach) {
+                Some((_, members)) => {
+                    for k in [i, j] {
+                        if !members.contains(&k) {
+                            members.push(k);
+                        }
+                    }
+                }
+                None => corners.push((q, vec![i, j])),
+            }
+        }
+    }
+    let o = ratio * t;
+    let mut out = Vec::new();
+    for (q, members) in corners {
+        // Each line runs from the corner into its bend.
+        let away = |l: &Line2| {
+            let d = (l.b - l.a).normalize();
+            if (l.a - q).length() < (l.b - q).length() {
+                d
+            } else {
+                -d
+            }
+        };
+        let dirs: Vec<DVec2> = members.iter().map(|k| away(&lines[*k])).collect();
+        let halves: Vec<f64> = members.iter().map(|k| lines[*k].width / 2.0 + o).collect();
+        let h = halves.iter().copied().fold(0.0, f64::max);
+        // Outward from the material, against the lines' mean direction.
+        let out_dir = -dirs.iter().copied().sum::<DVec2>().normalize_or_zero();
+        let center = if centered { q } else { q + out_dir * (h - o) };
+        let reach_out = h * 3.0 + t;
+        if members.len() >= 3 {
+            // Three or more bends: one relief covering every bend region.
+            let r = members
+                .iter()
+                .map(|k| lines[*k].width / 2.0)
+                .fold(0.0, f64::max)
+                * std::f64::consts::SQRT_2
+                + o;
+            out.push(match kind {
+                CornerReliefKind::Circular | CornerReliefKind::FullRound => {
+                    Relief2::Circle(center, r)
+                }
+                _ => {
+                    let u = dirs[0];
+                    let v = u.perp();
+                    Relief2::Polygon(vec![
+                        center + (u + v) * r,
+                        center + (-u + v) * r,
+                        center + (-u - v) * r,
+                        center + (u - v) * r,
+                    ])
+                }
+            });
+        } else {
+            let (u1, u2) = (dirs[0], dirs[1]);
+            let (h1, h2) = (halves[0], halves[1]);
+            let (w1, w2) = (lines[members[0]].width, lines[members[1]].width);
+            let (n1, n2) = (u1.perp(), u2.perp());
+            let corner = |s1: f64, s2: f64| {
+                // (x - c)·n1 = s1 h2 and (x - c)·n2 = s2 h1: across each strip.
+                let det = n1.perp_dot(n2);
+                let (r1, r2) = (s1 * h1, s2 * h2);
+                center + DVec2::new(r1 * n2.y - r2 * n1.y, r2 * n1.x - r1 * n2.x) / det
+            };
+            out.push(match kind {
+                CornerReliefKind::Rectangular => Relief2::Polygon(vec![
+                    corner(1.0, 1.0),
+                    corner(1.0, -1.0),
+                    corner(-1.0, -1.0),
+                    corner(-1.0, 1.0),
+                ]),
+                CornerReliefKind::Suitcase => {
+                    Relief2::Slot(center, center + out_dir * reach_out, 2.0 * h, false)
+                }
+                CornerReliefKind::Circular => Relief2::Circle(center, h),
+                CornerReliefKind::FullRound => {
+                    Relief2::Circle(center, (w1 / 2.0).hypot(w2 / 2.0) + o)
+                }
+                CornerReliefKind::Tear => Relief2::Slot(
+                    center - out_dir * h,
+                    center + out_dir * reach_out,
+                    (t / 10.0).max(0.02),
+                    false,
+                ),
+                CornerReliefKind::Obround | CornerReliefKind::ConstantWidth => Relief2::Slot(
+                    center,
+                    center + out_dir * reach_out,
+                    2.0 * h,
+                    kind == CornerReliefKind::Obround,
+                ),
+            });
+        }
+        if slit && out_dir != DVec2::ZERO {
+            out.push(Relief2::Slot(
+                q,
+                q + out_dir * (reach_out + h),
+                (t / 10.0).max(0.02),
+                false,
+            ));
+        }
+    }
+    out
+}
+
 pub(crate) fn corner_relief(
     fid: FeatureId,
     p: &CornerRelief,
@@ -159,95 +309,27 @@ pub(crate) fn corner_relief(
     let names = selected(prev, &p.bends)?;
     cut_in_flats(fid, prev, state, |record, flat| {
         let t = record.params.thickness;
-        let lines: Vec<&BendLine> = flat
+        let local = |p: [f64; 3]| flat.plane.to_local(DVec3::from(p));
+        let lines = flat
             .bend_lines
             .iter()
             .filter(|l| l.radius > 0.0 && wanted(l, record, &names))
-            .collect();
-        let local = |p: [f64; 3]| flat.plane.to_local(DVec3::from(p));
-        let mut out = Vec::new();
-        for (i, l1) in lines.iter().enumerate() {
-            for l2 in &lines[i + 1..] {
-                let (a1, b1, a2, b2) = (local(l1.a), local(l1.b), local(l2.a), local(l2.b));
-                let (d1, d2) = ((b1 - a1).normalize(), (b2 - a2).normalize());
-                let cross = d1.perp_dot(d2);
-                if cross.abs() < 1e-6 {
-                    continue;
-                }
-                let s = (a2 - a1).perp_dot(d2) / cross;
-                let q = a1 + d1 * s;
-                let (w1, w2) = (width(l1, record)?, width(l2, record)?);
-                let reach = w1.max(w2) + 4.0 * t;
-                let end_near = |a: DVec2, b: DVec2| (a - q).length().min((b - q).length());
-                if end_near(a1, b1) > reach || end_near(a2, b2) > reach {
-                    continue;
-                }
-                // Each line runs from the corner into its bend.
-                let away = |a: DVec2, b: DVec2, d: DVec2| {
-                    if (a - q).length() < (b - q).length() {
-                        d
-                    } else {
-                        -d
-                    }
-                };
-                let (u1, u2) = (away(a1, b1, d1), away(a2, b2, d2));
-                let o = p.ratio * t;
-                let (h1, h2) = (w1 / 2.0 + o, w2 / 2.0 + o);
-                // Outward from the material, along the bisector.
-                let out_dir = -(u1 + u2).normalize_or_zero();
-                let center = if p.centered {
-                    q
-                } else {
-                    q + out_dir * (h1.max(h2) - o)
-                };
-                let (n1, n2) = (DVec2::new(-u1.y, u1.x), DVec2::new(-u2.y, u2.x));
-                let corner = |s1: f64, s2: f64| {
-                    // (x - c)·n1 = s1 h2 and (x - c)·n2 = s2 h1: across each strip.
-                    let det = n1.perp_dot(n2);
-                    let (r1, r2) = (s1 * h1, s2 * h2);
-                    center + DVec2::new(r1 * n2.y - r2 * n1.y, r2 * n1.x - r1 * n2.x) / det
-                };
-                let reach_out = h1.max(h2) * 3.0 + t;
-                let shape = match p.kind {
-                    CornerReliefKind::Rectangular => polygon(
-                        &flat.plane,
-                        &[
-                            corner(1.0, 1.0),
-                            corner(1.0, -1.0),
-                            corner(-1.0, -1.0),
-                            corner(-1.0, 1.0),
-                        ],
-                    )?,
-                    CornerReliefKind::Suitcase => slot(
-                        &flat.plane,
-                        center,
-                        center + out_dir * reach_out,
-                        2.0 * h1.max(h2),
-                        false,
-                    )?,
-                    CornerReliefKind::Circular => circle(&flat.plane, center, h1.max(h2))?,
-                    CornerReliefKind::FullRound => {
-                        circle(&flat.plane, center, (w1 / 2.0).hypot(w2 / 2.0) + o)?
-                    }
-                    CornerReliefKind::Tear => slot(
-                        &flat.plane,
-                        center - out_dir * h1.max(h2),
-                        center + out_dir * reach_out,
-                        (t / 10.0).max(0.02),
-                        false,
-                    )?,
-                    CornerReliefKind::Obround | CornerReliefKind::ConstantWidth => slot(
-                        &flat.plane,
-                        center,
-                        center + out_dir * reach_out,
-                        2.0 * h1.max(h2),
-                        p.kind == CornerReliefKind::Obround,
-                    )?,
-                };
-                out.push(shape);
-            }
-        }
-        Ok(out)
+            .map(|l| {
+                Ok(Line2 {
+                    a: local(l.a),
+                    b: local(l.b),
+                    width: width(l, record)?,
+                })
+            })
+            .collect::<RResult<Vec<_>>>()?;
+        relief_outlines(&lines, p.kind, p.ratio, p.centered, p.slit, t)
+            .into_iter()
+            .map(|r| match r {
+                Relief2::Polygon(pts) => polygon(&flat.plane, &pts),
+                Relief2::Circle(c, r) => circle(&flat.plane, c, r),
+                Relief2::Slot(a, b, w, round) => slot(&flat.plane, a, b, w, round),
+            })
+            .collect()
     })
 }
 
@@ -484,10 +566,33 @@ pub(crate) fn closed_corner(
     prev: &State,
     state: &mut State,
 ) -> RResult<()> {
-    for (k, r) in p.faces.iter().enumerate() {
+    let mut targets: Vec<(u32, bool)> = Vec::new();
+    for r in &p.faces {
         let (Kind::Face, global) = prev.index_of(r)? else {
             return Err("select end faces of flanges".into());
         };
+        targets.push((global, true));
+    }
+    if p.coplanar {
+        let shape = &prev.body.as_ref().ok_or("there's no body")?.shape;
+        let picked: Vec<of_geom::FaceInfo> = targets
+            .iter()
+            .filter_map(|(f, _)| shape.face_info(*f).ok())
+            .collect();
+        for f in 0..shape.count(Kind::Face) {
+            let Ok(i) = shape.face_info(f) else { continue };
+            let coplanar = picked.iter().any(|q| {
+                q.kind == SurfaceKind::Plane
+                    && i.kind == SurfaceKind::Plane
+                    && i.normal.dot(q.normal) > 1.0 - 1e-9
+                    && (i.point - q.point).dot(q.normal).abs() < 1e-6
+            });
+            if coplanar && !targets.iter().any(|(g, _)| *g == f) {
+                targets.push((f, false));
+            }
+        }
+    }
+    for (k, (global, chosen)) in targets.into_iter().enumerate() {
         let record = record_for_face(prev, global)?;
         let b = record_body(state, &state.sheet_metal[record]).ok_or("the body is gone")?;
         let t = state.sheet_metal[record].params.thickness;
@@ -555,7 +660,12 @@ pub(crate) fn closed_corner(
                 .filter(|(u, _)| *u > beyond)
                 .min_by(|a, b| a.0.total_cmp(&b.0))
         };
-        let (xi, inside) = other(-1.0, u_lo + 1e-6).ok_or("no flange ahead of the end face")?;
+        let Some((xi, inside)) = other(-1.0, u_lo + 1e-6) else {
+            if chosen {
+                return Err("no flange ahead of the end face".into());
+            }
+            continue;
+        };
         let xo = other(1.0, xi + 1e-6).map_or(xi + t, |(u, _)| u);
         // v runs from the other flange toward this one; this flange spans vi..vo.
         let toward = (inside - info.centroid).dot(wall.normal);
@@ -637,14 +747,77 @@ pub(crate) fn welded_corner(
     let Resolved::Edge { index, info } = resolve(prev, &p.edge)? else {
         return Err("select an edge of the corner's seam".into());
     };
-    let faces = prev.body.as_ref().unwrap().shape.edge_faces()[index as usize].clone();
+    let whole = prev.body.as_ref().ok_or("there's no body")?;
+    let faces = whole.shape.edge_faces()[index as usize].clone();
     let record = record_for_face(prev, faces[0])?;
+    let (a, mut b) = (info.start, info.end);
+    if let Some(stop) = &p.stop {
+        let q = resolve(prev, stop)?.point()?;
+        let d = (b - a).normalize();
+        let s = (q - a).dot(d).clamp(0.0, (b - a).length());
+        if s < 1e-6 {
+            return Err("the stop point is at the start of the seam".into());
+        }
+        b = a + d * s;
+    }
     state.sheet_metal[record].welds.push(CornerWeld {
         feature: fid,
-        a: info.start.to_array(),
-        b: info.end.to_array(),
+        a: a.to_array(),
+        b: b.to_array(),
         size: p.size,
         symbol: p.symbol.clone(),
+        fillet: p.fillet,
     });
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn line(a: (f64, f64), b: (f64, f64)) -> Line2 {
+        Line2 {
+            a: DVec2::new(a.0, a.1),
+            b: DVec2::new(b.0, b.1),
+            width: 2.0,
+        }
+    }
+
+    #[test]
+    fn three_bends_meeting_get_one_relief() {
+        // Lines ending near the origin from three directions.
+        let lines = [
+            line((0.5, 0.0), (40.0, 0.0)),
+            line((0.0, 0.5), (0.0, 30.0)),
+            line((-0.4, -0.4), (-20.0, -20.0)),
+        ];
+        let out = relief_outlines(&lines, CornerReliefKind::Circular, 0.5, true, false, 1.0);
+        assert_eq!(out.len(), 1, "{out:?}");
+        let Relief2::Circle(c, r) = out[0] else {
+            panic!("{out:?}")
+        };
+        assert!(c.length() < 1.0);
+        // Covers every bend region's half width.
+        assert!(r >= 1.0 * std::f64::consts::SQRT_2);
+        // Two lines alone make a 2-bend relief, plus a slit when asked.
+        let out = relief_outlines(
+            &lines[..2],
+            CornerReliefKind::Rectangular,
+            0.5,
+            true,
+            true,
+            1.0,
+        );
+        assert_eq!(out.len(), 2);
+        assert!(matches!(out[0], Relief2::Polygon(_)));
+        assert!(matches!(out[1], Relief2::Slot(..)));
+        // Far-apart lines make no corner.
+        let apart = [
+            line((0.0, 0.0), (10.0, 0.0)),
+            line((50.0, 50.0), (50.0, 90.0)),
+        ];
+        assert!(
+            relief_outlines(&apart, CornerReliefKind::Circular, 0.5, true, false, 1.0).is_empty()
+        );
+    }
 }
