@@ -80,6 +80,15 @@ pub fn evaluate(doc: &Document, state: &State, value: &str) -> String {
     }
     let mass = crate::measure::mass_properties(doc, state).ok();
     let effective = crate::configurations::resolve(doc).ok();
+    // The first sheet metal body's cut list properties, flattened on first use.
+    let mut sheet: Option<Option<crate::flat::SheetProperties>> = None;
+    let mut sheet_prop = |f: &dyn Fn(&crate::flat::SheetProperties) -> String| {
+        sheet
+            .get_or_insert_with(|| crate::flat::sheet_properties(state, 0).ok().map(|p| p.1))
+            .as_ref()
+            .map(f)
+    };
+    let mm = |v: f64| format!("{}", (v * 1e3).round() / 1e3);
     let mut out = String::new();
     let mut rest = value;
     while let Some(start) = rest.find('{') {
@@ -101,6 +110,14 @@ pub fn evaluate(doc: &Document, state: &State, value: &str) -> String {
                     .unwrap_or_default(),
             ),
             "configuration" => Some(doc.configurations.active().name.clone()),
+            "flat_length" => sheet_prop(&|p| mm(p.flat_length)),
+            "flat_width" => sheet_prop(&|p| mm(p.flat_width)),
+            "thickness" => sheet_prop(&|p| mm(p.thickness)),
+            "bends" => sheet_prop(&|p| p.bends.to_string()),
+            "cutouts" => sheet_prop(&|p| p.cutouts.to_string()),
+            "outer_cut" => sheet_prop(&|p| mm(p.outer_cut)),
+            "inner_cut" => sheet_prop(&|p| mm(p.inner_cut)),
+            "gauge" => sheet_prop(&|p| p.gauge.clone().unwrap_or_default()),
             t if t.starts_with("param:") => {
                 let key = &t[6..];
                 effective.as_ref().and_then(|d| {

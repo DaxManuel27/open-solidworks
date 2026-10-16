@@ -173,7 +173,7 @@ pub const TOOLS: &[Tool] = &[
         "Sheet metal bodies: parameters, bends (radians, mm) and cut list properties (flat bounding box, cutting lengths, cut-outs, bend count, gauge). With outline, each flat pattern's loops, bend lines and form marks in flat mm.",
         [{}, {"outline": true}]),
     tool!("set_part_properties", "doc.properties.set", SetProperties, read_only: false, draft: true,
-        "Set part custom properties used by BOMs and drawing title blocks ($PRP:\"PartNo\"); values may link to {mass}, {material}, {volume} or {param:KEY}. Null removes one.",
+        "Set part custom properties used by BOMs and drawing title blocks ($PRP:\"PartNo\"); values may link to {mass}, {material}, {volume}, {param:KEY} or, for sheet metal, {flat_length}, {flat_width}, {thickness}, {bends}, {cutouts}, {outer_cut}, {inner_cut} and {gauge}. Null removes one.",
         [{"properties": {"PartNo": {"value": "BRK-1"}, "Weight": {"value": "{mass}"}}}]),
     tool!("set_dimension_display", "doc.dimension_display.set", DimensionDisplay, read_only: false, draft: true,
         "Choose whether a part dimension (parameter key from part_info) is imported into drawings by insert_model_items, and the name shown under it.",

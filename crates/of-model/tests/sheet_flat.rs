@@ -140,3 +140,22 @@ fn tray_flat_box_and_bend_directions() {
     close(p.flat_length, 60.0 - 2.0 + leg, 1e-3);
     close(p.flat_width, 40.0 - 2.0 + leg, 1e-3);
 }
+
+#[test]
+fn custom_properties_link_to_the_flat_size() {
+    let m = l_bracket(2.0, 2.0, 0.44);
+    let length = (30.0 - 4.0) + (50.0 - 4.0) + FRAC_PI_2 * (2.0 + 0.44 * 2.0);
+    let text = of_model::properties::evaluate(
+        &m.doc,
+        m.state(),
+        "BLANK {flat_length} x {flat_width} x {thickness}, {bends} bend",
+    );
+    let rounded = (length * 1e3).round() / 1e3;
+    assert_eq!(text, format!("BLANK {rounded} x 20 x 2, 1 bend"));
+    // Parts without sheet metal leave the link as written.
+    let plain = Model::new(Document::new());
+    assert_eq!(
+        of_model::properties::evaluate(&plain.doc, plain.state(), "{flat_length}"),
+        "{flat_length}"
+    );
+}

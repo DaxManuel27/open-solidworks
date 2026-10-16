@@ -3740,7 +3740,7 @@ export interface ToolArgs {
      */
     outline?: boolean
   }
-  /** Set part custom properties used by BOMs and drawing title blocks ($PRP:"PartNo"); values may link to {mass}, {material}, {volume} or {param:KEY}. Null removes one. */
+  /** Set part custom properties used by BOMs and drawing title blocks ($PRP:"PartNo"); values may link to {mass}, {material}, {volume}, {param:KEY} or, for sheet metal, {flat_length}, {flat_width}, {thickness}, {bends}, {cutouts}, {outer_cut}, {inner_cut} and {gauge}. Null removes one. */
   set_part_properties: {
     /**
      * Part custom properties for BOMs and title blocks (`PartNo`,
