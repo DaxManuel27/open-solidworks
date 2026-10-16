@@ -159,3 +159,27 @@ fn custom_properties_link_to_the_flat_size() {
         "{flat_length}"
     );
 }
+
+#[test]
+fn sheet_metal_parts_round_trip_in_file_version_6() {
+    let mut m = l_bracket(2.0, 2.0, 0.44);
+    flatten(&mut m);
+    ok(&m);
+    let text = of_model::file::to_string(&m.doc);
+    let v: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["version"], 6);
+    let loaded = Model::new(of_model::file::from_str(&text).unwrap());
+    ok(&loaded);
+    assert_eq!(loaded.doc, m.doc);
+    close(volume(&loaded), volume(&m), 1e-9);
+    assert_eq!(
+        loaded.state().body.as_ref().unwrap().names,
+        m.state().body.as_ref().unwrap().names
+    );
+    // A version 5 file reads unchanged.
+    let plain = Model::new(Document::new());
+    let mut v5: serde_json::Value =
+        serde_json::from_str(&of_model::file::to_string(&plain.doc)).unwrap();
+    v5["version"] = 5.into();
+    assert!(of_model::file::from_str(&v5.to_string()).is_ok());
+}

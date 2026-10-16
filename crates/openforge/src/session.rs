@@ -752,6 +752,8 @@ impl Session {
                     "part_v4_read".into(),
                     "part_v5_read".into(),
                     "drawings".into(),
+                    "sheet_metal".into(),
+                    "flat_pattern_dxf".into(),
                 ],
             })),
             "body.display" => {
