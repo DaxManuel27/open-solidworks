@@ -1,6 +1,7 @@
 # Phase 5 implementation plan
 
-Status: proposed 2026-10-15, awaiting the owner's [decisions](#decisions-needed). To be
+Status: proposed 2026-10-15, awaiting the owner's [decisions](#decisions-needed). Remaining work is
+ordered in [the completion plan](phase-5-remaining-plan.md). To be
 built on `phase-5`, branched from `phase-4`; it is rebased onto `main` once Phase 4 merges
 (see [Phase 4 status](phase-4-status.md)).
 
