@@ -1,3 +1,54 @@
+# Handoff: Phase 5 sheet metal (2026-10-16, session 10)
+
+Read this first. Earlier sections below are history.
+
+## State
+
+- Branch `phase-5` (local, not pushed), plan in `docs/phase-5-plan.md`. Phase 4 is pushed
+  with hosted CI passing; its merge into `main` is still the owner's call.
+- Model layer for P5.0–P5.4 is done: flanges, hems, jogs, sketched/swept/lofted bends, cross
+  breaks, convert/insert bends/rip, unfold/fold, normal cut, corner relief, closed and welded
+  corners, break corners (also on the flat), bend notches, tab and slot, gusset, forming tools.
+- P5.5 is done in the core, CLI/MCP and drawings: flat outline + properties
+  (`of-model/src/flat.rs`), flat DXF (`of-drawing/src/flat.rs`), `export` of a part to `.dxf`,
+  `doc.sheet_metal` (MCP `sheet_metal_info`), flat pattern views (`ModelSource.flat`), bend and
+  punch tables, `{flat_length}`-style property links. Part file v6.
+- Not started: desktop UI for any sheet metal feature (ribbon tab, panels, flatten toggle,
+  tree folder, gauge picker, flat view/table panels), conformance area 10, smoke scenario,
+  `docs/phase-5-status.md`, and P5.6–P5.9 (weldments, cut lists, weldment drawings, release).
+
+## Decisions taken this session (record in the status doc)
+
+- Closed corner: butt = selected flange stops `gap` short of the other's inside face, the
+  other is squared across the corner; overlap/underlap use `overlap_ratio` (0–1). Only the
+  flange walls are closed; bend regions keep their miter and relief.
+- Break corners skip outline corners whose sides are too short for the break.
+- Flat views look at the flat's front (its back for `Back`); other orientations are not
+  offered for flat views yet. Punch tables measure from a picked vertex or the flat's lower
+  left corner. Multibody flat views take their frame from the first flattened body.
+- Flat DXF writes non-line, non-arc curves as polylines (0.001 mm deflection).
+
+## Gotchas
+
+- `flattened()` returns the body as is when the Flat-Pattern feature is active
+  (`SheetMetalBody.flat_plane`), so outlines also work on flattened models.
+- Two mitered bend regions can touch at one point in the flat, closing a sliver beside the
+  corner relief; it counts as a cut-out (see `of-drawing/tests/flat.rs`).
+- `Sources::part/scene/locate` take a `flat` flag; flattened parts are cached separately.
+- `openforge generate` output is checked by a test: rerun it after schema changes.
+
+## Verified on this tree
+
+`cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test --workspace`,
+`openforge generate --check`, `pnpm typecheck`, `lint`, `format:check`, `conformance` (98/98).
+Not run: `pnpm build`, desktop smoke, `perf:*`.
+
+## Next steps
+
+1. Desktop sheet metal UI (P5.1–P5.5 desktop items), then conformance area 10 and a smoke
+   scenario.
+2. P5.6 weldments (independent of the sheet metal UI).
+
 # Handoff: Phase 4 drawings (2026-10-15, session 8)
 
 Read this first. Earlier sections below are history.
