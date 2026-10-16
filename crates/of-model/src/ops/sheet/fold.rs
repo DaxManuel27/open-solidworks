@@ -121,22 +121,54 @@ fn cut_with(fid: FeatureId, body: &Body, tools: &[Shape]) -> RResult<Body> {
 
 fn cut_one(fid: FeatureId, body: &Body, tool: &Shape) -> RResult<Body> {
     let r = body.shape.boolean(BoolOp::Cut, tool).map_err(geo)?;
-    if r.shape.count(Kind::Solid) != 1 {
-        return Err("the cut splits the sheet apart".into());
-    }
-    let names = Naming::from_history(
-        &r.shape,
-        &r.history,
-        Inputs {
-            named: [Some(&body.names), None],
-        },
-        &mut |_| Some(format!("{fid}.cut")),
-        &fid.to_string(),
-    );
-    Ok(Body {
+    let mut body = Body {
+        names: Naming::from_history(
+            &r.shape,
+            &r.history,
+            Inputs {
+                named: [Some(&body.names), None],
+            },
+            &mut |_| Some(format!("{fid}.cut")),
+            &fid.to_string(),
+        ),
         shape: r.shape,
-        names,
-    })
+    };
+    let solids = body.shape.solids();
+    if solids.len() > 1 {
+        // Neighbouring tool pieces can leave slivers between them: drop
+        // solids far smaller than the sheet.
+        let volumes: Vec<f64> = solids
+            .iter()
+            .map(|s| s.mass_props().map(|m| m.volume.abs()).unwrap_or(0.0))
+            .collect();
+        let largest = volumes.iter().copied().fold(0.0, f64::max);
+        let slivers: Vec<&Shape> = solids
+            .iter()
+            .zip(&volumes)
+            .filter(|(_, v)| **v < largest * 1e-6)
+            .map(|(s, _)| s)
+            .collect();
+        if slivers.len() + 1 != solids.len() {
+            return Err("the cut splits the sheet apart".into());
+        }
+        let r = body
+            .shape
+            .boolean(BoolOp::Cut, &Shape::compound(slivers))
+            .map_err(geo)?;
+        body = Body {
+            names: Naming::from_history(
+                &r.shape,
+                &r.history,
+                Inputs {
+                    named: [Some(&body.names), None],
+                },
+                &mut |_| None,
+                &fid.to_string(),
+            ),
+            shape: r.shape,
+        };
+    }
+    Ok(body)
 }
 
 pub(crate) fn fold(fid: FeatureId, _p: &Fold, prev: &State, state: &mut State) -> RResult<()> {
@@ -228,4 +260,28 @@ pub(crate) fn normal_cut(
         return Err(super::super::CUT_REMOVES_NOTHING.into());
     }
     state.aggregate_bodies()
+}
+
+/// Cut regions drawn in the flat (planar faces in the layout's plane) out of
+/// the formed body, square through the sheet.
+pub(crate) fn cut_flat_regions(
+    fid: FeatureId,
+    body: &Body,
+    layout: &Layout,
+    t: f64,
+    regions: &[Shape],
+) -> RResult<Body> {
+    if regions.is_empty() {
+        return Ok(body.clone());
+    }
+    let region = Shape::compound(regions.iter());
+    let pieces = body
+        .shape
+        .fold(&layout.faces, &layout.plane, &region)
+        .map_err(|e| format!("can't map the cut onto the sheet: {}", e.0))?;
+    let tools = through_tools(&body.shape, pieces, t)?;
+    if tools.is_empty() {
+        return Err(super::super::CUT_REMOVES_NOTHING.into());
+    }
+    cut_with(fid, body, &tools)
 }

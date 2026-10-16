@@ -507,6 +507,15 @@ fn build_kind(id: FeatureId, kind: &FeatureKind, prev: &State, state: &mut State
         FeatureKind::Unfold(p) => return ops::sheet::unfold(id, p, prev, state),
         FeatureKind::Fold(p) => return ops::sheet::fold(id, p, prev, state),
         FeatureKind::NormalCut(p) => return ops::sheet::normal_cut(id, p, prev, state),
+        FeatureKind::CornerRelief(p) => return ops::sheet::corner_relief(id, p, prev, state),
+        FeatureKind::ClosedCorner(p) => return ops::sheet::closed_corner(id, p, prev, state),
+        FeatureKind::WeldedCorner(p) => return ops::sheet::welded_corner(id, p, prev, state),
+        FeatureKind::BreakCorner(p) => return ops::sheet::break_corner(id, p, prev, state),
+        FeatureKind::BendNotch(p) => return ops::sheet::bend_notch(id, p, prev, state),
+        FeatureKind::TabAndSlot(p) => return ops::sheet::tab_and_slot(id, p, prev, state),
+        FeatureKind::SheetMetalGusset(p) => return ops::sheet::gusset(id, p, prev, state),
+        FeatureKind::FormTool(p) => return ops::sheet::form_tool(id, p, prev, state),
+        FeatureKind::FormingTool(_) => return Ok(()),
         _ => {
             ops::build(id, kind, prev, state)?;
             return state.refresh_bodies(id, prev);

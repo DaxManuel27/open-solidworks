@@ -3,7 +3,9 @@
 
 mod bend;
 mod convert;
+mod corners;
 mod fold;
+mod forms;
 mod hem;
 mod lofted;
 mod miter;
@@ -30,7 +32,9 @@ use crate::{EndCondition, FeatureId, Ref};
 
 pub(crate) use bend::{jog, sketched_bend};
 pub(crate) use convert::{convert, insert_bends, rip};
-pub(crate) use fold::{Unfolded, fold, normal_cut, unfold};
+pub(crate) use corners::{bend_notch, break_corner, closed_corner, corner_relief, welded_corner};
+pub(crate) use fold::{Unfolded, cut_flat_regions, fold, normal_cut, unfold};
+pub(crate) use forms::{form_tool, gusset, tab_and_slot};
 pub(super) use hem::hem;
 pub(super) use lofted::lofted_bend;
 pub(super) use miter::miter_flange;
@@ -203,6 +207,9 @@ fn closed_base(
         bend_lines: Vec::new(),
         cross_breaks: Vec::new(),
         facets: Vec::new(),
+        forms: Vec::new(),
+        welds: Vec::new(),
+        form_marks: Vec::new(),
     });
     Ok(())
 }
@@ -616,6 +623,9 @@ fn open_base(
         bend_lines: Vec::new(),
         cross_breaks: Vec::new(),
         facets: Vec::new(),
+        forms: Vec::new(),
+        welds: Vec::new(),
+        form_marks: Vec::new(),
     });
     Ok(())
 }
@@ -1158,11 +1168,24 @@ pub(crate) fn flat_pattern(
             None => None,
         };
         let flat = flatten(body, record, local)?;
-        state.bodies[b].geometry = Body {
+        let mut geometry = Body {
             shape: flat.shape,
             names: flat.names,
         };
+        if let Some(corner) = p.break_corners {
+            let t = record.params.thickness;
+            let outside: Vec<u32> = corners::outline_corners(&geometry, t)?
+                .into_iter()
+                .filter(|(_, convex)| *convex)
+                .map(|(e, _)| e)
+                .collect();
+            let edges =
+                corners::fitting_corners(&geometry, t, &outside, corners::break_size(corner))?;
+            geometry = corners::break_edges(_fid, &geometry, &edges, corner)?;
+        }
+        state.bodies[b].geometry = geometry;
         state.sheet_metal[i].bend_lines = flat.bend_lines;
+        state.sheet_metal[i].form_marks = flat.marks;
     }
     state.aggregate_bodies()
 }

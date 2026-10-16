@@ -17,7 +17,7 @@ use of_geom::{CurveKind, DAffine3, DVec3, FaceFrame, FaceSurface, FlatSource, Ki
 use super::{RResult, base_name, geo};
 use crate::build::Body;
 use crate::naming::Naming;
-use crate::sheet_metal::{BendLine, BendRecord, SheetMetalBody, bend_allowance};
+use crate::sheet_metal::{BendLine, BendRecord, FormMark, SheetMetalBody, bend_allowance};
 
 /// A flattened body.
 pub(crate) struct Flat {
@@ -26,6 +26,7 @@ pub(crate) struct Flat {
     /// The fixed face's plane, normal pointing out of the material.
     pub plane: Plane,
     pub bend_lines: Vec<BendLine>,
+    pub marks: Vec<FormMark>,
 }
 
 /// How a bend face is laid flat.
@@ -141,14 +142,100 @@ pub(crate) struct Layout {
     pub fixed: u32,
 }
 
+/// The body with its forms pressed out again: what they removed put back
+/// and what they added taken away.
+pub(crate) fn unformed(body: &Body, record: &SheetMetalBody) -> RResult<Body> {
+    let mut body = body.clone();
+    for form in &record.forms {
+        for (shape, op) in [
+            (&form.removed, of_geom::BoolOp::Fuse),
+            (&form.added, of_geom::BoolOp::Cut),
+        ] {
+            let Some(shape) = shape else { continue };
+            if shape.count(Kind::Solid) == 0 {
+                continue;
+            }
+            let r = body.shape.boolean(op, shape).map_err(geo)?;
+            body = Body {
+                names: Naming::from_history(
+                    &r.shape,
+                    &r.history,
+                    crate::naming::Inputs {
+                        named: [Some(&body.names), None],
+                    },
+                    &mut |_| Some(format!("{}.unformed", form.feature)),
+                    "unformed",
+                ),
+                shape: r.shape,
+            };
+        }
+    }
+    Ok(body)
+}
+
+/// Where a 3D point on the sheet lands in the flat: through the flat face on
+/// the fixed side nearest to it.
+fn flat_point(body: &Body, layout: &Layout, t: f64, p: DVec3) -> Option<DVec3> {
+    let mut best: Option<(f64, DVec3)> = None;
+    for (f, map) in &layout.faces {
+        let fr = body.shape.face_frame(*f).ok()?;
+        if fr.surface != FaceSurface::Plane {
+            continue;
+        }
+        let n = fr.normal(0.0, 0.0);
+        let depth = (fr.origin - p).dot(n);
+        if !(-1e-6..=t + 1e-6).contains(&depth) {
+            continue;
+        }
+        let c = body.shape.face_info(*f).ok()?.centroid;
+        let d = (c - p).length();
+        if best.is_some_and(|(bd, _)| bd <= d) {
+            continue;
+        }
+        let q = p + n * depth - fr.origin;
+        let uv = of_geom::DVec2::new(q.dot(fr.x), q.dot(fr.y));
+        let xy = map.apply(uv);
+        best = Some((d, layout.plane.to_world(xy)));
+    }
+    best.map(|b| b.1)
+}
+
 pub(crate) fn flatten(body: &Body, record: &SheetMetalBody, fixed: Option<u32>) -> RResult<Flat> {
+    let fixed_name = fixed.and_then(|f| body.names.face_name(f).map(str::to_string));
+    let restored;
+    let (body, fixed) = if record.forms.is_empty() {
+        (body, fixed)
+    } else {
+        restored = unformed(body, record)?;
+        let fixed = fixed_name.as_deref().and_then(|n| restored.names.face(n));
+        (&restored, fixed)
+    };
+    let laid = layout(body, record, fixed)?;
+    let marks = record
+        .forms
+        .iter()
+        .map(|f| FormMark {
+            feature: f.feature,
+            center: flat_point(body, &laid, record.params.thickness, DVec3::from(f.center))
+                .map(|p| p.to_array())
+                .unwrap_or(f.center),
+            outline: f
+                .outline
+                .iter()
+                .filter_map(|q| flat_point(body, &laid, record.params.thickness, DVec3::from(*q)))
+                .map(|p| p.to_array())
+                .collect(),
+            punch_id: f.punch_id.clone(),
+            angle: f.angle,
+        })
+        .collect();
     let Layout {
         plane: flat,
         faces,
         side,
         bend_lines: lines,
         fixed,
-    } = layout(body, record, fixed)?;
+    } = laid;
     let shape = &body.shape;
     let t = record.params.thickness;
     let edge_faces = shape.edge_faces();
@@ -178,6 +265,7 @@ pub(crate) fn flatten(body: &Body, record: &SheetMetalBody, fixed: Option<u32>) 
         names,
         plane: flat,
         bend_lines: lines,
+        marks,
     })
 }
 

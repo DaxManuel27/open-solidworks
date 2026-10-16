@@ -421,6 +421,9 @@ fn finish(
         bend_lines: Vec::new(),
         cross_breaks: Vec::new(),
         facets: Vec::new(),
+        forms: Vec::new(),
+        welds: Vec::new(),
+        form_marks: Vec::new(),
     });
     state.aggregate_bodies()
 }

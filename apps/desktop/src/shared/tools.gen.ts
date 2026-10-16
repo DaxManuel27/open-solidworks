@@ -5,6 +5,29 @@
 /** Direction sense for mates between oriented entities. */
 export type Alignment = 'aligned' | 'anti_aligned' | 'closest'
 
+/** How the flat length of a bend is found. */
+export type Allowance =
+  | {
+    type: 'k_factor'
+    k: number
+  }
+  | {
+    type: 'bend_allowance'
+    value: number
+  }
+  | {
+    type: 'bend_deduction'
+    value: number
+  }
+  | {
+    type: 'bend_table'
+    table: string
+  }
+  | {
+    type: 'bend_calculation'
+    ranges: CalculationRange[]
+  }
+
 /** Where an annotation is attached. */
 export type Anchor =
   | {
@@ -608,6 +631,17 @@ export type BalloonText =
     text: string
   }
 
+/** Per-feature changes to the body's bend defaults. */
+export type BendOverride = {
+  allowance?: Allowance | null
+  /** Inside radius, mm. */
+  radius?: number | null
+  relief?: Relief | null
+}
+
+/** Where a sketched bend or jog sits relative to its sketch line. */
+export type BendPosition = 'centerline' | 'material_inside' | 'material_outside' | 'bend_outside'
+
 export type BomType = 'top_level' | 'parts_only' | 'indented'
 
 /** Boolean operations. */
@@ -630,6 +664,16 @@ export type BreakStyle = 'straight' | 'curved' | 'zig_zag' | 'small_zig_zag' | '
 export type BrokenOut = {
   profile: Profile
   depth: number
+}
+
+/** One angle range of a bend calculation table. */
+export type CalculationRange = {
+  /** Degrees, inclusive. */
+  from: number
+  /** Degrees, inclusive. */
+  to: number
+  /** The allowance as a length, such as `angle * (radius + 0.44 * thickness)`. */
+  formula: string
 }
 
 export type ChamferMode =
@@ -660,6 +704,9 @@ export type Changed = {
 
 /** Geometric characteristics. */
 export type Characteristic = 'straightness' | 'flatness' | 'circularity' | 'cylindricity' | 'line_profile' | 'surface_profile' | 'angularity' | 'perpendicularity' | 'parallelism' | 'position' | 'concentricity' | 'symmetry' | 'circular_runout' | 'total_runout'
+
+/** How a closed corner closes. */
+export type ClosedCornerKind = 'butt' | 'overlap' | 'underlap'
 
 export type CloudShape =
   | {
@@ -1004,6 +1051,27 @@ export type ContourSelection = {
 
 /** Which corner of the table `at` names. */
 export type Corner = 'top_left' | 'top_right' | 'bottom_left' | 'bottom_right'
+
+/** Rounds or bevels corners of the sheet's outline. */
+export type CornerBreak =
+  | {
+    type: 'chamfer'
+    distance: number
+  }
+  | {
+    type: 'fillet'
+    radius: number
+  }
+
+/** The shape of a corner relief, in the flat. */
+export type CornerReliefKind =
+  | 'rectangular'
+  | 'circular'
+  | 'tear'
+  | 'obround'
+  | 'constant_width'
+  | 'full_round'
+  | 'suitcase'
 
 /** IDs created by the call, in the form the next call accepts. */
 export type Created = {
@@ -1756,10 +1824,425 @@ export type Feature =
     /** Body IDs this feature acts on; omitted acts on the whole part. */
     scope?: string[] | null
   }
+  | {
+    type: 'base_flange'
+    sketch: number
+    /** The new body's sheet metal defaults. */
+    sheet: SheetMetalParams
+    /** For an open profile: how far it is extruded. */
+    end1?: EndCondition | null
+    /** For an open profile: a second direction. */
+    end2?: EndCondition | null
+    /** Extrude an open profile the other way. */
+    reverse?: boolean
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+    side?: ThicknessSide
+  }
+  | {
+    type: 'edge_flange'
+    /**
+     * Edges between a face of the sheet and its thickness. Each flange rises
+     * from the face its edge lies on, unless `reverse`.
+     */
+    edges: Ref[]
+    length: FlangeLength
+    /** Bend angle in radians, between 0 and π (default 90°). */
+    angle?: number
+    bend?: BendOverride
+    end_offset?: number
+    /** Gap between flanges that meet at a corner, mm. */
+    gap?: number
+    measure?: LengthMeasure
+    position?: FlangePosition
+    /** Move the flange away from the edge into the face, mm. */
+    position_offset?: number
+    /** Rise from the other face of the sheet. */
+    reverse?: boolean
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+    /** Shorten each flange at the start and end of its edge, mm. */
+    start_offset?: number
+  }
+  | {
+    type: 'flat_pattern'
+    /** Round or bevel the flat's outside corners. */
+    break_corners?: CornerBreak | null
+    /** The face that stays in place; each body's default otherwise. */
+    fixed_face?: Ref | null
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'hem'
+    edges: Ref[]
+    kind: HemKind
+    allowance?: Allowance | null
+    /** Gap where hems on adjacent edges meet, mm. */
+    gap?: number
+    /** Length of the folded-back part for closed, open and double hems, mm. */
+    length?: number
+    position?: HemPosition
+    /** Fold toward the other face of the sheet. */
+    reverse?: boolean
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'miter_flange'
+    sketch: number
+    /** Edges of one face of the sheet, the first one under the profile. */
+    edges: Ref[]
+    bend?: BendOverride
+    end_offset?: number
+    gap?: number
+    position?: FlangePosition
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+    /** Shorten the chain at its start and end, mm. */
+    start_offset?: number
+  }
+  | {
+    type: 'sketched_bend'
+    /** A sketch on a flat face of the sheet holding one line across it. */
+    sketch: number
+    /** Radians, between 0 and 180°. */
+    angle?: number
+    bend?: BendOverride
+    /** A face on the side that stays put; the body's fixed face otherwise. */
+    fixed?: Ref | null
+    position?: BendPosition
+    /** Bend toward the other face of the sheet. */
+    reverse?: boolean
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'jog'
+    sketch: number
+    /** mm. */
+    offset: number
+    /** Radians, between 0 and 180° (default 90°). */
+    angle?: number
+    bend?: BendOverride
+    dimension?: JogDimension
+    /**
+     * Keep the moved side where it was in plan, shortening the flat; when
+     * off, the flat keeps its length and the moved side shifts back.
+     */
+    fix_projected_length?: boolean
+    fixed?: Ref | null
+    position?: BendPosition
+    reverse?: boolean
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'cross_break'
+    face: Ref
+    /** Radians (default 3°). */
+    angle?: number
+    /** mm. */
+    radius?: number
+    /** Break toward the other side. */
+    reverse?: boolean
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'swept_flange'
+    /**
+     * A sketch with one open chain of lines and arcs, square to the path at
+     * its start.
+     */
+    profile: number
+    path: Ref
+    bend?: BendOverride
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+    /** The new body's defaults when it does not join a sheet metal body. */
+    sheet?: SheetMetalParams | null
+    side?: ThicknessSide
+  }
+  | {
+    type: 'lofted_bend'
+    profile1: number
+    profile2: number
+    sheet: SheetMetalParams
+    /** Formed: the most the facets may stray from the smooth surface, mm. */
+    deviation?: number
+    /** Bent: facets per profile segment. */
+    facets?: number
+    method?: LoftMethod
+    /** Thickness toward the other side of the profiles. */
+    reverse?: boolean
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'rip'
+    edges: RipEdge[]
+    /** mm. */
+    gap?: number
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'insert_bends'
+    /**
+     * A flat face of the wall that stays put; its opposite face sets the
+     * thickness.
+     */
+    fixed_face: Ref
+    /** Bend radius, allowance and relief; the thickness is measured. */
+    sheet: SheetMetalParams
+    rip_gap?: number
+    rips?: RipEdge[]
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'convert_to_sheet_metal'
+    fixed_face: Ref
+    sheet: SheetMetalParams
+    bend_edges: Ref[]
+    /** Keep the original solid as a separate body. */
+    keep_body?: boolean
+    rip_gap?: number
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'unfold'
+    /** The face that stays put; it also chooses the body. */
+    fixed_face?: Ref | null
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'fold'
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'normal_cut'
+    sketch: number
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'corner_relief'
+    /** Bend faces of the corners to relieve; every corner when empty. */
+    bends?: Ref[]
+    /**
+     * Center the relief on the bend lines rather than on the inside tangent
+     * lines.
+     */
+    centered?: boolean
+    kind?: CornerReliefKind
+    /**
+     * How far the relief reaches past the bend regions, as a multiple of
+     * thickness.
+     */
+    ratio?: number
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'closed_corner'
+    /** End faces of flanges to extend toward the flange beside them. */
+    faces: Ref[]
+    /** mm. */
+    gap?: number
+    kind?: ClosedCornerKind
+    /**
+     * For overlap and underlap: how much of the covered flange's thickness
+     * the covering one spans, 0 to 1.
+     */
+    overlap_ratio?: number
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'welded_corner'
+    /** An edge of the seam. */
+    edge: Ref
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+    /** Bead leg size, mm. */
+    size?: number
+    /** Weld symbol text shown with the bead. */
+    symbol?: string | null
+  }
+  | {
+    type: 'break_corner'
+    corner: CornerBreak
+    /**
+     * Edges through the thickness; every outside corner of the body when
+     * empty.
+     */
+    edges?: Ref[]
+    /** Only inside (concave) corners. */
+    internal_only?: boolean
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'bend_notch'
+    /** Bend faces; every bend when empty. */
+    bends?: Ref[]
+    /** Notch both ends of each bend line, not just the start. */
+    both_ends?: boolean
+    /** mm. */
+    depth?: number
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+    shape?: NotchShape
+    /** mm. */
+    width?: number
+  }
+  | {
+    type: 'tab_and_slot'
+    /** An edge of the tab body that rests on the slot body's face. */
+    edge: Ref
+    /** The face of the slot body the tabs go through. */
+    face: Ref
+    /** Tab length along the edge, mm. */
+    length: number
+    /** Extra slot length and width, mm. */
+    clearance?: number
+    /** Number of tabs, spread evenly along the edge. */
+    count?: number
+    /** How far tabs stick out past the slot body; through it when omitted. */
+    height?: number | null
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+    /** Spacing between tab centers instead of `count`, mm. */
+    spacing?: number | null
+  }
+  | {
+    type: 'sheet_metal_gusset'
+    /** A face of the bend to stiffen. */
+    bend: Ref
+    /** Leg along each side from the inside of the bend, mm. */
+    depth: number
+    /** Width of the rib across the bend, mm. */
+    width: number
+    /** Where along the bend, as a fraction of its length. */
+    position?: number
+    punch_id?: string | null
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'form_tool'
+    shape: FormShape
+    /** The flat face of the sheet the tools press into. */
+    face: Ref
+    /** Press from the other side. */
+    flip?: boolean
+    /** Shown in punch tables. */
+    punch_id?: string | null
+    /** Turn about the face normal, radians. */
+    rotation?: number
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+    /**
+     * A sketch on that face whose points place one tool each; the face's
+     * center when omitted.
+     */
+    sketch?: number | null
+  }
+  | {
+    type: 'forming_tool'
+    stopping_face: Ref
+    /** The point placed on the sheet; the stopping face's centroid otherwise. */
+    insertion_point?: Ref | null
+    remove_faces?: Ref[]
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
 
 export type FinishProcess = 'any' | 'removal' | 'no_removal'
 
 export type FitDisplay = 'classes' | 'classes_with_tolerance' | 'tolerance_only'
+
+/** How long a flange is. */
+export type FlangeLength =
+  | {
+    type: 'blind'
+    length: number
+  }
+  | {
+    type: 'up_to_vertex'
+    target: Ref
+  }
+  | {
+    type: 'up_to_surface'
+    target: Ref
+  }
+  | {
+    type: 'offset_from_surface'
+    target: Ref
+    offset: number
+  }
+  | {
+    type: 'up_to_edge_and_merge'
+    target: Ref
+  }
+
+/** Where a flange's bend sits relative to the selected edge. */
+export type FlangePosition =
+  | 'material_inside'
+  | 'material_outside'
+  | 'bend_outside'
+  | 'bend_from_virtual_sharp'
+  | 'tangent_to_bend'
+
+/** A built-in forming tool shape. Sizes in mm. */
+export type FormShape =
+  | {
+    type: 'louver'
+    length: number
+    width: number
+    height: number
+  }
+  | {
+    type: 'lance'
+    length: number
+    width: number
+    height: number
+  }
+  | {
+    type: 'emboss'
+    diameter: number
+    height: number
+  }
+  | {
+    type: 'dimple'
+    diameter: number
+    height: number
+  }
+  | {
+    type: 'rib'
+    length: number
+    width: number
+    height: number
+  }
+  | {
+    type: 'file'
+    path: string
+  }
+
+/** A gauge chosen from a gauge table. */
+export type GaugeChoice = {
+  /** A built-in table name (`steel`, `stainless`, `aluminum`) or a CSV path. */
+  table: string
+  /** Gauge name from the table, such as `16`. */
+  gauge: string
+  /** Inside radius from the table's allowed radii; the smallest when omitted. */
+  radius?: number | null
+}
 
 /** One row of a feature control frame. */
 export type GtolRow = {
@@ -1811,6 +2294,36 @@ export type HelixPitch = {
   pitch: number
 }
 
+/** The shape of a hem. */
+export type HemKind =
+  | {
+    type: 'closed'
+  }
+  | {
+    type: 'open'
+    gap: number
+  }
+  | {
+    type: 'tear_drop'
+    /** Radians, between 180° and 270°. */
+    angle: number
+    /** Inside radius, mm. */
+    radius: number
+  }
+  | {
+    type: 'rolled'
+    /** Radians, less than 360°. */
+    angle: number
+    radius: number
+  }
+  | {
+    type: 'double'
+    gap: number
+  }
+
+/** Where a hem sits relative to its edge. */
+export type HemPosition = 'material_inside' | 'bend_outside'
+
 export type HingeLimit = {
   faces: [CompRef, CompRef]
   min: number
@@ -1833,10 +2346,16 @@ export type HoleKind = 'simple' | 'counterbore' | 'countersink' | 'tapped'
 
 export type HoleStandard = 'iso' | 'ansi'
 
+/** How a jog's offset is measured. */
+export type JogDimension = 'outside' | 'inside' | 'overall'
+
 export type KeepSide = 'both' | 'positive' | 'negative'
 
 /** Kinds of sub-shape. */
 export type Kind = 'face' | 'edge' | 'vertex' | 'solid'
+
+/** What a flange's length is measured from. */
+export type LengthMeasure = 'outer_virtual_sharp' | 'inner_virtual_sharp' | 'tangent_to_bend'
 
 /** A range for limit mates, in mm or radians. */
 export type Limit = {
@@ -1863,6 +2382,9 @@ export type LoftEnd =
     flip?: boolean
     tangent_length?: number
   }
+
+/** How a lofted bend is made. */
+export type LoftMethod = 'bent' | 'formed'
 
 export type MarkPattern = 'single' | 'linear' | 'circular'
 
@@ -2107,6 +2629,9 @@ export type Motion =
     local: [number, number, number]
     point: [number, number, number]
   }
+
+/** The shape of a bend notch. */
+export type NotchShape = 'v' | 'rectangular'
 
 export type Numbering = 'detailed' | 'flat' | 'none'
 
@@ -2383,6 +2908,22 @@ export type Ref =
     entities: number[]
   }
 
+export type Relief = {
+  /** How far the relief goes past the bend, mm; defaults to the width. */
+  depth?: number | null
+  kind?: ReliefKind
+  /**
+   * Relief width and its depth past the bend, as a ratio of thickness,
+   * unless `width` is given.
+   */
+  ratio?: number
+  /** mm; overrides `ratio`. */
+  width?: number | null
+}
+
+/** Relief cut where a bend does not run the full length of its edge. */
+export type ReliefKind = 'rectangular' | 'obround' | 'none' | 'tear'
+
 export type RevisionRow = {
   approved?: string
   date?: string
@@ -2432,6 +2973,15 @@ export type RibDirection = 'parallel_to_sketch' | 'normal_to_sketch'
 /** Which side of the sketch a rib's thickness grows to. */
 export type RibSide = 'both' | 'first' | 'second'
 
+/** Which side of a ripped edge the gap goes. */
+export type RipDirection = 'both' | 'first' | 'second'
+
+export type RipEdge = {
+  /** A sharp edge where two walls meet. */
+  edge: Ref
+  direction?: RipDirection
+}
+
 export type Roll = {
   axis: CompRef
   up: CompRef
@@ -2444,6 +2994,20 @@ export type Scale = {
 }
 
 export type SectionKind = 'full' | 'half' | 'aligned'
+
+/** The defaults of one sheet metal body. */
+export type SheetMetalParams = {
+  /** mm. */
+  thickness: number
+  /** Inside bend radius, mm. */
+  radius: number
+  allowance?: Allowance
+  /** Take thickness, radius and K-factor from a gauge table instead. */
+  gauge?: GaugeChoice | null
+  relief?: Relief
+  /** Take the K-factor and inside radius from the part's material. */
+  use_material?: boolean
+}
 
 /** Paper sizes. Standard sizes are landscape unless the sheet says portrait. */
 export type SheetSize =
@@ -2663,6 +3227,9 @@ export type Tags = 'alphabetic' | 'numeric'
 export type TangentEdges = 'visible' | 'removed' | 'font'
 
 export type TargetKind = 'point' | 'line' | 'area'
+
+/** Which side of the sketch the sheet's thickness goes. */
+export type ThicknessSide = 'reverse' | 'normal' | 'mid_plane'
 
 /** A thin feature: the sketch contour thickened into a wall. */
 export type Thin = {

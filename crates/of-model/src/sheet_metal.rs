@@ -311,6 +311,10 @@ fn default_gap() -> f64 {
     0.1
 }
 
+fn one() -> f64 {
+    1.0
+}
+
 /// The whole part flattened. Added last and suppressed while the part is
 /// formed; unsuppressing it shows every sheet metal body flat.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -318,6 +322,9 @@ pub struct FlatPattern {
     /// The face that stays in place; each body's default otherwise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fixed_face: Option<Ref>,
+    /// Round or bevel the flat's outside corners.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub break_corners: Option<CornerBreak>,
 }
 
 /// One bend of a sheet metal body, written by the feature that made it.
@@ -354,6 +361,45 @@ pub struct SheetMetalBody {
     /// flattening unfolds across the sharp edges between them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub facets: Vec<String>,
+    /// Forms pressed into the body; undone in the flat and shown as marks.
+    #[serde(skip)]
+    pub forms: Vec<FormRecord>,
+    /// Weld beads on closed corners.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub welds: Vec<CornerWeld>,
+    /// Form marks, once the body is flattened.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub form_marks: Vec<FormMark>,
+}
+
+/// A form's place in a flat pattern.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FormMark {
+    pub feature: FeatureId,
+    pub center: [f64; 3],
+    pub outline: Vec<[f64; 3]>,
+    pub punch_id: Option<String>,
+    /// Radians.
+    pub angle: f64,
+}
+
+/// A weld bead on a closed corner.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CornerWeld {
+    pub feature: FeatureId,
+    pub a: [f64; 3],
+    pub b: [f64; 3],
+    pub size: f64,
+    pub symbol: Option<String>,
+}
+
+impl PartialEq for FormRecord {
+    fn eq(&self, other: &Self) -> bool {
+        self.feature == other.feature
+            && self.center == other.center
+            && self.outline == other.outline
+            && self.punch_id == other.punch_id
+    }
 }
 
 /// The flat length of a bend.
@@ -420,6 +466,7 @@ pub struct Flattened {
     pub plane: of_geom::Plane,
     pub thickness: f64,
     pub bend_lines: Vec<BendLine>,
+    pub marks: Vec<FormMark>,
 }
 
 /// The flat pattern of sheet metal body `index` of `state.sheet_metal`.
@@ -437,6 +484,7 @@ pub fn flattened(state: &State, index: usize) -> Result<Flattened, String> {
         plane: flat.plane,
         thickness: record.params.thickness,
         bend_lines: flat.bend_lines,
+        marks: flat.marks,
     })
 }
 
@@ -801,4 +849,292 @@ pub struct Fold {}
 pub struct NormalCut {
     #[schemars(range(min = 1))]
     pub sketch: FeatureId,
+}
+
+/// The shape of a corner relief, in the flat.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CornerReliefKind {
+    /// A rectangle over the crossing of the two bend regions.
+    #[default]
+    Rectangular,
+    /// A circle at the crossing of the bend lines.
+    Circular,
+    /// A narrow slit along the bisector of the corner.
+    Tear,
+    /// A rectangle with rounded ends along the bisector.
+    Obround,
+    /// A slot of constant width along the bisector.
+    ConstantWidth,
+    /// A circle just covering both bend regions.
+    FullRound,
+    /// A rectangle with rounded corners.
+    Suitcase,
+}
+
+/// Relief cuts where two bends meet at a corner.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CornerRelief {
+    /// Bend faces of the corners to relieve; every corner when empty.
+    #[serde(default)]
+    pub bends: Vec<Ref>,
+    #[serde(default)]
+    pub kind: CornerReliefKind,
+    /// How far the relief reaches past the bend regions, as a multiple of
+    /// thickness.
+    #[serde(default = "half")]
+    #[schemars(range(min = 0.0))]
+    pub ratio: f64,
+    /// Center the relief on the bend lines rather than on the inside tangent
+    /// lines.
+    #[serde(default = "yes")]
+    pub centered: bool,
+}
+
+/// Rounds or bevels corners of the sheet's outline.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum CornerBreak {
+    Chamfer {
+        #[schemars(extend("exclusiveMinimum" = 0))]
+        distance: f64,
+    },
+    Fillet {
+        #[schemars(extend("exclusiveMinimum" = 0))]
+        radius: f64,
+    },
+}
+
+/// Chamfers or rounds edges through the sheet's thickness at outline corners.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct BreakCorner {
+    /// Edges through the thickness; every outside corner of the body when
+    /// empty.
+    #[serde(default)]
+    pub edges: Vec<Ref>,
+    pub corner: CornerBreak,
+    /// Only inside (concave) corners.
+    #[serde(default)]
+    pub internal_only: bool,
+}
+
+/// How a closed corner closes.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ClosedCornerKind {
+    /// The extended flange runs to the other one's inside face, less the gap,
+    /// and the other one is squared off across the corner.
+    #[default]
+    Butt,
+    /// The extended flange covers the other one's end, by the overlap ratio of
+    /// its thickness.
+    Overlap,
+    /// The extended flange tucks in behind the other one, which covers its end
+    /// by the overlap ratio.
+    Underlap,
+}
+
+/// Extends flanges so they close a corner.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ClosedCorner {
+    /// End faces of flanges to extend toward the flange beside them.
+    #[schemars(length(min = 1))]
+    pub faces: Vec<Ref>,
+    #[serde(default)]
+    pub kind: ClosedCornerKind,
+    /// mm.
+    #[serde(default = "default_gap")]
+    #[schemars(range(min = 0.0))]
+    pub gap: f64,
+    /// For overlap and underlap: how much of the covered flange's thickness
+    /// the covering one spans, 0 to 1.
+    #[serde(default = "one")]
+    #[schemars(range(min = 0.0, max = 1.0))]
+    pub overlap_ratio: f64,
+}
+
+/// A weld bead along a closed corner's seam (shown in views and weld tables).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct WeldedCorner {
+    /// An edge of the seam.
+    pub edge: Ref,
+    /// Bead leg size, mm.
+    #[serde(default = "weld_size")]
+    #[schemars(extend("exclusiveMinimum" = 0))]
+    pub size: f64,
+    /// Weld symbol text shown with the bead.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub symbol: Option<String>,
+}
+
+fn weld_size() -> f64 {
+    2.0
+}
+
+/// The shape of a bend notch.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum NotchShape {
+    #[default]
+    V,
+    Rectangular,
+}
+
+/// Notches at the ends of bend lines, for lining up the press brake.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct BendNotch {
+    /// Bend faces; every bend when empty.
+    #[serde(default)]
+    pub bends: Vec<Ref>,
+    #[serde(default)]
+    pub shape: NotchShape,
+    /// mm.
+    #[serde(default = "notch")]
+    #[schemars(extend("exclusiveMinimum" = 0))]
+    pub width: f64,
+    /// mm.
+    #[serde(default = "notch")]
+    #[schemars(extend("exclusiveMinimum" = 0))]
+    pub depth: f64,
+    /// Notch both ends of each bend line, not just the start.
+    #[serde(default = "yes")]
+    pub both_ends: bool,
+}
+
+fn notch() -> f64 {
+    1.0
+}
+
+/// Interlocking tabs on one sheet metal body and slots in another.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct TabAndSlot {
+    /// An edge of the tab body that rests on the slot body's face.
+    pub edge: Ref,
+    /// The face of the slot body the tabs go through.
+    pub face: Ref,
+    /// Number of tabs, spread evenly along the edge.
+    #[serde(default = "two")]
+    #[schemars(range(min = 1))]
+    pub count: u32,
+    /// Spacing between tab centers instead of `count`, mm.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spacing: Option<f64>,
+    /// Tab length along the edge, mm.
+    #[schemars(extend("exclusiveMinimum" = 0))]
+    pub length: f64,
+    /// How far tabs stick out past the slot body; through it when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub height: Option<f64>,
+    /// Extra slot length and width, mm.
+    #[serde(default = "clearance")]
+    #[schemars(range(min = 0.0))]
+    pub clearance: f64,
+}
+
+fn two() -> u32 {
+    2
+}
+
+fn clearance() -> f64 {
+    0.1
+}
+
+/// A stiffening rib pressed across a bend.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SheetMetalGusset {
+    /// A face of the bend to stiffen.
+    pub bend: Ref,
+    /// Where along the bend, as a fraction of its length.
+    #[serde(default = "middle")]
+    #[schemars(range(min = 0.0, max = 1.0))]
+    pub position: f64,
+    /// Leg along each side from the inside of the bend, mm.
+    #[schemars(extend("exclusiveMinimum" = 0))]
+    pub depth: f64,
+    /// Width of the rib across the bend, mm.
+    #[schemars(extend("exclusiveMinimum" = 0))]
+    pub width: f64,
+    #[serde(default)]
+    pub punch_id: Option<String>,
+}
+
+fn middle() -> f64 {
+    0.5
+}
+
+/// A built-in forming tool shape. Sizes in mm.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum FormShape {
+    /// A raised slot-shaped vent open along one long side.
+    Louver {
+        length: f64,
+        width: f64,
+        height: f64,
+    },
+    /// A strip pressed out, joined at both ends.
+    Lance {
+        length: f64,
+        width: f64,
+        height: f64,
+    },
+    /// A round raised area.
+    Emboss { diameter: f64, height: f64 },
+    /// A hole with a drawn collar.
+    Dimple { diameter: f64, height: f64 },
+    /// A long raised stiffening rib.
+    Rib {
+        length: f64,
+        width: f64,
+        height: f64,
+    },
+    /// A part file whose Forming Tool feature defines the tool.
+    File { path: String },
+}
+
+/// What makes a part a forming tool: the face that rests on the sheet, faces
+/// that become openings, and where the tool is placed from.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct FormingToolDef {
+    pub stopping_face: Ref,
+    #[serde(default)]
+    pub remove_faces: Vec<Ref>,
+    /// The point placed on the sheet; the stopping face's centroid otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub insertion_point: Option<Ref>,
+}
+
+/// Forming tools pressed into a sheet metal face at sketch points.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct FormTool {
+    pub shape: FormShape,
+    /// The flat face of the sheet the tools press into.
+    pub face: Ref,
+    /// A sketch on that face whose points place one tool each; the face's
+    /// center when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sketch: Option<FeatureId>,
+    /// Turn about the face normal, radians.
+    #[serde(default)]
+    pub rotation: f64,
+    /// Press from the other side.
+    #[serde(default)]
+    pub flip: bool,
+    /// Shown in punch tables.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub punch_id: Option<String>,
+}
+
+/// A form pressed into a sheet: the material it added and took away, kept so
+/// the flat pattern can undo it and mark it.
+#[derive(Debug, Clone)]
+pub struct FormRecord {
+    pub feature: FeatureId,
+    pub added: Option<of_geom::Shape>,
+    pub removed: Option<of_geom::Shape>,
+    /// Where it was placed and its outline on the sheet, in model space.
+    pub center: [f64; 3],
+    pub outline: Vec<[f64; 3]>,
+    pub punch_id: Option<String>,
+    pub angle: f64,
 }

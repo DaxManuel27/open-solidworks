@@ -229,6 +229,24 @@ pub enum FeatureKind {
     Fold(sheet_metal::Fold),
     /// A cut through sheet metal square to the sheet.
     NormalCut(sheet_metal::NormalCut),
+    /// Relief cuts where two bends meet at a corner.
+    CornerRelief(sheet_metal::CornerRelief),
+    /// Extend flanges so they close a corner.
+    ClosedCorner(sheet_metal::ClosedCorner),
+    /// A weld bead along a closed corner's seam.
+    WeldedCorner(sheet_metal::WeldedCorner),
+    /// Chamfer or round corners of the sheet's outline.
+    BreakCorner(sheet_metal::BreakCorner),
+    /// Notches at the ends of bend lines.
+    BendNotch(sheet_metal::BendNotch),
+    /// Tabs on one sheet metal body through slots in another.
+    TabAndSlot(sheet_metal::TabAndSlot),
+    /// A stiffening rib pressed across a bend.
+    SheetMetalGusset(sheet_metal::SheetMetalGusset),
+    /// Forming tools pressed into a sheet metal face.
+    FormTool(sheet_metal::FormTool),
+    /// Marks this part as a forming tool for other parts to use.
+    FormingTool(sheet_metal::FormingToolDef),
 }
 
 impl FeatureKind {
@@ -291,6 +309,15 @@ impl FeatureKind {
             FeatureKind::Unfold(_) => "Unfold",
             FeatureKind::Fold(_) => "Fold",
             FeatureKind::NormalCut(_) => "Cut-Normal",
+            FeatureKind::CornerRelief(_) => "Corner Relief",
+            FeatureKind::ClosedCorner(_) => "Closed Corner",
+            FeatureKind::WeldedCorner(_) => "Welded Corner",
+            FeatureKind::BreakCorner(_) => "Break-Corner",
+            FeatureKind::BendNotch(_) => "Bend Notch",
+            FeatureKind::TabAndSlot(_) => "Tab and Slot",
+            FeatureKind::SheetMetalGusset(_) => "Sheet Metal Gusset",
+            FeatureKind::FormTool(_) => "Form Tool",
+            FeatureKind::FormingTool(_) => "Forming Tool",
         }
     }
 
@@ -411,6 +438,22 @@ impl FeatureKind {
             FeatureKind::Unfold(u) => refs.extend(&u.fixed_face),
             FeatureKind::Fold(_) => {}
             FeatureKind::NormalCut(n) => out.push(n.sketch),
+            FeatureKind::CornerRelief(c) => refs.extend(&c.bends),
+            FeatureKind::ClosedCorner(c) => refs.extend(&c.faces),
+            FeatureKind::WeldedCorner(w) => refs.push(&w.edge),
+            FeatureKind::BreakCorner(b) => refs.extend(&b.edges),
+            FeatureKind::BendNotch(b) => refs.extend(&b.bends),
+            FeatureKind::TabAndSlot(t) => refs.extend([&t.edge, &t.face]),
+            FeatureKind::SheetMetalGusset(g) => refs.push(&g.bend),
+            FeatureKind::FormTool(f) => {
+                refs.push(&f.face);
+                out.extend(f.sketch);
+            }
+            FeatureKind::FormingTool(f) => {
+                refs.push(&f.stopping_face);
+                refs.extend(&f.remove_faces);
+                refs.extend(&f.insertion_point);
+            }
             FeatureKind::Wrap(w) => {
                 out.push(w.sketch);
                 refs.push(&w.face);

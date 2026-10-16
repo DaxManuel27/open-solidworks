@@ -126,6 +126,9 @@ pub(in crate::ops) fn swept_flange(
                 bend_lines: Vec::new(),
                 cross_breaks: Vec::new(),
                 facets: Vec::new(),
+                forms: Vec::new(),
+                welds: Vec::new(),
+                form_marks: Vec::new(),
             });
         }
     }

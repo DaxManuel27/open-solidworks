@@ -251,6 +251,9 @@ pub(in crate::ops) fn lofted_bend(
         bend_lines: Vec::new(),
         cross_breaks: Vec::new(),
         facets,
+        forms: Vec::new(),
+        welds: Vec::new(),
+        form_marks: Vec::new(),
     });
     Ok(())
 }

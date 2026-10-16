@@ -169,6 +169,13 @@ fn changes_material(kind: &FeatureKind) -> bool {
             | InsertBends(_)
             | ConvertToSheetMetal(_)
             | NormalCut(_)
+            | CornerRelief(_)
+            | ClosedCorner(_)
+            | BreakCorner(_)
+            | BendNotch(_)
+            | TabAndSlot(_)
+            | SheetMetalGusset(_)
+            | FormTool(_)
     )
 }
 
