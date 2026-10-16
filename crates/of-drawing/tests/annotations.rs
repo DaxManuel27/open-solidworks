@@ -147,6 +147,7 @@ fn model_view(id: u32, path: &std::path::Path, o: Orientation, at: [f64; 2]) -> 
                 path: path.to_string_lossy().into_owned(),
                 hash: None,
                 configuration: None,
+                flat: None,
             },
             orientation: o,
             exploded: false,
@@ -289,6 +290,7 @@ fn model_items_import_once_into_the_truest_view_and_drive_the_part() {
         path: path.to_string_lossy().into_owned(),
         hash: None,
         configuration: None,
+        flat: None,
     };
     let views = d.add_standard_views(SHEET, source, false, None).unwrap();
     let ids: Vec<u32> = d.doc.sheets[0].views.iter().map(|v| v.id).collect();

@@ -60,6 +60,8 @@ export function annotationLabel(a: Annotation): string {
           hole: 'Hole table',
           revision: 'Revision table',
           general: 'General table',
+          bend: 'Bend table',
+          punch: 'Punch table',
           general_tolerance: 'General tolerances',
         }[a.table]
       }`

@@ -180,6 +180,29 @@ pub struct ModelSource {
     /// Part or assembly configuration ID; `None` uses the file's active one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub configuration: Option<u32>,
+    /// Show a sheet metal part's flat pattern, looking at the flat's front.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flat: Option<FlatView>,
+}
+
+/// What a flat pattern view draws beside the outline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct FlatView {
+    /// Bend lines, up and down on their own layers.
+    #[serde(default = "yes")]
+    pub bend_lines: bool,
+    /// Bend notes (`UP 90° R1`) beside the bend lines.
+    #[serde(default = "yes")]
+    pub bend_notes: bool,
+}
+
+impl Default for FlatView {
+    fn default() -> Self {
+        FlatView {
+            bend_lines: true,
+            bend_notes: true,
+        }
+    }
 }
 
 /// A view direction.

@@ -189,6 +189,7 @@ impl Drawing {
                 exploded,
             } => Resolved {
                 frame: match orientation {
+                    _ if model.flat.is_some() => self.flat_frame(model, orientation)?,
                     Orientation::Relative { front, top } => {
                         self.relative_frame(model, *exploded, front, top)?
                     }
@@ -296,6 +297,25 @@ impl Drawing {
         Ok(r)
     }
 
+    /// Frame of a flat pattern view: the flat's front faces the viewer (its
+    /// back for `Back`), the flat's own y axis up.
+    fn flat_frame(&mut self, model: &ModelSource, o: &Orientation) -> Result<Frame, String> {
+        let path = self.model_path(model);
+        let part = self.sources.part(&path, model.configuration, true)?;
+        let plane = part
+            .state()
+            .sheet_metal
+            .iter()
+            .find_map(|r| r.flat_plane)
+            .ok_or("the part has no flat pattern")?;
+        let toward = if matches!(o, Orientation::Back) {
+            -plane.normal
+        } else {
+            plane.normal
+        };
+        Ok(Frame::looking(toward, plane.y_dir()))
+    }
+
     /// Frame of a relative-to-model view: `front` faces the viewer, `top`
     /// faces up.
     fn relative_frame(
@@ -307,9 +327,13 @@ impl Drawing {
     ) -> Result<Frame, String> {
         let path = self.model_path(model);
         let mut normal = |r: &of_assembly::CompRef| -> Result<of_model::geom::DVec3, String> {
-            let (part, pose) = self
-                .sources
-                .locate(&path, model.configuration, exploded, r)?;
+            let (part, pose) = self.sources.locate(
+                &path,
+                model.configuration,
+                model.flat.is_some(),
+                exploded,
+                r,
+            )?;
             let state = part.state();
             let (kind, i) = state.index_of(&r.entity).map_err(|e| e.to_string())?;
             if kind != of_model::geom::Kind::Face {
@@ -342,7 +366,13 @@ impl Drawing {
         let path = self.model_path(&view.model);
         let (part, pose) = self
             .sources
-            .locate(&path, view.model.configuration, view.exploded, edge)
+            .locate(
+                &path,
+                view.model.configuration,
+                view.model.flat.is_some(),
+                view.exploded,
+                edge,
+            )
             .map_err(|e| format!("the auxiliary view's edge: {e}"))?;
         let state = part.state();
         let (_, i) = state.index_of(&edge.entity).map_err(|e| e.to_string())?;
@@ -463,7 +493,9 @@ impl Drawing {
                 f.model = p;
             }
             if !crate::model::is_assembly(&path)
-                && let Ok(part) = self.sources.part(&path, r.model.configuration)
+                && let Ok(part) =
+                    self.sources
+                        .part(&path, r.model.configuration, r.model.flat.is_some())
             {
                 f.material = of_model::properties::evaluate(part.doc(), part.state(), "{material}");
                 if let Ok(m) = of_model::measure::mass_properties(part.doc(), part.state()) {

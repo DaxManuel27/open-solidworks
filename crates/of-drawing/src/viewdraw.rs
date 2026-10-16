@@ -44,6 +44,67 @@ fn p2(v: DVec2) -> P2 {
     [v.x, v.y]
 }
 
+/// Bend lines and form marks of a flat pattern view, when it looks square
+/// at the flat. Returns the bend notes to write (view-plane ends and text).
+fn flat_marks(
+    scene: &Scene,
+    r: &Resolved,
+    fv: FlatView,
+    weight: f64,
+    locals: &mut Vec<Local>,
+) -> Vec<(DVec2, DVec2, String)> {
+    let mut notes = Vec::new();
+    for piece in &scene.pieces {
+        for record in &piece.part.state().sheet_metal {
+            let Some(plane) = record.flat_plane else {
+                continue;
+            };
+            let facing = plane.normal.dot(r.frame.toward);
+            if facing.abs() < 1.0 - 1e-9 {
+                continue;
+            }
+            let at = |p: [f64; 3]| r.frame.project(DVec3::from(p));
+            if fv.bend_lines {
+                for l in &record.bend_lines {
+                    // Seen from the back, up is down.
+                    let up = l.up == (facing > 0.0);
+                    let (layer, color) = if up {
+                        (crate::flat::BEND_UP, [0, 128, 0])
+                    } else {
+                        (crate::flat::BEND_DOWN, [0, 0, 255])
+                    };
+                    let pen = Pen {
+                        color,
+                        ..Pen::new(LineStyle::Center, weight)
+                    };
+                    let (a, b) = (at(l.a), at(l.b));
+                    locals.push(Local::new(Prim::Line { a: p2(a), b: p2(b) }, pen, layer));
+                    if fv.bend_notes {
+                        notes.push((a, b, crate::flat::bend_note(up, l.angle, l.radius)));
+                    }
+                }
+            }
+            let form = Pen {
+                color: [255, 0, 255],
+                ..Pen::new(LineStyle::Continuous, weight)
+            };
+            for m in &record.form_marks {
+                if m.outline.len() > 1 {
+                    locals.push(Local::new(
+                        Prim::Polyline {
+                            points: m.outline.iter().map(|p| p2(at(*p))).collect(),
+                            closed: true,
+                        },
+                        form,
+                        crate::flat::FORM,
+                    ));
+                }
+            }
+        }
+    }
+    notes
+}
+
 /// A thread to show: where it starts on its axis, the unit axis, major
 /// diameter, pitch and length, and whether it is internal.
 struct ThreadSpec {
@@ -411,6 +472,7 @@ impl Drawing {
         let scene = self.sources.scene(
             &path,
             r.model.configuration,
+            r.model.flat.is_some(),
             r.exploded,
             &v.hidden_components,
         )?;
@@ -518,6 +580,10 @@ impl Drawing {
                 }
             }
         }
+        let notes = match r.model.flat {
+            Some(fv) => flat_marks(&scene, &r, fv, std.thin_line(), &mut locals),
+            None => Vec::new(),
+        };
         // Broken-out outlines: thin freehand boundaries.
         for b in &v.broken_out {
             let outline = Region::from_profile(&b.profile).outline();
@@ -629,6 +695,24 @@ impl Drawing {
                 entity: l.entity,
             };
             g.push(place(&l.prim, &r), l.pen, &l.layer, &owner);
+        }
+        // Bend notes at paper size, beside their bend lines.
+        let owner = Owner::View {
+            view: v.id,
+            entity: None,
+        };
+        for (a, b, note) in notes {
+            let (a, b) = (r.to_sheet(a), r.to_sheet(b));
+            let h = std.text_height();
+            let angle = text::readable((b[1] - a[1]).atan2(b[0] - a[0]));
+            let mid = [(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0];
+            let at = [
+                mid[0] - angle.sin() * h * 0.5,
+                mid[1] + angle.cos() * h * 0.5,
+            ];
+            for prim in text::layout(&note, at, h, angle, HAlign::Center) {
+                g.push(prim, thin, crate::flat::BEND_NOTES, &owner);
+            }
         }
         let bbox = crate::drawing::bounds(&g.items[start..]);
         if let Some(b) = bbox {

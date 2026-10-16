@@ -182,6 +182,20 @@ pub enum TableKind {
     },
     /// ISO 2768-1 general tolerances for a class.
     GeneralTolerance { class: ToleranceClass },
+    /// Bends of the flat pattern shown in `view`, tagged on the view.
+    Bend {
+        view: u32,
+        /// Draw each bend's tag at its bend line.
+        #[serde(default = "yes")]
+        show_tags: bool,
+    },
+    /// Forms (punches) of the flat pattern in `view`, measured from an
+    /// origin vertex or, without one, the flat's lower left corner.
+    Punch {
+        view: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        origin: Option<Pick>,
+    },
 }
 
 fn yes() -> bool {

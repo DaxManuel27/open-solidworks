@@ -599,6 +599,35 @@ export type AnnotationKind =
     /** Capital height of cell text; the standard's when unset. */
     text_height?: number | null
   }
+  | {
+    type: 'table'
+    table: 'bend'
+    /** Sheet position of the `anchor` corner, mm. */
+    at: [number, number]
+    view: number
+    anchor?: Corner
+    continued?: Piece[]
+    /** Rows per piece; the rest continue at `continued`. */
+    max_rows?: number | null
+    /** Draw each bend's tag at its bend line. */
+    show_tags?: boolean
+    /** Capital height of cell text; the standard's when unset. */
+    text_height?: number | null
+  }
+  | {
+    type: 'table'
+    table: 'punch'
+    /** Sheet position of the `anchor` corner, mm. */
+    at: [number, number]
+    view: number
+    anchor?: Corner
+    continued?: Piece[]
+    /** Rows per piece; the rest continue at `continued`. */
+    max_rows?: number | null
+    origin?: Pick | null
+    /** Capital height of cell text; the standard's when unset. */
+    text_height?: number | null
+  }
 
 export type Arrows = 'auto' | 'inside' | 'outside'
 
@@ -2199,6 +2228,14 @@ export type FlangePosition =
   | 'bend_from_virtual_sharp'
   | 'tangent_to_bend'
 
+/** What a flat pattern view draws beside the outline. */
+export type FlatView = {
+  /** Bend lines, up and down on their own layers. */
+  bend_lines?: boolean
+  /** Bend notes (`UP 90° R1`) beside the bend lines. */
+  bend_notes?: boolean
+}
+
 /** A built-in forming tool shape. Sizes in mm. */
 export type FormShape =
   | {
@@ -2581,6 +2618,8 @@ export type ModelSource = {
   path: string
   /** Part or assembly configuration ID; `None` uses the file's active one. */
   configuration?: number | null
+  /** Show a sheet metal part's flat pattern, looking at the flat's front. */
+  flat?: FlatView | null
   /** Content hash of the file when it was last loaded. */
   hash?: string | null
 }

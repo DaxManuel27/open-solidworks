@@ -88,6 +88,7 @@ impl DrawSession {
                     path: model.to_string_lossy().into_owned(),
                     hash: None,
                     configuration: p.configuration,
+                    flat: None,
                 },
                 &s.drawing.base_dir(),
                 false,
@@ -249,6 +250,7 @@ impl DrawSession {
                         path: p.model.to_string_lossy().into_owned(),
                         hash: None,
                         configuration: p.configuration,
+                        flat: None,
                     },
                     &self.drawing.base_dir(),
                     false,
@@ -280,6 +282,7 @@ impl DrawSession {
                             path: p.model.to_string_lossy().into_owned(),
                             hash: None,
                             configuration: p.configuration,
+                            flat: None,
                         },
                         &d.base_dir(),
                         saved,
@@ -970,6 +973,7 @@ fn model_source(m: &ModelSource, base: &Path, saved: bool) -> Result<ModelSource
         path,
         hash: None,
         configuration: m.configuration,
+        flat: m.flat,
     })
 }
 

@@ -41,6 +41,7 @@ fn model_view(id: u32, path: &std::path::Path, orientation: Orientation, at: [f6
                 path: path.to_string_lossy().into_owned(),
                 hash: None,
                 configuration: None,
+                flat: None,
             },
             orientation,
             exploded: false,

@@ -150,3 +150,107 @@ fn flat_dxf_has_cut_and_bend_layers_at_true_size() {
         "{holes:?}"
     );
 }
+
+#[test]
+fn flat_pattern_view_with_bend_lines_notes_and_tables() {
+    use common::{Scratch, extent, save, texts};
+    use of_drawing::annotations::{Annotation, AnnotationKind};
+    use of_drawing::document::*;
+    use of_drawing::drawing::Drawing;
+    use of_drawing::graphics::layers;
+    use of_drawing::tables::{Table, TableKind};
+
+    let dir = Scratch::new("flatview");
+    let m = tray();
+    let path = save(&m.doc, &dir.path("tray.ofp"));
+    let (_, props) = sheet_properties(m.state(), 0).unwrap();
+    let view = View::new(
+        2,
+        "Flat".into(),
+        ViewKind::Model {
+            model: ModelSource {
+                path: path.to_string_lossy().into_owned(),
+                hash: None,
+                configuration: None,
+                flat: Some(FlatView::default()),
+            },
+            orientation: Orientation::Front,
+            exploded: false,
+        },
+        [150.0, 150.0],
+    );
+    let table = |id: u32, at: [f64; 2], kind: TableKind| Annotation {
+        id,
+        attach: None,
+        layer: None,
+        kind: AnnotationKind::Table(Box::new(Table {
+            at,
+            anchor: Default::default(),
+            kind,
+            text_height: None,
+            max_rows: None,
+            continued: Vec::new(),
+        })),
+    };
+    let mut doc = DrawingDocument {
+        sheets: vec![Sheet {
+            id: 1,
+            name: "Sheet1".into(),
+            size: SheetSize::A3,
+            portrait: false,
+            scale: Scale::ONE,
+            projection: Projection::Third,
+            format: SheetFormat::default(),
+            properties_view: None,
+            views: vec![view],
+            annotations: vec![
+                table(
+                    3,
+                    [20.0, 280.0],
+                    TableKind::Bend {
+                        view: 2,
+                        show_tags: true,
+                    },
+                ),
+                table(
+                    4,
+                    [250.0, 280.0],
+                    TableKind::Punch {
+                        view: 2,
+                        origin: None,
+                    },
+                ),
+            ],
+        }],
+        ..Default::default()
+    };
+    doc.next_id = 100;
+    doc.validate().unwrap();
+    let mut d = Drawing::new(doc);
+    let r = d.render(1).unwrap();
+    for v in &r.views {
+        assert_eq!(v.error, None, "view {}", v.id);
+    }
+    let items = &r.graphics.items;
+    // The flat outline at 1:1, square to the paper.
+    let outline: Vec<_> = items
+        .iter()
+        .filter(|i| i.layer == layers::VISIBLE)
+        .collect();
+    let [lo, hi] = extent(&outline);
+    let (w, h) = (hi[0] - lo[0], hi[1] - lo[1]);
+    assert!((w.max(h) - props.flat_length).abs() < 1e-3, "{w} × {h}");
+    assert!((w.min(h) - props.flat_width).abs() < 1e-3, "{w} × {h}");
+    let bends = items
+        .iter()
+        .filter(|i| i.layer == flat::BEND_UP || i.layer == flat::BEND_DOWN)
+        .count();
+    assert_eq!(bends, 2);
+    let words = texts(items).join(" ");
+    assert!(words.contains("90° R1"), "{words}");
+    assert!(
+        words.contains("DIRECTION") && words.contains("K 0.5"),
+        "{words}"
+    );
+    assert!(words.contains("PUNCH ID"), "{words}");
+}

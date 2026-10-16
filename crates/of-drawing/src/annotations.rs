@@ -360,6 +360,11 @@ impl AnnotationKind {
                     out.push(origin.target.view);
                     out.extend(holes.iter().map(|h| h.view));
                 }
+                crate::tables::TableKind::Bend { view, .. } => out.push(*view),
+                crate::tables::TableKind::Punch { view, origin } => {
+                    out.push(*view);
+                    out.extend(origin.iter().map(|o| o.target.view));
+                }
                 _ => {}
             },
             _ => {}

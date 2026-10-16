@@ -8,8 +8,8 @@ use std::rc::Rc;
 
 use of_assembly::cache::{Cache, Part, canonical};
 use of_assembly::{Assembly, CompRef, Loaded, Pose};
-use of_model::Ref;
 use of_model::geom::{DAffine3, Kind, Shape};
+use of_model::{FeatureKind, Model, Ref};
 
 /// One part placed in a view's model: a part view has one piece with an
 /// empty component path.
@@ -74,6 +74,8 @@ struct LoadedAssembly {
 pub struct Sources {
     parts: Cache,
     assemblies: HashMap<(PathBuf, Option<u32>), LoadedAssembly>,
+    /// Parts with their Flat-Pattern feature in effect.
+    flats: HashMap<(PathBuf, Option<u32>), Rc<Part>>,
 }
 
 /// Whether a path names an assembly.
@@ -87,9 +89,26 @@ impl Sources {
         self.parts.hash(&canonical(path))
     }
 
-    /// A part built in a configuration.
-    pub fn part(&mut self, path: &Path, configuration: Option<u32>) -> Result<Rc<Part>, String> {
-        self.parts.part(path, configuration)
+    /// A part built in a configuration, flattened when `flat`.
+    pub fn part(
+        &mut self,
+        path: &Path,
+        configuration: Option<u32>,
+        flat: bool,
+    ) -> Result<Rc<Part>, String> {
+        let part = self.parts.part(path, configuration)?;
+        if !flat {
+            return Ok(part);
+        }
+        let key = (part.path.clone(), configuration);
+        if let Some(f) = self.flats.get(&key)
+            && f.hash == part.hash
+        {
+            return Ok(f.clone());
+        }
+        let flat = Rc::new(flatten(&part)?);
+        self.flats.insert(key, flat.clone());
+        Ok(flat)
     }
 
     /// A solved assembly in a configuration, reopened when its file changed
@@ -134,7 +153,7 @@ impl Sources {
             let asm = self.assembly(path, configuration)?;
             Ok(asm.doc.properties.clone())
         } else {
-            let part = self.part(path, configuration)?;
+            let part = self.part(path, configuration, false)?;
             Ok(of_model::properties::effective(part.doc())
                 .into_iter()
                 .map(|(k, v)| {
@@ -151,17 +170,27 @@ impl Sources {
         &mut self,
         path: &Path,
         configuration: Option<u32>,
+        flat: bool,
         exploded: bool,
         hidden: &[Vec<String>],
     ) -> Result<Scene, String> {
+        if flat && is_assembly(path) {
+            return Err("only a sheet metal part has a flat pattern".into());
+        }
         if !is_assembly(path) {
-            let part = self.part(path, configuration)?;
+            let part = self.part(path, configuration, flat)?;
             let shape = part
                 .shape()
                 .cloned()
                 .ok_or_else(|| "the part has no solid geometry".to_string())?;
             let edges = shape.count(Kind::Edge);
-            let key = format!("{}#{}#{:?}", part.path.display(), part.hash, configuration);
+            let key = format!(
+                "{}#{}#{:?}#{}",
+                part.path.display(),
+                part.hash,
+                configuration,
+                if flat { "flat" } else { "formed" }
+            );
             return Ok(Scene {
                 shape,
                 pieces: vec![Piece {
@@ -244,6 +273,7 @@ impl Sources {
         &mut self,
         path: &Path,
         configuration: Option<u32>,
+        flat: bool,
         exploded: bool,
         r: &CompRef,
     ) -> Result<(Rc<Part>, Pose), String> {
@@ -251,7 +281,7 @@ impl Sources {
             if !r.component.is_empty() {
                 return Err("a part view has no components".into());
             }
-            return Ok((self.part(path, configuration)?, Pose::IDENTITY));
+            return Ok((self.part(path, configuration, flat)?, Pose::IDENTITY));
         }
         let asm = self.assembly(path, configuration)?;
         let instances = asm.instances();
@@ -277,11 +307,50 @@ impl Sources {
     pub fn forget(&mut self, path: &Path) {
         self.parts.forget(path);
         let c = canonical(path);
+        self.flats.retain(|(p, _), _| *p != c);
         self.assemblies.retain(|(p, _), _| *p != c);
     }
 }
 
 /// Reference to a part entity with no component (part views).
+/// `part` with its Flat-Pattern feature in effect (added when it has none),
+/// in every configuration.
+fn flatten(part: &Part) -> Result<Part, String> {
+    if part.state().sheet_metal.is_empty() {
+        return Err("the part has no sheet metal to flatten".into());
+    }
+    let mut doc = part.doc().clone();
+    let id = match doc
+        .features
+        .iter()
+        .find(|f| matches!(f.kind, FeatureKind::FlatPattern(_)))
+    {
+        Some(f) => f.id,
+        None => doc.add(FeatureKind::FlatPattern(Default::default())),
+    };
+    doc.feature_mut(id).expect("present").suppressed = false;
+    for c in &mut doc.configurations.items {
+        c.suppressed.remove(&id);
+    }
+    let mut model = Model::new(doc);
+    model.rebuild();
+    if let Some(e) = model
+        .statuses()
+        .iter()
+        .find(|s| s.id == id)
+        .and_then(|s| s.error.clone())
+    {
+        return Err(format!("can't flatten the part: {e}"));
+    }
+    Ok(Part {
+        path: part.path.clone(),
+        hash: part.hash.clone(),
+        configuration: part.configuration,
+        model,
+        error: part.error.clone(),
+    })
+}
+
 pub fn part_ref(entity: Ref) -> CompRef {
     CompRef {
         component: Vec::new(),
@@ -307,7 +376,7 @@ impl Sources {
         path: &Path,
         configuration: Option<u32>,
     ) -> Result<Vec<PlanarFace>, String> {
-        let scene = self.scene(path, configuration, false, &[])?;
+        let scene = self.scene(path, configuration, false, false, &[])?;
         let mut out = Vec::new();
         for p in &scene.pieces {
             let state = p.part.state();

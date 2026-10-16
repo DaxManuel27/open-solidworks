@@ -100,9 +100,13 @@ impl Drawing {
     pub fn locate(&mut self, sheet: &Sheet, r: &ViewRef) -> Result<Located, String> {
         let view = self.resolve(sheet, r.view)?;
         let path = self.model_path(&view.model);
-        let (part, pose) =
-            self.sources
-                .locate(&path, view.model.configuration, view.exploded, &r.entity)?;
+        let (part, pose) = self.sources.locate(
+            &path,
+            view.model.configuration,
+            view.model.flat.is_some(),
+            view.exploded,
+            &r.entity,
+        )?;
         let state = part.state();
         let geo = match of_model::resolve(state, &r.entity.entity).map_err(|e| e.to_string())? {
             R::Edge { info, .. } => match info.kind {

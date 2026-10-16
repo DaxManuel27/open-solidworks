@@ -786,6 +786,27 @@ impl Drawing {
                 for (range, at, anchor, cells) in pieces {
                     tables::draw(g, &cells, range, at, anchor, h, &std, &owner);
                 }
+                if let TableKind::Bend {
+                    view,
+                    show_tags: true,
+                } = &t.kind
+                    && let Ok((r, flat)) = self.flat_items(sheet, *view)
+                {
+                    let h = std.text_height() * 0.8;
+                    let thin = Pen::new(LineStyle::Continuous, std.thin_line());
+                    for (i, b) in flat.bends.iter().enumerate() {
+                        let mid = r.to_sheet((b.a + b.b) / 2.0);
+                        for prim in text::layout(
+                            &(i + 1).to_string(),
+                            [mid[0] + 1.0, mid[1] + 1.0],
+                            h,
+                            0.0,
+                            HAlign::Left,
+                        ) {
+                            g.push(prim, thin, layers::TABLES, &owner);
+                        }
+                    }
+                }
                 if let TableKind::Hole {
                     holes,
                     tags,
@@ -1200,7 +1221,9 @@ impl Drawing {
                 if crate::model::is_assembly(&path) {
                     return Err("model dimensions come from part views".into());
                 }
-                let part = self.sources.part(&path, r.model.configuration)?;
+                let part =
+                    self.sources
+                        .part(&path, r.model.configuration, r.model.flat.is_some())?;
                 let m = model_measure(&part, key)?;
                 let anchor = measure_anchor(&m, &r);
                 let at = DVec2::new(anchor[0] + d.at[0], anchor[1] + d.at[1]);
@@ -1352,6 +1375,86 @@ impl Drawing {
                 c
             }
             TableKind::GeneralTolerance { class } => tables::tolerance_cells(*class),
+            TableKind::Bend { view, .. } => {
+                let std = self.doc.standard;
+                let (_, flat) = self.flat_items(sheet, *view)?;
+                let rows = flat
+                    .bends
+                    .iter()
+                    .enumerate()
+                    .map(|(i, b)| {
+                        vec![
+                            (i + 1).to_string(),
+                            if b.up { "UP" } else { "DOWN" }.to_string(),
+                            format!("{}°", std.number(b.angle.to_degrees(), 1)),
+                            std.number(b.radius, std.precision()),
+                            allowance_text(&b.allowance, &std),
+                        ]
+                    })
+                    .collect();
+                tables::Cells {
+                    header: ["TAG", "DIRECTION", "ANGLE", "RADIUS", "ALLOWANCE"]
+                        .map(String::from)
+                        .to_vec(),
+                    rows,
+                    align: vec![
+                        HAlign::Center,
+                        HAlign::Center,
+                        HAlign::Right,
+                        HAlign::Right,
+                        HAlign::Left,
+                    ],
+                    title: None,
+                }
+            }
+            TableKind::Punch { view, origin } => {
+                let std = self.doc.standard;
+                let (r, flat) = self.flat_items(sheet, *view)?;
+                let o = match origin {
+                    Some(pick) => {
+                        let lo = self.locate(sheet, &pick.target)?;
+                        let p = pick_point(&lo, pick);
+                        DVec2::new(p.dot(r.frame.x), p.dot(r.frame.y))
+                    }
+                    None => flat.corner,
+                };
+                let ids: Vec<String> = flat
+                    .punches
+                    .iter()
+                    .map(|p| p.id.clone().unwrap_or_else(|| "-".into()))
+                    .collect();
+                let rows = flat
+                    .punches
+                    .iter()
+                    .zip(&ids)
+                    .enumerate()
+                    .map(|(i, (p, id))| {
+                        vec![
+                            (i + 1).to_string(),
+                            std.number(p.at.x - o.x, std.precision()),
+                            std.number(p.at.y - o.y, std.precision()),
+                            format!("{}°", std.number(p.angle.to_degrees(), 1)),
+                            id.clone(),
+                            ids.iter().filter(|x| *x == id).count().to_string(),
+                        ]
+                    })
+                    .collect();
+                tables::Cells {
+                    header: ["TAG", "X LOC", "Y LOC", "ANGLE", "PUNCH ID", "QTY"]
+                        .map(String::from)
+                        .to_vec(),
+                    rows,
+                    align: vec![
+                        HAlign::Center,
+                        HAlign::Right,
+                        HAlign::Right,
+                        HAlign::Right,
+                        HAlign::Left,
+                        HAlign::Right,
+                    ],
+                    title: None,
+                }
+            }
             TableKind::Hole {
                 origin,
                 holes,
@@ -1465,6 +1568,7 @@ impl Drawing {
         let (part, pose) = self.sources.locate(
             &path,
             loc.view.model.configuration,
+            loc.view.model.flat.is_some(),
             loc.view.exploded,
             &r.entity,
         )?;
@@ -1629,7 +1733,9 @@ impl Drawing {
         let Some((_, first, path)) = cands.first().cloned() else {
             return Ok(Vec::new());
         };
-        let part = self.sources.part(&path, first.model.configuration)?;
+        let part =
+            self.sources
+                .part(&path, first.model.configuration, first.model.flat.is_some())?;
         let doc = part.doc().clone();
         if opts.dimensions {
             let mut taken: Vec<String> = existing;
@@ -2197,6 +2303,105 @@ struct BomItem {
 
 /// Rows of a table shown at a sheet position from a corner.
 type TablePiece = (std::ops::Range<usize>, P2, tables::Corner, tables::Cells);
+
+/// A bend of a flat pattern view, in view-plane mm.
+struct ViewBend {
+    a: DVec2,
+    b: DVec2,
+    /// Toward the viewer.
+    up: bool,
+    angle: f64,
+    radius: f64,
+    allowance: of_model::sheet_metal::Allowance,
+}
+
+/// A form of a flat pattern view, in view-plane mm.
+struct ViewPunch {
+    at: DVec2,
+    angle: f64,
+    id: Option<String>,
+}
+
+/// What a flat pattern view shows of its bends and forms.
+struct FlatItems {
+    bends: Vec<ViewBend>,
+    punches: Vec<ViewPunch>,
+    /// Lower left corner of the flat, view-plane mm.
+    corner: DVec2,
+}
+
+/// How a bend's allowance reads in a bend table.
+fn allowance_text(a: &of_model::sheet_metal::Allowance, std: &crate::standard::Standard) -> String {
+    use of_model::sheet_metal::Allowance;
+    match a {
+        Allowance::KFactor { k } => format!("K {}", std.number(*k, 3)),
+        Allowance::BendAllowance { value } => format!("BA {}", std.number(*value, std.precision())),
+        Allowance::BendDeduction { value } => format!("BD {}", std.number(*value, std.precision())),
+        Allowance::BendTable { .. } => "BEND TABLE".into(),
+        Allowance::BendCalculation { .. } => "CALCULATION".into(),
+    }
+}
+
+impl Drawing {
+    /// Bends and forms of flat pattern view `view` of `sheet`.
+    fn flat_items(&mut self, sheet: &Sheet, view: u32) -> Result<(Resolved, FlatItems), String> {
+        let r = self.resolve(sheet, view)?;
+        if r.model.flat.is_none() {
+            return Err("bend and punch tables need a flat pattern view".into());
+        }
+        let path = self.model_path(&r.model);
+        let part = self.sources.part(&path, r.model.configuration, true)?;
+        let state = part.state();
+        let at = |p: [f64; 3]| r.frame.project(DVec3::from(p));
+        let mut out = FlatItems {
+            bends: Vec::new(),
+            punches: Vec::new(),
+            corner: DVec2::ZERO,
+        };
+        for record in &state.sheet_metal {
+            let Some(plane) = record.flat_plane else {
+                continue;
+            };
+            let facing = plane.normal.dot(r.frame.toward);
+            if facing.abs() < 1.0 - 1e-9 {
+                continue;
+            }
+            for l in &record.bend_lines {
+                let allowance = record
+                    .bends
+                    .iter()
+                    .find(|b| Some(b.feature) == l.feature && Some(b.index) == l.index)
+                    .map_or_else(|| record.params.allowance.clone(), |b| b.allowance.clone());
+                out.bends.push(ViewBend {
+                    a: at(l.a),
+                    b: at(l.b),
+                    up: l.up == (facing > 0.0),
+                    angle: l.angle,
+                    radius: l.radius,
+                    allowance,
+                });
+            }
+            for m in &record.form_marks {
+                out.punches.push(ViewPunch {
+                    at: at(m.center),
+                    angle: m.angle,
+                    id: m.punch_id.clone(),
+                });
+            }
+        }
+        if let Some(body) = &state.body {
+            let shape = &body.shape;
+            let pts: Vec<DVec2> = (0..shape.count(of_model::geom::Kind::Vertex))
+                .filter_map(|v| shape.vertex_point(v).ok())
+                .map(|p| r.frame.project(p))
+                .collect();
+            if !pts.is_empty() {
+                out.corner = pts.iter().fold(DVec2::splat(f64::MAX), |a, b| a.min(*b));
+            }
+        }
+        Ok((r, out))
+    }
+}
 
 fn balloon_text(c: &BalloonText, items: &[BomItem]) -> String {
     let find = |component: &Vec<String>| {
