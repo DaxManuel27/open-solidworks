@@ -1365,6 +1365,22 @@ export type ExplodeMotion =
     distance: number
   }
 
+/** How far Extend Surface goes. */
+export type ExtendEnd =
+  | {
+    type: 'distance'
+    /** mm. */
+    distance: number
+  }
+  | {
+    type: 'up_to_point'
+    point: Ref
+  }
+  | {
+    type: 'up_to_surface'
+    target: Ref
+  }
+
 export type FaceKind = 'face'
 
 /** How Move Face moves its faces. */
@@ -1391,6 +1407,12 @@ export type FaceMotion =
     /** Radians. */
     angle: number
   }
+
+/** Two faces facing each other across a wall. */
+export type FacePair = {
+  a: Ref
+  b: Ref
+}
 
 /** A profile family. */
 export type Family =
@@ -2656,6 +2678,113 @@ export type Feature =
     /** Body IDs this feature acts on; omitted acts on the whole part. */
     scope?: string[] | null
   }
+  | {
+    type: 'filled_surface'
+    /** Edges and curves around the patch; they must form a closed loop. */
+    boundary: FillBoundary[]
+    /** Curves the patch must pass through. */
+    constraints?: Ref[]
+    /** When merged and closed, make the result a solid. */
+    create_solid?: boolean
+    /** Join the patch to the surface body its edges belong to. */
+    merge?: boolean
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'ruled_surface'
+    edges: Ref[]
+    direction: RuledDirection
+    /** mm. */
+    distance: number
+    /** Go to the other side. */
+    alternate_side?: boolean
+    /** Join the strips to each other where they meet. */
+    knit?: boolean
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'radiate_surface'
+    edges: Ref[]
+    /** The strips lie parallel to this plane. */
+    plane: Ref
+    /** mm. */
+    distance: number
+    flip?: boolean
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'trim_surface'
+    /** The surface bodies to trim. */
+    bodies: string[]
+    /** Points on the pieces to keep (or to remove, with `remove`), mm. */
+    pieces?: ([number, number, number])[]
+    /** The pieces listed are removed instead of kept. */
+    remove?: boolean
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+    /** Keep every piece, split apart. */
+    split_all?: boolean
+    /**
+     * A plane, surface body or face that cuts the bodies. Omit it for a
+     * mutual trim, where the bodies cut each other.
+     */
+    tool?: Ref | null
+  }
+  | {
+    type: 'untrim_surface'
+    faces: Ref[]
+    mode?: UntrimMode
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'extend_surface'
+    /** Open edges of surface bodies. */
+    edges: Ref[]
+    end: ExtendEnd
+    /** Continue tangent in straight lines instead of along the same surface. */
+    linear?: boolean
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'mid_surface'
+    /** The solid to find face pairs in. */
+    body?: string | null
+    /** Knit the mid faces together. */
+    knit?: boolean
+    /** Face pairs; leave empty to find them in `body`. */
+    pairs?: FacePair[]
+    /** Where the surface sits from face `a` (0) to face `b` (1). */
+    position?: number
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+    /** Faces further apart than this are not paired, mm. */
+    threshold?: number
+  }
+  | {
+    type: 'freeform'
+    face: Ref
+    moves: FreeformMove[]
+    /** How the reshaped face meets its neighbours. */
+    continuity?: PatchContinuity
+    /** Control points across the face in each direction. */
+    grid?: number
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+
+/** One edge around a filled surface. */
+export type FillBoundary = {
+  /** A model edge, or a sketch contour or curve. */
+  edge: Ref
+  /** Use the face on the other side of the edge for tangent or curvature. */
+  alternate_face?: boolean
+  continuity?: PatchContinuity
+}
 
 export type FinishProcess = 'any' | 'removal' | 'no_removal'
 
@@ -2748,6 +2877,15 @@ export type FormShape =
     path: string
     configuration?: number | null
   }
+
+/** One control point move of a freeform edit. */
+export type FreeformMove = {
+  /** Where on the face, from 0 to 1 across its parameter range. */
+  u: number
+  v: number
+  /** How far the point moves, mm. */
+  offset: [number, number, number]
+}
 
 /** A gauge chosen from a gauge table. */
 export type GaugeChoice = {
@@ -3278,6 +3416,9 @@ export type Overrides = {
   unidirectional?: boolean | null
 }
 
+/** How a patch meets the face beside one of its edges. */
+export type PatchContinuity = 'contact' | 'tangent' | 'curvature'
+
 /** A named hatch pattern from the library. */
 export type Pattern =
   | 'general'
@@ -3576,6 +3717,28 @@ export type Roll = {
   axis: CompRef
   up: CompRef
 }
+
+/** The direction a ruled surface's lines run. */
+export type RuledDirection =
+  | {
+    type: 'tangent_to_surface'
+  }
+  | {
+    type: 'normal_to_surface'
+  }
+  | {
+    type: 'tapered_to_vector'
+    direction: Ref
+    angle: number
+  }
+  | {
+    type: 'perpendicular_to_vector'
+    direction: Ref
+  }
+  | {
+    type: 'sweep'
+    direction: Ref
+  }
 
 /** A drawing scale `num:den`; 1:2 draws the model at half size. */
 export type Scale = {
@@ -3946,6 +4109,9 @@ export type TrimBoundary =
 
 /** How trimmed members end. */
 export type TrimKind = 'end_trim' | 'end_miter' | 'end_butt1' | 'end_butt2'
+
+/** What Untrim Surface restores. */
+export type UntrimMode = 'natural' | 'fill_holes'
 
 /** What a view shows. */
 export type ViewKind =

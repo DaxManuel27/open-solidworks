@@ -563,6 +563,39 @@ pub mod ffi {
         ) -> Result<UniquePtr<Shape>>;
         /// A planar face bounded by a closed loop of edges.
         fn planar_face(edges: &Shape) -> Result<UniquePtr<Shape>>;
+        /// A strip of straight lines from edge `edge` of `s`; `size` is its
+        /// length and, for mode 2, the taper angle.
+        /// Modes: 0 tangent to face `face`, 1 normal to it, 2 tapered to
+        /// `vector` at `angle`, 3 perpendicular to `vector`, 4 along `vector`
+        /// made square to the edge. Strips leave the face unless `alternate`.
+        fn ruled_strip(
+            s: &Shape,
+            edge: u32,
+            face: i32,
+            mode: u8,
+            vector: &Vec3,
+            size: &[f64],
+            alternate: bool,
+        ) -> Result<UniquePtr<Shape>>;
+        /// Face `face` of `s` continued `distance` past its edge `edge`, on its
+        /// own surface.
+        fn extend_strip(s: &Shape, edge: u32, face: u32, distance: f64)
+        -> Result<UniquePtr<Shape>>;
+        /// Face `face` of `s` on its surface's natural bounds.
+        fn untrim_face(s: &Shape, face: u32) -> Result<UniquePtr<Shape>>;
+        /// Face `face` of `s` with control points moved: `moves` holds u, v
+        /// (0..1) and a displacement per move; `fixed` pole rows at each
+        /// boundary stay put. Its edges don't move.
+        fn freeform_face(
+            s: &Shape,
+            face: u32,
+            grid: u32,
+            moves: &[f64],
+            fixed: u32,
+            hist: &mut Vec<HistoryEntry>,
+        ) -> Result<UniquePtr<Shape>>;
+        /// A vertex at a point.
+        fn make_vertex(p: &Vec3) -> UniquePtr<Shape>;
         /// A face's surface extended `length` past its boundary in every
         /// direction it can go, as an untrimmed face.
         fn extend_face(face: &Shape, length: f64) -> Result<UniquePtr<Shape>>;

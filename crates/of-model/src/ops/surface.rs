@@ -85,7 +85,7 @@ fn swept_names(
 }
 
 /// Split a named shape into its shells, each with its faces' names.
-fn shells(body: &Body) -> RResult<Vec<Body>> {
+pub(crate) fn shells_of_body(body: &Body) -> RResult<Vec<Body>> {
     body.shape
         .shells()
         .into_iter()
@@ -103,7 +103,7 @@ fn shells(body: &Body) -> RResult<Vec<Body>> {
 
 /// Add each shell of `body` as a surface body made by `fid`.
 pub(crate) fn add_surfaces(fid: FeatureId, state: &mut State, body: Body) -> RResult<()> {
-    let parts = shells(&body)?;
+    let parts = shells_of_body(&body)?;
     if parts.is_empty() {
         return Err("the feature made no surface".into());
     }
@@ -573,7 +573,7 @@ pub(crate) fn knit(fid: FeatureId, p: &Knit, prev: &State, state: &mut State) ->
     );
     state.surfaces.retain(|b| !p.bodies.contains(&b.id));
     if !p.create_solid {
-        let parts = shells(&Body {
+        let parts = shells_of_body(&Body {
             shape: sewn.result.shape,
             names,
         })?;
@@ -904,7 +904,7 @@ pub(crate) fn delete_face(
         state.aggregate_bodies()?;
     }
     if surface {
-        let parts = shells(&body)?;
+        let parts = shells_of_body(&body)?;
         for (i, geometry) in parts.into_iter().enumerate() {
             let id = if i == 0 {
                 id.clone()

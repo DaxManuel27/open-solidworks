@@ -180,6 +180,7 @@ fn changes_material(kind: &FeatureKind) -> bool {
             | CutWithSurface(_)
             | DeleteFace(_)
             | MoveFace(_)
+            | Freeform(_)
             | ReplaceFace(_)
             | Knit(of_model::surfaces::Knit {
                 create_solid: true,

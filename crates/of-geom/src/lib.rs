@@ -23,7 +23,7 @@ pub use hlr::{Curve2d, EdgeClass, HlrEdge, HlrQuality};
 pub use plane::Plane;
 pub use profile::{Curve2, Profile, ProfileFace};
 pub use sheet::{FaceFrame, FaceSurface, FlatSource, UvMap};
-pub use surface::{Continuity, FillEdge, Knitted};
+pub use surface::{Continuity, FillEdge, Knitted, Ruled};
 
 use cxx::UniquePtr;
 use of_kernel_sys::ffi;

@@ -22,6 +22,21 @@ pub struct FillEdge<'a> {
     pub continuity: Continuity,
 }
 
+/// The direction of a ruled strip's lines.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Ruled {
+    /// In the face's tangent plane, square to the edge, away from the face.
+    Tangent,
+    /// Along the face's normal.
+    Normal,
+    /// At `angle` from `vector`, leaning away from the face.
+    Tapered { vector: DVec3, angle: f64 },
+    /// Square to both the edge and `vector`.
+    Perpendicular { vector: DVec3 },
+    /// Along `vector`, made square to the edge.
+    Swept { vector: DVec3 },
+}
+
 /// Faces knitted into shells, and how many edges were left open.
 pub struct Knitted {
     pub result: OpResult,
@@ -202,6 +217,69 @@ impl Shape {
     /// A planar face bounded by a closed loop of edges.
     pub fn planar_face(edges: &Shape) -> Result<Shape> {
         Ok(Shape(ffi::planar_face(&edges.0)?))
+    }
+
+    /// A strip of straight lines from an edge of this shape; see [`Ruled`].
+    pub fn ruled_strip(
+        &self,
+        edge: u32,
+        face: Option<u32>,
+        ruled: Ruled,
+        distance: f64,
+        alternate: bool,
+    ) -> Result<Shape> {
+        let (mode, vector, angle) = match ruled {
+            Ruled::Tangent => (0, DVec3::ZERO, 0.0),
+            Ruled::Normal => (1, DVec3::ZERO, 0.0),
+            Ruled::Tapered { vector, angle } => (2, vector, angle),
+            Ruled::Perpendicular { vector } => (3, vector, 0.0),
+            Ruled::Swept { vector } => (4, vector, 0.0),
+        };
+        Ok(Shape(ffi::ruled_strip(
+            &self.0,
+            edge,
+            face.map_or(-1, |f| f as i32),
+            mode,
+            &crate::v3(vector),
+            &[distance, angle],
+            alternate,
+        )?))
+    }
+
+    /// Face `face` continued `distance` past its edge `edge` on its own surface.
+    pub fn extend_strip(&self, edge: u32, face: u32, distance: f64) -> Result<Shape> {
+        Ok(Shape(ffi::extend_strip(&self.0, edge, face, distance)?))
+    }
+
+    /// Face `face` on its surface's natural bounds.
+    pub fn untrim_face(&self, face: u32) -> Result<Shape> {
+        Ok(Shape(ffi::untrim_face(&self.0, face)?))
+    }
+
+    /// Move control points of face `face`: each move is (u, v) in 0..1 and a
+    /// displacement. `fixed` rows of poles at each boundary stay put.
+    pub fn freeform_face(
+        &self,
+        face: u32,
+        grid: u32,
+        moves: &[(f64, f64, DVec3)],
+        fixed: u32,
+    ) -> Result<OpResult> {
+        let flat: Vec<f64> = moves
+            .iter()
+            .flat_map(|(u, v, d)| [*u, *v, d.x, d.y, d.z])
+            .collect();
+        let mut h = Vec::new();
+        let s = ffi::freeform_face(&self.0, face, grid, &flat, fixed, &mut h)?;
+        Ok(OpResult {
+            shape: Shape(s),
+            history: convert_history(h),
+        })
+    }
+
+    /// A vertex at a point, for distance queries.
+    pub fn vertex_at(p: DVec3) -> Result<Shape> {
+        Ok(Shape(ffi::make_vertex(&crate::v3(p))))
     }
 
     /// The face's surface extended `length` past its boundary, untrimmed.

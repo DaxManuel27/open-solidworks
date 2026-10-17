@@ -270,4 +270,8 @@ std::unique_ptr<Shape> remove_holes(const Shape &s, rust::Slice<const uint32_t> 
   return wrap(out);
 }
 
+std::unique_ptr<Shape> make_vertex(const Vec3 &p) {
+  return wrap(BRepBuilderAPI_MakeVertex(gp_Pnt(p.x, p.y, p.z)).Vertex());
+}
+
 } // namespace ofk

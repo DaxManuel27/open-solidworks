@@ -15,6 +15,7 @@ use crate::resolve::{RResult, Resolved, resolve};
 mod direct;
 mod face_fillet;
 mod rib;
+mod shaping;
 pub(crate) mod sheet;
 mod surface;
 mod thread;
@@ -74,6 +75,14 @@ pub(crate) fn build(
         FeatureKind::MoveFace(p) => direct::move_face(fid, p, prev, state),
         FeatureKind::ReplaceFace(p) => direct::replace_face(fid, p, prev, state),
         FeatureKind::DeleteHole(p) => direct::delete_hole(fid, p, prev, state),
+        FeatureKind::FilledSurface(p) => shaping::filled_surface(fid, p, prev, state),
+        FeatureKind::RuledSurface(p) => shaping::ruled_surface(fid, p, prev, state),
+        FeatureKind::RadiateSurface(p) => shaping::radiate_surface(fid, p, prev, state),
+        FeatureKind::TrimSurface(p) => shaping::trim_surface(fid, p, prev, state),
+        FeatureKind::UntrimSurface(p) => shaping::untrim_surface(fid, p, prev, state),
+        FeatureKind::ExtendSurface(p) => shaping::extend_surface(fid, p, prev, state),
+        FeatureKind::MidSurface(p) => shaping::mid_surface(fid, p, prev, state),
+        FeatureKind::Freeform(p) => shaping::freeform(fid, p, prev, state),
         _ => Ok(()),
     };
     if result.is_ok() && state.tools.contains_key(&fid) {

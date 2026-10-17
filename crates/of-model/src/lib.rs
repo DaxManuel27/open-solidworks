@@ -291,6 +291,22 @@ pub enum FeatureKind {
     ReplaceFace(direct::ReplaceFace),
     /// Remove the holes of surface faces.
     DeleteHole(direct::DeleteHole),
+    /// A patch filling a loop of edges and curves.
+    FilledSurface(surfaces::FilledSurface),
+    /// Strips of straight lines from edges.
+    RuledSurface(surfaces::RuledSurface),
+    /// Strips from edges parallel to a plane.
+    RadiateSurface(surfaces::RadiateSurface),
+    /// Cut surfaces with a tool or each other, keeping chosen pieces.
+    TrimSurface(surfaces::TrimSurface),
+    /// Restore surface faces to their natural boundary, or fill their holes.
+    UntrimSurface(surfaces::UntrimSurface),
+    /// Extend surfaces past their open edges.
+    ExtendSurface(surfaces::ExtendSurface),
+    /// A surface midway between pairs of faces.
+    MidSurface(surfaces::MidSurface),
+    /// Reshape a face by moving its control points.
+    Freeform(surfaces::Freeform),
 }
 
 impl FeatureKind {
@@ -383,6 +399,14 @@ impl FeatureKind {
             FeatureKind::MoveFace(_) => "Move Face",
             FeatureKind::ReplaceFace(_) => "Replace Face",
             FeatureKind::DeleteHole(_) => "Delete Hole",
+            FeatureKind::FilledSurface(_) => "Surface-Fill",
+            FeatureKind::RuledSurface(_) => "Ruled Surface",
+            FeatureKind::RadiateSurface(_) => "Surface-Radiate",
+            FeatureKind::TrimSurface(_) => "Surface-Trim",
+            FeatureKind::UntrimSurface(_) => "Surface-Untrim",
+            FeatureKind::ExtendSurface(_) => "Surface-Extend",
+            FeatureKind::MidSurface(_) => "Surface-MidSurface",
+            FeatureKind::Freeform(_) => "Freeform",
         }
     }
 
@@ -594,6 +618,41 @@ impl FeatureKind {
                 refs.push(&r.replacement);
             }
             FeatureKind::DeleteHole(d) => refs.extend(&d.faces),
+            FeatureKind::FilledSurface(f) => {
+                refs.extend(f.boundary.iter().map(|b| &b.edge));
+                refs.extend(&f.constraints);
+            }
+            FeatureKind::RuledSurface(r) => {
+                refs.extend(&r.edges);
+                match &r.direction {
+                    surfaces::RuledDirection::TaperedToVector { direction, .. }
+                    | surfaces::RuledDirection::PerpendicularToVector { direction }
+                    | surfaces::RuledDirection::Sweep { direction } => refs.push(direction),
+                    _ => {}
+                }
+            }
+            FeatureKind::RadiateSurface(r) => {
+                refs.extend(&r.edges);
+                refs.push(&r.plane);
+            }
+            FeatureKind::TrimSurface(t) => {
+                refs.extend(&t.tool);
+                out.extend(t.bodies.iter().filter_map(BodyId::creator));
+            }
+            FeatureKind::UntrimSurface(u) => refs.extend(&u.faces),
+            FeatureKind::ExtendSurface(e) => {
+                refs.extend(&e.edges);
+                match &e.end {
+                    surfaces::ExtendEnd::UpToPoint { point } => refs.push(point),
+                    surfaces::ExtendEnd::UpToSurface { target } => refs.push(target),
+                    surfaces::ExtendEnd::Distance { .. } => {}
+                }
+            }
+            FeatureKind::MidSurface(m) => {
+                refs.extend(m.pairs.iter().flat_map(|p| [&p.a, &p.b]));
+                out.extend(m.body.as_ref().and_then(BodyId::creator));
+            }
+            FeatureKind::Freeform(f) => refs.push(&f.face),
             FeatureKind::Fillet(f) => refs.extend(f.edges.iter().chain(&f.faces)),
             FeatureKind::Chamfer(c) => refs.extend(c.edges.iter().chain(&c.faces)),
             FeatureKind::Shell(s) => refs.extend(&s.faces),

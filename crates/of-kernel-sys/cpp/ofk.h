@@ -206,6 +206,16 @@ uint32_t child_count(const Shape &s);
 std::unique_ptr<Shape> cut_with_surface(const Shape &body, const Shape &surface, bool flip,
                                         rust::Vec<HistoryEntry> &hist);
 std::unique_ptr<Shape> planar_face(const Shape &edges);
+std::unique_ptr<Shape> ruled_strip(const Shape &s, uint32_t edge_index, int32_t face_index,
+                                   uint8_t mode, const Vec3 &vector, rust::Slice<const double> size,
+                                   bool alternate);
+std::unique_ptr<Shape> extend_strip(const Shape &s, uint32_t edge_index, uint32_t face_index,
+                                    double distance);
+std::unique_ptr<Shape> untrim_face(const Shape &s, uint32_t face_index);
+std::unique_ptr<Shape> freeform_face(const Shape &s, uint32_t face_index, uint32_t grid,
+                                     rust::Slice<const double> moves, uint32_t fixed,
+                                     rust::Vec<HistoryEntry> &hist);
+std::unique_ptr<Shape> make_vertex(const Vec3 &p);
 std::unique_ptr<Shape> extend_face(const Shape &face_in, double length);
 std::unique_ptr<Shape> cells(const Shape &faces);
 int8_t classify(const Shape &solid, const Vec3 &point);

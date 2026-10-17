@@ -274,6 +274,14 @@ run `cargo run -p openforge -- generate` instead. -->
 | `move_face` | `faces`, `motion`, `scope?` | Offset, translate or rotate faces of a solid. |
 | `replace_face` | `faces`, `replacement`, `scope?` | Replace faces of a solid with a surface. |
 | `delete_hole` | `faces`, `scope?` | Remove the holes of surface faces. |
+| `filled_surface` | `boundary`, `constraints?`, `create_solid?`, `merge?`, `scope?` | A patch filling a loop of edges and curves. |
+| `ruled_surface` | `edges`, `direction`, `distance`, `alternate_side?`, `knit?`, `scope?` | Strips of straight lines from edges. |
+| `radiate_surface` | `edges`, `plane`, `distance`, `flip?`, `scope?` | Strips from edges parallel to a plane. |
+| `trim_surface` | `bodies`, `pieces?`, `remove?`, `scope?`, `split_all?`, `tool?` | Cut surfaces with a tool or each other, keeping chosen pieces. |
+| `untrim_surface` | `faces`, `mode?`, `scope?` | Restore surface faces to their natural boundary, or fill their holes. |
+| `extend_surface` | `edges`, `end`, `linear?`, `scope?` | Extend surfaces past their open edges. |
+| `mid_surface` | `body?`, `knit?`, `pairs?`, `position?`, `scope?`, `threshold?` | A surface midway between pairs of faces. |
+| `freeform` | `face`, `moves`, `continuity?`, `grid?`, `scope?` | Reshape a face by moving its control points. |
 
 <!-- /generated:features -->
 
