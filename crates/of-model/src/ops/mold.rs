@@ -310,11 +310,33 @@ pub(crate) fn parting_surface(
             PartingSurfaceMode::TangentToSurface => Ruled::Tangent,
             PartingSurfaceMode::NormalToSurface => Ruled::Normal,
         };
-        strips.push(
+        let strip = body
+            .shape
+            .ruled_strip(e, face, ruled, p.distance, p.reverse)
+            .map_err(geo)?;
+        // Away from an upright core face is either way in the parting
+        // plane; a strip lying over the part goes the wrong way.
+        let mid = body.shape.edge_info(e).map_err(geo)?.mid;
+        let over_part = |s: &Shape| -> bool {
+            let Some(b) = s.bbox() else { return false };
+            // Just past the edge, toward the strip, either side of it.
+            let toward = (b.center() - mid).normalize_or_zero();
+            let eps = 1e-3 * p.distance.abs().max(1.0);
+            let q = mid + toward * eps * 10.0;
+            [eps, -eps].iter().any(|d| {
+                body.shape
+                    .classify(q + record.pull * *d)
+                    .is_ok_and(|c| c > 0)
+            })
+        };
+        let strip = if over_part(&strip) {
             body.shape
-                .ruled_strip(e, face, ruled, p.distance, p.reverse)
-                .map_err(geo)?,
-        );
+                .ruled_strip(e, face, ruled, p.distance, !p.reverse)
+                .map_err(geo)?
+        } else {
+            strip
+        };
+        strips.push(strip);
     }
     let corners = corner_patches(&body.shape, &record, &strips)?;
     strips.extend(corners);

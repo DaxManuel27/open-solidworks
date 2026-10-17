@@ -142,6 +142,17 @@ function optional(s: Schema): Schema | null {
 
 const BODY_NAMES = /^(body|bodies|target|tool|mesh|a|b)$/
 
+/**
+ * The values of a plain enum. Documented variants come as `const`s; the
+ * undocumented ones are grouped into one `enum` beside them.
+ */
+function choices(s: Schema): string[] {
+  const variants = s.oneOf ?? s.anyOf
+  if (variants?.length)
+    return variants.flatMap((v) => (v.const !== undefined ? [v.const] : (v.enum ?? []))).map(String)
+  return (s.enum ?? []).map(String)
+}
+
 function kindOf(c: Catalog, name: string, raw: Schema): Kind {
   if (refName(raw) === 'Ref') return 'ref'
   const s = resolve(c, raw)
@@ -149,7 +160,8 @@ function kindOf(c: Catalog, name: string, raw: Schema): Kind {
   const variants = s.oneOf ?? s.anyOf
   if (variants?.length && variants.every((v) => v.properties?.['type']?.const !== undefined))
     return 'tagged'
-  if (variants?.length && variants.every((v) => v.const !== undefined)) return 'choice'
+  if (variants?.length && variants.every((v) => v.const !== undefined || v.enum?.length))
+    return 'choice'
   if (s.enum) return 'choice'
   switch (s.type) {
     case 'boolean':
@@ -237,10 +249,8 @@ function defaultValue(c: Catalog, name: string, raw: Schema): unknown {
     }
     case 'body':
       return ''
-    case 'choice': {
-      const v = s.oneOf ?? s.anyOf
-      return v?.length ? v[0]!.const : s.enum?.[0]
-    }
+    case 'choice':
+      return choices(s)[0]
     case 'tagged':
       return variantDefault(c, (s.oneOf ?? s.anyOf)![0]!)
     case 'vec3':
@@ -393,20 +403,33 @@ function ContourAdd(props: { onAdd: (r: Ref) => void }) {
   )
 }
 
+/** Solid, surface and graphics mesh bodies, for body pickers. */
+function useAllBodies(): { id: string; label: string }[] {
+  const bodies = useStore((s) => s.scene?.bodies)
+  const meshes = useStore((s) => s.scene?.meshes)
+  return useMemo(
+    () => [
+      ...(bodies ?? []).map((b) => ({ id: b.id, label: `${b.name} (${b.kind ?? 'solid'})` })),
+      ...(meshes ?? []).map((m) => ({ id: m.id, label: `${m.name} (mesh)` })),
+    ],
+    [bodies, meshes],
+  )
+}
+
 function BodyChoice(props: {
   label: string
   value: string
   onChange: (v: string) => void
   title?: string
 }) {
-  const bodies = useStore((s) => s.scene?.bodies ?? [])
+  const bodies = useAllBodies()
   return (
     <Choice
       label={props.label}
       value={props.value}
       options={[
         ...(props.value ? [] : [{ value: '', label: 'Choose a body…' }]),
-        ...bodies.map((b) => ({ value: b.id, label: `${b.name} (${b.kind ?? 'solid'})` })),
+        ...bodies.map((b) => ({ value: b.id, label: b.label })),
       ]}
       onChange={props.onChange}
     />
@@ -414,14 +437,14 @@ function BodyChoice(props: {
 }
 
 function BodyList(props: { label: string; value: string[]; onChange: (v: string[]) => void }) {
-  const bodies = useStore((s) => s.scene?.bodies ?? [])
+  const bodies = useAllBodies()
   return (
     <div className="field">
       <span>{props.label}</span>
       {bodies.map((b) => (
         <Check
           key={b.id}
-          label={`${b.name} (${b.kind ?? 'solid'})`}
+          label={b.label}
           value={props.value.includes(b.id)}
           onChange={(on) =>
             props.onChange(on ? [...props.value, b.id] : props.value.filter((x) => x !== b.id))
@@ -566,7 +589,7 @@ function Field(props: FieldProps) {
     return (
       <>
         <Check
-          label={`${label(name)}${inner.description && !on ? '' : ''}`}
+          label={label(name)}
           value={on}
           onChange={(v) =>
             onChange(v ? defaultValue(c, name, { ...inner, default: undefined }) : null)
@@ -688,11 +711,7 @@ function Field(props: FieldProps) {
         />
       )
     case 'choice': {
-      const options =
-        (s.oneOf ?? s.anyOf)?.map((v) => ({
-          value: String(v.const),
-          label: label(String(v.const)),
-        })) ?? (s.enum ?? []).map((v) => ({ value: String(v), label: label(String(v)) }))
+      const options = choices(s).map((v) => ({ value: v, label: label(v) }))
       return <Choice label={title} value={String(value)} options={options} onChange={onChange} />
     }
     case 'tagged': {

@@ -338,3 +338,65 @@ fn the_part_splits_into_core_and_cavity() {
     assert_eq!(with_core.state().mold.cores.len(), 2);
     assert!(volume_of(&with_core, &cavity) < lc);
 }
+
+#[test]
+fn an_undrafted_part_parts_at_its_top_outline() {
+    // Upright walls go with the core, so the parting line is the top
+    // outline and the parting surface must run outward from it.
+    let mut doc = Document::new();
+    let s = rectangle(
+        &mut doc,
+        Ref::FrontPlane,
+        DVec2::ZERO,
+        DVec2::new(20.0, 10.0),
+    );
+    extrude(&mut doc, s, EndCondition::Blind { depth: 8.0 }, None, false);
+    let m = Model::new(doc);
+    let (m, line) = add(
+        &m,
+        FeatureKind::PartingLine(PartingLine {
+            body: None,
+            pull: Ref::FrontPlane,
+            reverse: false,
+            draft_angle: 0.0,
+            split_faces: false,
+        }),
+    );
+    let (m, _) = add(
+        &m,
+        FeatureKind::PartingSurface(PartingSurface {
+            parting_line: line,
+            mode: PartingSurfaceMode::PerpendicularToPull,
+            distance: 20.0,
+            reverse: false,
+        }),
+    );
+    // A 20 mm ring round the 20 × 10 outline, not strips over the part.
+    let surface = &m.state().surfaces[0].geometry.shape;
+    close(surface.area(), 60.0 * 50.0 - 200.0, 1e-6);
+    let mut doc = m.doc.clone();
+    let block = rectangle(
+        &mut doc,
+        Ref::FrontPlane,
+        DVec2::new(-15.0, -15.0),
+        DVec2::new(35.0, 25.0),
+    );
+    doc.add(FeatureKind::ToolingSplit(ToolingSplit {
+        parting_line: line,
+        sketch: block,
+        depth1: 20.0,
+        depth2: 10.0,
+        interlock: None,
+    }));
+    let m = Model::new(doc);
+    ok(&m);
+    let core = m.state().mold.cores[0].clone();
+    let cavity = m.state().mold.cavities[0].clone();
+    // The cavity is the block above the part's top.
+    close(volume_of(&m, &cavity), 50.0 * 40.0 * 12.0, 1e-3);
+    close(
+        volume_of(&m, &core),
+        50.0 * 40.0 * 18.0 - 20.0 * 10.0 * 8.0,
+        1e-3,
+    );
+}

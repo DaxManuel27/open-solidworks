@@ -14,7 +14,9 @@ export async function surfacingSmoke(context) {
 }
 
 async function scenario({ js, call, wait, temp, dialogs }) {
-  console.log('Phase 6 smoke: surfaces, knit, move face, draft analysis, parting line, mesh import')
+  console.log(
+    'Phase 6 smoke: surfaces, knit, move face, draft analysis, parting line to tooling split, mesh import, segment, fit and thicken',
+  )
   const frame = () =>
     js('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
   const store = (expr) =>
@@ -37,9 +39,9 @@ async function scenario({ js, call, wait, temp, dialogs }) {
     })()`)
     await frame()
   }
-  const type = async (label, value) => {
+  const type = async (label, value, n = 0) => {
     await js(`(() => {
-      const input = ${field(label)}?.querySelector('input'); if (!input) throw new Error('Missing field ${label}');
+      const input = ${field(label, n)}?.querySelector('input'); if (!input) throw new Error('Missing field ${label}');
       input.focus();
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(String(value))});
       input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -162,6 +164,36 @@ async function scenario({ js, call, wait, temp, dialogs }) {
     () => store(`(s.snapshot.mold?.parting_lines ?? []).length === 1`),
     'parting line recorded',
   )
+  const line = await store(`s.snapshot.features.find(f => f.type === 'parting_line').id`)
+
+  // A parting surface, then core and cavity from a box sketch around the part.
+  await command('p6PartingSurface')
+  await panel('Parting Surface')
+  await choose('Parting line', line)
+  await type('Distance', '20')
+  await accept('parting surface')
+  const box = (await call('sketch.new', { plane: { type: 'front_plane' } })).id
+  await call('sketch.edit', { id: box, op: { op: 'rectangle', a: [-15, -15], b: [35, 25] } })
+  await call('sketch.close')
+  await run('doc.info')
+  await command('p6ToolingSplit')
+  await panel('Tooling Split')
+  await choose('Parting line', line)
+  await choose('Sketch', box)
+  await type('Depth along the pull', '20')
+  await type('Depth against the pull', '10')
+  await accept('tooling split')
+  await wait(
+    () => store(`s.snapshot.mold?.cores.length === 1 && s.snapshot.mold?.cavities.length === 1`),
+    'core and cavity',
+  )
+  await wait(
+    () =>
+      js(
+        `['Core bodies (1)', 'Cavity bodies (1)'].every(t => [...document.querySelectorAll('.tree-item')].some(e => e.textContent === t))`,
+      ),
+    'mould folders',
+  )
 
   // An STL of the part imports as a mesh body, which matches it.
   const stl = join(temp, 'p6-smoke.stl')
@@ -184,6 +216,31 @@ async function scenario({ js, call, wait, temp, dialogs }) {
   const triangles = await store(`s.analysis.mesh.colors.length`)
   assert.equal(within, triangles, 'every vertex lies on the part')
   await js(`document.querySelector('.panel .cancel').click()`)
+
+  // Segment the mesh, fit a plane to one region and thicken it.
+  const meshId = await store(`s.scene.meshes[0].id`)
+  const surfaces = () => store(`s.scene.bodies.filter(b => b.kind === 'surface').map(b => b.id)`)
+  const before = await surfaces()
+  await command('p6SegmentMesh')
+  await panel('Segment Mesh')
+  await choose('Body', meshId)
+  await accept('segment mesh')
+  await command('p6SurfaceFromMesh')
+  await panel('Surface from Mesh')
+  await choose('Body', await store(`s.scene.meshes[0].id`))
+  await check('Group', true)
+  await type('Group', '0', 1)
+  await choose('Fit', 'plane')
+  await accept('surface from mesh')
+  await wait(async () => (await surfaces()).length === before.length + 1, 'fitted surface')
+  const fitted = (await surfaces()).find((id) => !before.includes(id))
+  await tab('Surfaces')
+  await command('p6Thicken')
+  await panel('Thicken')
+  await choose('Body', fitted)
+  await type('Thickness', '1')
+  await accept('thicken')
+  await wait(async () => !(await surfaces()).includes(fitted), 'thickened')
   await store(`s.closeDocument?.() ?? true`)
   assert.deepEqual(await js('window.__smokeErrors'), [], 'renderer errors in Phase 6 smoke')
   console.log('Phase 6 smoke passed')
