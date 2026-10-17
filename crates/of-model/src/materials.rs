@@ -62,3 +62,21 @@ pub fn sheet_metal_defaults(name: &str) -> Option<(f64, f64)> {
         _ => return None,
     })
 }
+
+/// Typical linear mould shrinkage of a library plastic, as a fraction (the
+/// middle of the usual range on published data sheets). Mould cavities are
+/// scaled by `1 + shrinkage`.
+pub fn shrinkage(name: &str) -> Option<f64> {
+    let n = name.to_ascii_lowercase();
+    Some(match n.as_str() {
+        "abs" => 0.005,
+        "pla" => 0.004,
+        "petg" => 0.004,
+        "nylon 6/6" => 0.015,
+        "acetal (pom)" => 0.02,
+        "polycarbonate" => 0.006,
+        "acrylic (pmma)" => 0.005,
+        "hdpe" => 0.025,
+        _ => return None,
+    })
+}

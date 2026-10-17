@@ -172,9 +172,18 @@ pub(crate) fn intersect(
 }
 
 pub(crate) fn scale(fid: FeatureId, p: &Scale, prev: &State, state: &mut State) -> RResult<()> {
-    let factors = match p.factors {
-        Some(f) => DVec3::from_array(f),
-        None => DVec3::splat(p.factor),
+    let factors = match (p.shrinkage, p.factors) {
+        (true, _) => {
+            let material = prev
+                .material
+                .as_deref()
+                .ok_or("set the part's material to scale for its shrinkage")?;
+            let s = crate::materials::shrinkage(material)
+                .ok_or_else(|| format!("{material} has no mould shrinkage; enter a factor"))?;
+            DVec3::splat(1.0 + s)
+        }
+        (false, Some(f)) => DVec3::from_array(f),
+        (false, None) => DVec3::splat(p.factor),
     };
     if !(factors.min_element() > 0.0 && factors.is_finite()) {
         return Err("scale factors must be more than zero".into());

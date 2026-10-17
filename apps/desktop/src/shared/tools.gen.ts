@@ -2916,6 +2916,11 @@ export type Feature =
     factors?: [number, number, number] | null
     /** Body IDs this feature acts on; omitted acts on the whole part. */
     scope?: string[] | null
+    /**
+     * Scale by 1 + the part material's mould shrinkage instead, for a
+     * mould cavity.
+     */
+    shrinkage?: boolean
   }
   | {
     type: 'flex'
@@ -3001,6 +3006,69 @@ export type Feature =
     bodies?: string[]
     /** mm from the plane to the first slice. */
     offset?: number
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'parting_line'
+    /** The direction the cavity pulls away: a plane, face or edge. */
+    pull: Ref
+    /** The solid to mould; defaults to the only solid. */
+    body?: string | null
+    /** Draft the faces need, radians. */
+    draft_angle?: number
+    reverse?: boolean
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+    /** Split faces that face both ways at their silhouette. */
+    split_faces?: boolean
+  }
+  | {
+    type: 'shut_off_surfaces'
+    /** The Parting Line feature whose openings to close. */
+    parting_line: number
+    patch?: ShutOffPatch
+    /** Patch types for particular openings, by their order from largest. */
+    patches?: ShutOffPatch[]
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'parting_surface'
+    parting_line: number
+    /** mm. */
+    distance: number
+    mode?: PartingSurfaceMode
+    reverse?: boolean
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'tooling_split'
+    /** The Parting Line feature to split along. */
+    parting_line: number
+    /** A sketch of the block outline, on a plane square to the pull. */
+    sketch: number
+    /** Block depth along the pull (cavity side) and against it (core side), mm. */
+    depth1: number
+    depth2: number
+    interlock?: Interlock | null
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'mold_core'
+    /** The block to take it from. */
+    body: string
+    /** A sketch of its outline; it extends along the sketch's normal. */
+    sketch: number
+    /** mm along the direction. */
+    depth1: number
+    /** mm the other way. */
+    depth2?: number
+    /** Taper, radians. */
+    draft?: number
+    reverse?: boolean
     /** Body IDs this feature acts on; omitted acts on the whole part. */
     scope?: string[] | null
   }
@@ -3282,6 +3350,19 @@ export type InsertTransfer = {
   reference_geometry?: boolean
   solids?: boolean
   surfaces?: boolean
+}
+
+/**
+ * A tapered lip around the parting surface, so the mould halves locate on
+ * each other.
+ */
+export type Interlock = {
+  /** Taper, radians. */
+  angle: number
+  /** Height of the lip above the parting surface, mm. */
+  height: number
+  /** Width of the lip from the block's edge, mm. */
+  width: number
 }
 
 /** Beads in pieces along the path. */
@@ -3677,6 +3758,9 @@ export type Overrides = {
   /** Dimension text always horizontal (ANSI) instead of along the line (ISO). */
   unidirectional?: boolean | null
 }
+
+/** Which way a parting surface spreads from the parting line. */
+export type PartingSurfaceMode = 'perpendicular_to_pull' | 'tangent_to_surface' | 'normal_to_surface'
 
 /** How a patch meets the face beside one of its edges. */
 export type PatchContinuity = 'contact' | 'tangent' | 'curvature'
@@ -4074,6 +4158,9 @@ export type SheetSize =
     width: number
     height: number
   }
+
+/** How a shut-off loop is closed. */
+export type ShutOffPatch = 'contact' | 'tangent' | 'no_fill'
 
 export type Sketch3D = {
   /** Monotonically increasing; deleted entity IDs must never be reused. */

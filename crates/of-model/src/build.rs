@@ -85,6 +85,8 @@ pub struct State {
     pub members: Vec<crate::weldment::MemberRecord>,
     /// Weld beads, for the weld folder.
     pub welds: Vec<crate::weldment::WeldRecord>,
+    /// Mould folders and parting lines.
+    pub mold: crate::mold::MoldState,
     /// How much each Surface Flatten stretched its faces, for display.
     pub flattenings: HashMap<FeatureId, std::sync::Arc<crate::meshes::Flattening>>,
 }
@@ -568,6 +570,11 @@ fn build_kind(id: FeatureId, kind: &FeatureKind, prev: &State, state: &mut State
         FeatureKind::InsertPart(p) => return ops::body_tools::insert_part(id, p, prev, state),
         FeatureKind::Defeature(p) => return ops::body_tools::defeature(id, p, prev, state),
         FeatureKind::Slicing(p) => return ops::body_tools::slicing(id, p, prev, state),
+        FeatureKind::PartingLine(p) => return ops::mold::parting_line(id, p, prev, state),
+        FeatureKind::ShutOffSurfaces(p) => return ops::mold::shut_off(id, p, prev, state),
+        FeatureKind::PartingSurface(p) => return ops::mold::parting_surface(id, p, prev, state),
+        FeatureKind::ToolingSplit(p) => return ops::mold::tooling_split(id, p, prev, state),
+        FeatureKind::MoldCore(p) => return ops::mold::mold_core(id, p, prev, state),
         FeatureKind::FlatPattern(p) => return ops::sheet::flat_pattern(id, p, prev, state),
         FeatureKind::SketchedBend(p) => return ops::sheet::sketched_bend(id, p, prev, state),
         FeatureKind::Jog(p) => return ops::sheet::jog(id, p, prev, state),

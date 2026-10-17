@@ -93,6 +93,10 @@ pub struct Scale {
     pub factors: Option<[f64; 3]>,
     #[serde(default)]
     pub about: ScaleAbout,
+    /// Scale by 1 + the part material's mould shrinkage instead, for a
+    /// mould cavity.
+    #[serde(default)]
+    pub shrinkage: bool,
 }
 
 /// How Flex deforms.

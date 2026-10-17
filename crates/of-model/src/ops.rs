@@ -16,6 +16,7 @@ pub(crate) mod body_tools;
 mod direct;
 mod face_fillet;
 mod flatten;
+pub(crate) mod mold;
 mod rib;
 mod shaping;
 pub(crate) mod sheet;

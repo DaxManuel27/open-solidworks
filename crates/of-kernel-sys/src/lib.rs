@@ -563,6 +563,9 @@ pub mod ffi {
         ) -> Result<UniquePtr<Shape>>;
         /// A planar face bounded by a closed loop of edges.
         fn planar_face(edges: &Shape) -> Result<UniquePtr<Shape>>;
+        /// A flat face with its outline offset in its plane: outward when
+        /// positive, inward when negative, with sharp corners.
+        fn outline_offset(face: &Shape, distance: f64) -> Result<UniquePtr<Shape>>;
         /// A strip of straight lines from edge `edge` of `s`; `size` is its
         /// length and, for mode 2, the taper angle.
         /// Modes: 0 tangent to face `face`, 1 normal to it, 2 tapered to

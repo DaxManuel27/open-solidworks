@@ -197,6 +197,7 @@ fn scale_uniformly_and_per_axis() {
             factor: 1.006,
             factors: None,
             about: ScaleAbout::Centroid,
+            shrinkage: false,
         }),
     );
     close(volume(&s), 4000.0 * 1.006f64.powi(3), 1e-6);
@@ -218,6 +219,7 @@ fn scale_uniformly_and_per_axis() {
             factor: 1.0,
             factors: Some([2.0, 1.0, 0.5]),
             about: ScaleAbout::Origin,
+            shrinkage: false,
         }),
     );
     close(volume(&s), 4000.0, 1e-6);

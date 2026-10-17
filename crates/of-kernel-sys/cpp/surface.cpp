@@ -22,12 +22,14 @@
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepLib.hxx>
 #include <BRepOffsetAPI_MakeFilling.hxx>
+#include <BRepOffsetAPI_MakeOffset.hxx>
 #include <BRepOffset_MakeOffset.hxx>
 #include <BRepOffsetAPI_MakeOffsetShape.hxx>
 #include <BRepOffsetAPI_MakePipeShell.hxx>
 #include <BRepOffsetAPI_ThruSections.hxx>
 #include <BRep_Builder.hxx>
 #include <BRep_Tool.hxx>
+#include <ShapeFix_Face.hxx>
 #include <ShapeFix_Shell.hxx>
 #include <ShapeFix_Solid.hxx>
 #include <TopExp.hxx>
@@ -487,6 +489,22 @@ std::unique_ptr<Shape> planar_face(const Shape &edges) {
   BRepBuilderAPI_MakeFace make(wire, true);
   if (!make.IsDone()) throw std::invalid_argument("the edges don't lie in one plane");
   return wrap(make.Face());
+}
+
+std::unique_ptr<Shape> outline_offset(const Shape &face, double distance) {
+  TopExp_Explorer ex(face.shape, TopAbs_FACE);
+  if (!ex.More()) throw std::invalid_argument("offset an outline needs a flat face");
+  const TopoDS_Face f = TopoDS::Face(ex.Current());
+  BRepOffsetAPI_MakeOffset op(f, GeomAbs_Intersection);
+  op.Perform(distance);
+  if (!op.IsDone()) throw std::runtime_error("the outline can't be offset that far");
+  TopExp_Explorer wx(op.Shape(), TopAbs_WIRE);
+  if (!wx.More()) throw std::runtime_error("the offset outline vanished");
+  BRepBuilderAPI_MakeFace make(BRep_Tool::Surface(f), TopoDS::Wire(wx.Current()), true);
+  if (!make.IsDone()) throw std::runtime_error("the offset outline isn't closed");
+  ShapeFix_Face fix(make.Face());
+  fix.Perform();
+  return wrap(fix.Face());
 }
 
 uint32_t child_count(const Shape &s) {

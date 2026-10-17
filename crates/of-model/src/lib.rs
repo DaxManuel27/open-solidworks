@@ -23,6 +23,7 @@ pub use curves::{
     Loft, LoftEnd, OrderedFloat, ProfileSelection, ProjectedCurve, ProjectionMode, Sweep,
     SweepOrientation,
 };
+pub mod analysis;
 pub mod equations;
 mod features;
 pub mod file;
@@ -30,6 +31,7 @@ pub mod flat;
 pub mod materials;
 pub mod measure;
 pub mod meshes;
+pub mod mold;
 pub mod naming;
 mod ops;
 pub mod properties;
@@ -329,6 +331,16 @@ pub enum FeatureKind {
     Defeature(body_tools::Defeature),
     /// Section curves through bodies on evenly spaced planes.
     Slicing(body_tools::Slicing),
+    /// Where the mould splits: edges between faces pulled each way.
+    PartingLine(mold::PartingLine),
+    /// Patches closing a moulded part's through openings.
+    ShutOffSurfaces(mold::ShutOffSurfaces),
+    /// The surface dividing the core block from the cavity block.
+    PartingSurface(mold::PartingSurface),
+    /// A block split into core and cavity around the part.
+    ToolingSplit(mold::ToolingSplit),
+    /// A side core or lifter pulled out of a mould block.
+    MoldCore(mold::MoldCore),
 }
 
 impl FeatureKind {
@@ -441,6 +453,11 @@ impl FeatureKind {
             FeatureKind::InsertPart(_) => "Inserted Part",
             FeatureKind::Defeature(_) => "Defeature",
             FeatureKind::Slicing(_) => "Slicing",
+            FeatureKind::PartingLine(_) => "Parting Line",
+            FeatureKind::ShutOffSurfaces(_) => "Shut-Off Surface",
+            FeatureKind::PartingSurface(_) => "Parting Surface",
+            FeatureKind::ToolingSplit(_) => "Tooling Split",
+            FeatureKind::MoldCore(_) => "Core",
         }
     }
 
@@ -733,6 +750,17 @@ impl FeatureKind {
             FeatureKind::Slicing(s) => {
                 refs.push(&s.plane);
                 out.extend(s.bodies.iter().filter_map(BodyId::creator));
+            }
+            FeatureKind::PartingLine(p) => {
+                refs.push(&p.pull);
+                out.extend(p.body.as_ref().and_then(BodyId::creator));
+            }
+            FeatureKind::ShutOffSurfaces(s) => out.push(s.parting_line),
+            FeatureKind::PartingSurface(s) => out.push(s.parting_line),
+            FeatureKind::ToolingSplit(t) => out.extend([t.parting_line, t.sketch]),
+            FeatureKind::MoldCore(c) => {
+                out.push(c.sketch);
+                out.extend(c.body.creator());
             }
             FeatureKind::Fillet(f) => refs.extend(f.edges.iter().chain(&f.faces)),
             FeatureKind::Chamfer(c) => refs.extend(c.edges.iter().chain(&c.faces)),

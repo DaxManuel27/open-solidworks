@@ -214,6 +214,12 @@ impl Shape {
         })
     }
 
+    /// A flat face with its outline offset in its plane, outward when
+    /// positive, with sharp corners.
+    pub fn outline_offset(&self, distance: f64) -> Result<Shape> {
+        Ok(Shape(ffi::outline_offset(&self.0, distance)?))
+    }
+
     /// A planar face bounded by a closed loop of edges.
     pub fn planar_face(edges: &Shape) -> Result<Shape> {
         Ok(Shape(ffi::planar_face(&edges.0)?))

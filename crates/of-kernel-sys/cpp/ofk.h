@@ -215,6 +215,7 @@ uint32_t child_count(const Shape &s);
 std::unique_ptr<Shape> cut_with_surface(const Shape &body, const Shape &surface, bool flip,
                                         rust::Vec<HistoryEntry> &hist);
 std::unique_ptr<Shape> planar_face(const Shape &edges);
+std::unique_ptr<Shape> outline_offset(const Shape &face, double distance);
 std::unique_ptr<Shape> ruled_strip(const Shape &s, uint32_t edge_index, int32_t face_index,
                                    uint8_t mode, const Vec3 &vector, rust::Slice<const double> size,
                                    bool alternate);

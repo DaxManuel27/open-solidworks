@@ -285,13 +285,18 @@ run `cargo run -p openforge -- generate` instead. -->
 | `surface_flatten` | `faces`, `accuracy?`, `fixed?`, `scope?`, `tears?` | Lay doubly curved faces out flat. |
 | `delete_body` | `bodies`, `keep?`, `scope?` | Remove bodies, or keep only the chosen ones. |
 | `intersect` | `tools`, `cap_planar?`, `consume_surfaces?`, `exclude?`, `merge?`, `mode?`, `scope?` | Solids from the regions bodies, surfaces and planes enclose. |
-| `scale` | `about?`, `bodies?`, `factor?`, `factors?`, `scope?` | Scale bodies uniformly or per axis. |
+| `scale` | `about?`, `bodies?`, `factor?`, `factors?`, `scope?`, `shrinkage?` | Scale bodies uniformly or per axis. |
 | `flex` | `mode`, `origin`, `axis`, `accuracy?`, `bodies?`, `scope?`, `toward?`, `trim?` | Bend, twist, taper or stretch bodies between trim planes. |
 | `deform` | `mode`, `accuracy?`, `bodies?`, `scope?` | Freeform deformation: point, curve to curve or surface push. |
 | `indent` | `target`, `tool`, `thickness`, `clearance?`, `cut?`, `scope?` | Press a tool body into a target body. |
 | `insert_part` | `path`, `configuration?`, `mirror?`, `rotation?`, `scope?`, `transfer?`, `translation?` | Another part's bodies, linked to its file. |
 | `defeature` | `bodies?`, `faces?`, `fillets_below?`, `holes_below?`, `scope?` | Remove faces and small holes and fillets, healing the gaps. |
 | `slicing` | `plane`, `count`, `spacing`, `bodies?`, `offset?`, `scope?` | Section curves through bodies on evenly spaced planes. |
+| `parting_line` | `pull`, `body?`, `draft_angle?`, `reverse?`, `scope?`, `split_faces?` | Where the mould splits: edges between faces pulled each way. |
+| `shut_off_surfaces` | `parting_line`, `patch?`, `patches?`, `scope?` | Patches closing a moulded part's through openings. |
+| `parting_surface` | `parting_line`, `distance`, `mode?`, `reverse?`, `scope?` | The surface dividing the core block from the cavity block. |
+| `tooling_split` | `parting_line`, `sketch`, `depth1`, `depth2`, `interlock?`, `scope?` | A block split into core and cavity around the part. |
+| `mold_core` | `body`, `sketch`, `depth1`, `depth2?`, `draft?`, `reverse?`, `scope?` | A side core or lifter pulled out of a mould block. |
 
 <!-- /generated:features -->
 
