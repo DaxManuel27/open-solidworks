@@ -615,14 +615,20 @@ pub(crate) fn insert_part(
         })
     };
     let mut count = 0;
+    let wanted = |b: &SolidBody| p.bodies.is_empty() || p.bodies.contains(&b.id);
+    for id in &p.bodies {
+        source
+            .any_body(id)
+            .map_err(|_| format!("{} has no body {}", p.path, id.0))?;
+    }
     if p.transfer.solids {
-        for b in &source.bodies {
+        for b in source.bodies.iter().filter(|b| wanted(b)) {
             state.bodies.push(bring(b)?);
             count += 1;
         }
     }
     if p.transfer.surfaces {
-        for b in &source.surfaces {
+        for b in source.surfaces.iter().filter(|b| wanted(b)) {
             state.surfaces.push(bring(b)?);
             count += 1;
         }

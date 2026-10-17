@@ -86,6 +86,93 @@ pub fn assembled_shape(asm: &mut Assembly) -> Result<Shape, String> {
     Ok(Shape::compound(shapes.iter()))
 }
 
+/// How Defeature simplifies each component.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum Silhouette {
+    /// The box around each component.
+    BoundingBox,
+    /// The cylinder around each component, along its most distinct side.
+    Cylinder,
+}
+
+/// Every visible component replaced by a simple solid around it, placed
+/// where it is in the assembly, as a part document embedding them.
+pub fn defeatured_part(asm: &mut Assembly, mode: Silhouette) -> Result<Document, String> {
+    use base64::Engine;
+    let shape = silhouette(asm, mode)?;
+    let tmp =
+        std::env::temp_dir().join(format!("openforge-silhouette-{}.step", std::process::id()));
+    shape.write_step(&tmp.to_string_lossy()).map_err(|e| e.0)?;
+    let bytes = std::fs::read(&tmp).map_err(|e| e.to_string())?;
+    let _ = std::fs::remove_file(&tmp);
+    let mut doc = Document::new();
+    doc.add(FeatureKind::Import(Import {
+        format: ImportFormat::Step,
+        source: "silhouette.step".into(),
+        data: base64::engine::general_purpose::STANDARD.encode(bytes),
+        mesh: None,
+    }));
+    Ok(doc)
+}
+
+/// Every visible component replaced by a simple solid around it, placed
+/// where it is in the assembly.
+pub fn silhouette(asm: &mut Assembly, mode: Silhouette) -> Result<Shape, String> {
+    use of_model::geom::{Curve2, DAffine3, DVec2, DVec3, Plane, Profile, ProfileFace};
+    let mut out = Vec::new();
+    for i in asm.instances().iter().filter(|i| !i.hidden) {
+        let Some(shape) = world_shape(i) else {
+            continue;
+        };
+        let Some(b) = shape.bbox() else { continue };
+        let size = (b.max - b.min).max(DVec3::splat(1e-3));
+        let solid = match mode {
+            Silhouette::BoundingBox => Shape::make_box(size.x, size.y, size.z)
+                .and_then(|s| s.transform(&DAffine3::from_translation(b.min)))
+                .map(|r| r.shape),
+            Silhouette::Cylinder => {
+                // The axis is the side least like the other two.
+                let d = [size.x, size.y, size.z];
+                let axis = (0..3)
+                    .max_by(|&a, &c| {
+                        let odd = |k: usize| {
+                            let (p, q) = (d[(k + 1) % 3], d[(k + 2) % 3]);
+                            (d[k] - (p + q) / 2.0).abs() - (p - q).abs()
+                        };
+                        odd(a).total_cmp(&odd(c))
+                    })
+                    .unwrap();
+                let dir = [DVec3::X, DVec3::Y, DVec3::Z][axis];
+                let radius = 0.5 * (d[(axis + 1) % 3].powi(2) + d[(axis + 2) % 3].powi(2)).sqrt();
+                let centre = b.center() - dir * (d[axis] / 2.0);
+                let plane = Plane::new(centre, dir.any_orthonormal_vector(), dir);
+                Profile {
+                    plane,
+                    faces: vec![ProfileFace {
+                        outer: vec![Curve2::Circle {
+                            center: DVec2::ZERO,
+                            radius,
+                        }],
+                        holes: vec![],
+                    }],
+                }
+                .to_shape()
+                .and_then(|f| f.prism(dir * d[axis]))
+                .map(|r| r.shape)
+            }
+        }
+        .map_err(|e| e.0)?;
+        out.push(solid);
+    }
+    if out.is_empty() {
+        return Err("the assembly has no visible parts".into());
+    }
+    Ok(Shape::compound(&out))
+}
+
 fn safe_name(s: &str) -> String {
     let cleaned: String = s
         .chars()

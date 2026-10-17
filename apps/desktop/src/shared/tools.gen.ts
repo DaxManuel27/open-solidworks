@@ -40,6 +40,39 @@ export type Along = {
   distance: number
 }
 
+/** What to analyse. */
+export type Analysis =
+  | {
+    type: 'draft'
+    pull: Ref
+    /** Required draft, radians. */
+    angle: number
+    reverse?: boolean
+  }
+  | {
+    type: 'undercut'
+    pull: Ref
+    reverse?: boolean
+  }
+  | {
+    type: 'deviation'
+    mesh: string
+    body?: string | null
+    /** Report the share of vertices within each distance, mm. */
+    limits?: number[]
+  }
+  | {
+    type: 'projected_area'
+    faces: Ref[]
+    plane: Ref
+    hidden?: boolean
+  }
+  | {
+    type: 'compare'
+    a: string
+    b: string
+  }
+
 /** Where an annotation is attached. */
 export type Anchor =
   | {
@@ -2998,6 +3031,11 @@ export type Feature =
     type: 'insert_part'
     /** The `.ofp` file. */
     path: string
+    /**
+     * Only these of the part's bodies (by their IDs there); empty brings
+     * every body.
+     */
+    bodies?: string[]
     configuration?: number | null
     /** Mirror the part in this plane first, making the opposite hand. */
     mirror?: Ref | null
@@ -3705,6 +3743,20 @@ export type MemberGroup = {
   gap?: number
 }
 
+/** How a mesh or point cloud file is imported. */
+export type MeshImport = {
+  /** Join flat runs of triangles into single faces. */
+  group_facets?: boolean
+  /** Meshes with more triangles than this can only be graphics bodies. */
+  max_facets?: number
+  mode?: MeshImportMode
+  /** Millimetres per file unit, for files without units. */
+  scale?: number
+}
+
+/** What an imported mesh becomes. */
+export type MeshImportMode = 'graphics' | 'surface' | 'solid'
+
 export type MirrorItem = {
   component: string
   /**
@@ -4304,6 +4356,9 @@ export type SheetSize =
 
 /** How a shut-off loop is closed. */
 export type ShutOffPatch = 'contact' | 'tangent' | 'no_fill'
+
+/** How Defeature simplifies each component. */
+export type Silhouette = 'bounding_box' | 'cylinder'
 
 export type Sketch3D = {
   /** Monotonically increasing; deleted entity IDs must never be reused. */
@@ -5059,11 +5114,41 @@ export interface ToolArgs {
     /** Import it into drawings with model items. */
     show?: boolean | null
   }
-  /** Import a .step or .iges file as a new body feature. */
+  /** Import a STEP or IGES file, an STL, OBJ, OFF, PLY, 3MF or AMF mesh, or an XYZ/TXT/ASC point cloud as a new body feature. Open shells become surface bodies; meshes become graphics bodies unless `mesh.mode` asks for a surface or solid. */
   import: {
     path: string
     /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
     detail?: 'summary' | 'full'
+    /**
+     * For meshes and point clouds: graphics body, surface or solid, the
+     * units scale and the facet limit.
+     */
+    mesh?: MeshImport | null
+  }
+  /** Draft or undercut analysis against a pull direction, deviation of a mesh body from the model, projected area of faces, or a comparison of two bodies. Returns per-face classes with refs; it never changes the part. */
+  analysis: {
+    analysis: Analysis
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+  }
+  /** Save bodies of the saved part as new part files in a folder, linked to it and named after the bodies, optionally with an assembly placing them. */
+  save_bodies: {
+    /** The folder the new part files go in, one per body, named after it. */
+    folder: string
+    bodies: string[]
+    /** Also write an assembly of this name placing the new parts. */
+    assembly?: string | null
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+  }
+  /** Write a new, opposite-hand part linked to the saved part, mirrored in a plane (the right plane by default). */
+  mirror_part: {
+    /** The new, opposite-hand `.ofp` file. */
+    path: string
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+    /** The plane to mirror in; defaults to the right plane. */
+    plane?: Ref | null
   }
   /** Undo the last change. */
   undo: {
@@ -5227,6 +5312,15 @@ export interface ToolArgs {
     /** Report gaps smaller than this, mm. */
     minimum: number
     components?: string[][]
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+  }
+  /** Write a simplified part of the assembly for sharing: each visible component replaced by the box or cylinder around it, where it sits. */
+  defeature_assembly: {
+    /** The new part file. */
+    path: string
+    /** Boxes or cylinders around the components. */
+    mode: Silhouette
     /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
     detail?: 'summary' | 'full'
   }
@@ -5582,6 +5676,9 @@ export const TOOL_METHODS = {
   set_part_properties: 'doc.properties.set',
   set_dimension_display: 'doc.dimension_display.set',
   import: 'import',
+  analysis: 'doc.analysis',
+  save_bodies: 'bodies.save',
+  mirror_part: 'part.mirror',
   undo: 'doc.undo',
   new_assembly: 'asm.new',
   assembly_info: 'asm.info',
@@ -5600,6 +5697,7 @@ export const TOOL_METHODS = {
   add_explode_step: 'asm.explode.add',
   interference: 'asm.interference',
   clearance: 'asm.clearance',
+  defeature_assembly: 'asm.defeature',
   bill_of_materials: 'asm.bom',
   import_step_assembly: 'asm.import_step',
   new_drawing: 'drawing.new',
@@ -5665,7 +5763,10 @@ export const TOOL_EXAMPLES: { [K in ToolName]: ToolArgs[K][] } = {
   sheet_metal_info: [{}, {"outline":true}],
   set_part_properties: [{"properties":{"PartNo":{"value":"BRK-1"},"Weight":{"value":"{mass}"}}}],
   set_dimension_display: [{"key":"f2.end1.depth","show":false}, {"key":"f2.end1.depth","name":"THICKNESS"}],
-  import: [{"path":"part.step"}],
+  import: [{"path":"part.step"}, {"mesh":{"mode":"solid"},"path":"scan.stl"}],
+  analysis: [{"analysis":{"angle":0.0175,"pull":{"type":"front_plane"},"type":"draft"}}, {"analysis":{"pull":{"type":"front_plane"},"type":"undercut"}}],
+  save_bodies: [{"assembly":"plate","bodies":["b2:17a163b7910805aa"],"folder":"bodies"}],
+  mirror_part: [{"path":"left.ofp"}],
   undo: [{}],
   new_assembly: [{}],
   assembly_info: [{}],
@@ -5684,6 +5785,7 @@ export const TOOL_EXAMPLES: { [K in ToolName]: ToolArgs[K][] } = {
   add_explode_step: [{"components":[["2"]],"motion":{"direction":[0,0,1],"distance":30,"type":"translate"}}],
   interference: [{}, {"treat_coincidence":true}],
   clearance: [{"minimum":50}],
+  defeature_assembly: [{"mode":"bounding_box","path":"envelope.ofp"}],
   bill_of_materials: [{"type":"parts_only"}],
   import_step_assembly: [{"path":"assembly.step"}],
   new_drawing: [{}, {"standard":"ansi"}, {"model":"part.ofp"}],

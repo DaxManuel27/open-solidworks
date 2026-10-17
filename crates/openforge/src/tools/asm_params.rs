@@ -324,3 +324,11 @@ pub struct ComponentPath {
     #[schemars(length(min = 1))]
     pub component: Vec<String>,
 }
+
+#[derive(Deserialize, JsonSchema)]
+pub struct Defeature {
+    /// The new part file.
+    pub path: PathBuf,
+    /// Boxes or cylinders around the components.
+    pub mode: of_assembly::exchange::Silhouette,
+}

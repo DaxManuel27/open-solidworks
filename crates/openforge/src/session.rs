@@ -1275,8 +1275,22 @@ impl Session {
                 of_io::export(&body.shape, &p.path, format).map_err(fail)?;
                 Ok(json!({ "path": p.path }))
             }
+            "doc.analysis" => {
+                let p: crate::surfacing::AnalysisParams = args(params)?;
+                self.model.rebuild();
+                crate::surfacing::analysis(&self.model, &p).map_err(fail)
+            }
+            "bodies.save" => {
+                let p: crate::surfacing::SaveBodies = args(params)?;
+                self.model.rebuild();
+                crate::surfacing::save_bodies(&self.model, self.path.as_deref(), &p).map_err(fail)
+            }
+            "part.mirror" => {
+                let p: crate::surfacing::MirrorPart = args(params)?;
+                crate::surfacing::mirror_part(self.path.as_deref(), &p).map_err(fail)
+            }
             "import" => {
-                let p: FilePath = args(params)?;
+                let p: ImportFile = args(params)?;
                 let data = of_io::read_import(&p.path).map_err(fail)?;
                 let format = match data.kind {
                     of_io::ImportKind::Step => ImportFormat::Step,
@@ -1294,7 +1308,7 @@ impl Session {
                     format,
                     source: data.source.clone(),
                     data: data.data,
-                    mesh: None,
+                    mesh: p.mesh,
                 }));
                 self.model.doc.feature_mut(id).unwrap().name = data.source;
                 self.model.invalidate(id);

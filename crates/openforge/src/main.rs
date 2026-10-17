@@ -7,6 +7,7 @@ mod drawing;
 mod mcp;
 mod session;
 mod sheet;
+mod surfacing;
 mod tools;
 mod views;
 

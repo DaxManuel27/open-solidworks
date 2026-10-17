@@ -190,9 +190,19 @@ pub const TOOLS: &[Tool] = &[
     tool!("set_dimension_display", "doc.dimension_display.set", DimensionDisplay, read_only: false, draft: true,
         "Choose whether a part dimension (parameter key from part_info) is imported into drawings by insert_model_items, and the name shown under it.",
         [{"key": "f2.end1.depth", "show": false}, {"key": "f2.end1.depth", "name": "THICKNESS"}]),
-    tool!("import", "import", FilePath, read_only: false, draft: false,
-        "Import a .step or .iges file as a new body feature.",
-        [{"path": "part.step"}]),
+    tool!("import", "import", ImportFile, read_only: false, draft: false,
+        "Import a STEP or IGES file, an STL, OBJ, OFF, PLY, 3MF or AMF mesh, or an XYZ/TXT/ASC point cloud as a new body feature. Open shells become surface bodies; meshes become graphics bodies unless `mesh.mode` asks for a surface or solid.",
+        [{"path": "part.step"}, {"path": "scan.stl", "mesh": {"mode": "solid"}}]),
+    tool!("analysis", "doc.analysis", crate::surfacing::AnalysisParams, read_only: true, draft: true,
+        "Draft or undercut analysis against a pull direction, deviation of a mesh body from the model, projected area of faces, or a comparison of two bodies. Returns per-face classes with refs; it never changes the part.",
+        [{"analysis": {"type": "draft", "pull": {"type": "front_plane"}, "angle": 0.0175}},
+         {"analysis": {"type": "undercut", "pull": {"type": "front_plane"}}}]),
+    tool!("save_bodies", "bodies.save", crate::surfacing::SaveBodies, read_only: false, draft: false,
+        "Save bodies of the saved part as new part files in a folder, linked to it and named after the bodies, optionally with an assembly placing them.",
+        [{"folder": "bodies", "bodies": [EXAMPLE_BODY], "assembly": "plate"}]),
+    tool!("mirror_part", "part.mirror", crate::surfacing::MirrorPart, read_only: false, draft: false,
+        "Write a new, opposite-hand part linked to the saved part, mirrored in a plane (the right plane by default).",
+        [{"path": "left.ofp"}]),
     tool!("undo", "doc.undo", Empty, read_only: false, draft: false,
         "Undo the last change.",
         [{}]),
@@ -250,6 +260,9 @@ pub const TOOLS: &[Tool] = &[
     tool!("clearance", "asm.clearance", Clearance, read_only: true, draft: false,
         "List gaps between components smaller than `minimum` mm, smallest first.",
         [{"minimum": 50}]),
+    tool!("defeature_assembly", "asm.defeature", Defeature, read_only: true, draft: false,
+        "Write a simplified part of the assembly for sharing: each visible component replaced by the box or cylinder around it, where it sits.",
+        [{"path": "envelope.ofp", "mode": "bounding_box"}]),
     tool!("bill_of_materials", "asm.bom", Bom, read_only: true, draft: false,
         "The bill of materials: top-level, parts-only or indented rows with quantities and part properties. `csv` also writes it to a file.",
         [{"type": "parts_only"}]),
@@ -863,6 +876,12 @@ mod tests {
             example_assembly(dir)
         } else if method.starts_with("drawing.") && method != "drawing.new" {
             example_drawing(dir)
+        } else if method == "bodies.save" || method == "part.mirror" {
+            // Derived parts link to the saved part.
+            let mut s = example_part();
+            s.handle("doc.save", json!({ "path": dir.join("source.ofp") }))
+                .unwrap();
+            s
         } else {
             example_part()
         }

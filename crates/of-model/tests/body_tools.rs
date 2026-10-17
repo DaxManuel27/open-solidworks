@@ -343,6 +343,7 @@ fn inserted_and_mirrored_parts_follow_their_file() {
         path: path.display().to_string(),
         configuration: None,
         transfer: InsertTransfer::default(),
+        bodies: vec![],
         mirror: Some(Ref::RightPlane),
         translation: [0.0, 0.0, 5.0],
         rotation: [0.0, 0.0, 0.0],

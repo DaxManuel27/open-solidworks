@@ -895,6 +895,13 @@ impl AsmSession {
                 }
                 Ok(json!({ "path": p.path }))
             }
+            "asm.defeature" => {
+                let p: crate::tools::asm_params::Defeature = args(params)?;
+                let doc =
+                    of_assembly::exchange::defeatured_part(&mut self.asm, p.mode).map_err(fail)?;
+                of_model::file::save(&doc, &p.path).map_err(fail)?;
+                Ok(json!({ "path": p.path }))
+            }
             "asm.reload" => {
                 let changed = self.asm.refresh();
                 self.meshes.clear();

@@ -203,9 +203,61 @@ pub fn scene(doc: &Document, state: &State) -> Result<Value, String> {
             Err(error) => json!({"id":id,"name":name(*id),"parameters":thread,"body":null,"hidden":false,"polylines":[],"error":error}),
         }
     }).chain(hole_threads).collect();
+    // Graphics mesh bodies, drawn as triangles with their groups.
+    let meshes: Vec<Value> = state
+        .meshes
+        .iter()
+        .enumerate()
+        .map(|(i, m)| {
+            let positions: Vec<f32> = m
+                .mesh
+                .positions
+                .iter()
+                .flat_map(|p| [p.x as f32, p.y as f32, p.z as f32])
+                .collect();
+            let indices: Vec<u32> = m.mesh.triangles.iter().flatten().copied().collect();
+            let groups: Vec<u32> = (0..m.mesh.triangles.len())
+                .map(|t| m.mesh.group(t))
+                .collect();
+            let colors: Option<Vec<u32>> = m.mesh.colors.as_ref().map(|c| {
+                c.iter()
+                    .map(|[r, g, b]| (*r as u32) << 16 | (*g as u32) << 8 | *b as u32)
+                    .collect()
+            });
+            json!({
+                "id": m.id,
+                "name": mesh_name(doc, state, i),
+                "hidden": doc.body_display.get(&m.id).is_some_and(|d| d.hidden),
+                "positions": b64_f32(&positions),
+                "indices": b64_u32(&indices),
+                "groups": b64_u32(&groups),
+                "colors": colors.map(|c| b64_u32(&c)),
+                "triangle_count": m.mesh.triangles.len(),
+            })
+        })
+        .collect();
+    for m in &state.meshes {
+        let b = m.mesh.bounds();
+        if !b.is_empty() {
+            bounds = Some(bounds.map_or((b.min, b.max), |(lo, hi)| (lo.min(b.min), hi.max(b.max))));
+        }
+    }
+    // Surface Flatten stretch, for deviation plots.
+    let flattenings: Vec<Value> = state
+        .flattenings
+        .iter()
+        .map(|(id, f)| {
+            let positions: Vec<f32> = f.mesh.positions.iter().flat_map(|p| [p.x as f32, p.y as f32, p.z as f32]).collect();
+            let indices: Vec<u32> = f.mesh.triangles.iter().flatten().copied().collect();
+            let strain: Vec<f32> = f.strain.iter().map(|s| *s as f32).collect();
+            json!({ "id": id, "positions": b64_f32(&positions), "indices": b64_u32(&indices), "strain": b64_f32(&strain) })
+        })
+        .collect();
     Ok(json!({
         "body": body,
         "bodies": body_views(doc, state)?,
+        "meshes": meshes,
+        "flattenings": flattenings,
         "bbox": bounds.map(|(lo,hi)| json!({ "min": v3(lo), "max": v3(hi) })),
         "datums": datums,
         "sketches": sketches,
@@ -225,6 +277,14 @@ pub fn body_name(doc: &Document, state: &State, index: usize) -> String {
         .unwrap_or_else(|| format!("Body {}", index + 1))
 }
 
+/// A mesh body's display name, or `Mesh-Body N` by its position.
+pub fn mesh_name(doc: &Document, state: &State, index: usize) -> String {
+    doc.body_display
+        .get(&state.meshes[index].id)
+        .and_then(|d| d.name.clone())
+        .unwrap_or_else(|| format!("Mesh-Body {}", index + 1))
+}
+
 /// A surface body's display name, or `Surface-Body N` by its position.
 pub fn surface_name(doc: &Document, state: &State, index: usize) -> String {
     doc.body_display
@@ -235,11 +295,30 @@ pub fn surface_name(doc: &Document, state: &State, index: usize) -> String {
 
 fn body_views(doc: &Document, state: &State) -> Result<Vec<Value>, String> {
     let Some(whole) = state.everything() else {
-        return Ok(Vec::new());
+        return Ok(state
+            .meshes
+            .iter()
+            .enumerate()
+            .map(|(i, m)| {
+                json!({ "id": m.id, "kind": "mesh", "name": mesh_name(doc, state, i),
+                "hidden": doc.body_display.get(&m.id).is_some_and(|d| d.hidden),
+                "faces": [], "edges": [], "vertices": [], "triangles": m.mesh.triangles.len() })
+            })
+            .collect());
     };
     let solids = state.bodies.iter().enumerate().map(|(i, b)| (b, false, i));
     let surfaces = state.surfaces.iter().enumerate().map(|(i, b)| (b, true, i));
-    solids
+    let meshes = state.meshes.iter().enumerate().map(|(i, m)| {
+        json!({
+            "id": m.id,
+            "kind": "mesh",
+            "name": mesh_name(doc, state, i),
+            "hidden": doc.body_display.get(&m.id).is_some_and(|d| d.hidden),
+            "faces": [], "edges": [], "vertices": [],
+            "triangles": m.mesh.triangles.len(),
+        })
+    });
+    let breps = solids
         .chain(surfaces)
         .map(|(body, surface, i)| {
             let display = doc.body_display.get(&body.id);
@@ -259,7 +338,8 @@ fn body_views(doc: &Document, state: &State) -> Result<Vec<Value>, String> {
                 "vertices": indices(of_model::geom::Kind::Vertex)?,
             }))
         })
-        .collect()
+        .collect::<Result<Vec<Value>, String>>()?;
+    Ok(breps.into_iter().chain(meshes).collect())
 }
 
 fn definition(d: Option<&Definition>) -> &'static str {
@@ -392,6 +472,19 @@ pub fn snapshot(model: &Model) -> Value {
         "dimension_display": model.doc.dimension_display,
         "bodies": body_views(&model.doc, model.state()).unwrap_or_default(),
         "sheet_metal": sheet_metal_views(&model.doc, model.state()),
+        "mold": mold_view(model.state()),
+    })
+}
+
+/// The mould folders, for the tree.
+fn mold_view(state: &State) -> Value {
+    let m = &state.mold;
+    json!({
+        "parting_lines": m.parting_lines.iter().map(|r| json!({
+            "feature": r.feature, "body": r.body, "edges": r.edges.len(), "openings": r.openings.len(),
+        })).collect::<Vec<_>>(),
+        "shut_off": m.shut_off, "parting_surfaces": m.parting_surfaces,
+        "cores": m.cores, "cavities": m.cavities,
     })
 }
 

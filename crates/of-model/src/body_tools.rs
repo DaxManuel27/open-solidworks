@@ -242,6 +242,10 @@ pub struct InsertPart {
     pub configuration: Option<u32>,
     #[serde(default)]
     pub transfer: InsertTransfer,
+    /// Only these of the part's bodies (by their IDs there); empty brings
+    /// every body.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bodies: Vec<BodyId>,
     /// Mirror the part in this plane first, making the opposite hand.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mirror: Option<Ref>,

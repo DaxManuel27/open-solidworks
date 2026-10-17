@@ -291,7 +291,7 @@ run `cargo run -p openforge -- generate` instead. -->
 | `flex` | `mode`, `origin`, `axis`, `accuracy?`, `bodies?`, `scope?`, `toward?`, `trim?` | Bend, twist, taper or stretch bodies between trim planes. |
 | `deform` | `mode`, `accuracy?`, `bodies?`, `scope?` | Freeform deformation: point, curve to curve or surface push. |
 | `indent` | `target`, `tool`, `thickness`, `clearance?`, `cut?`, `scope?` | Press a tool body into a target body. |
-| `insert_part` | `path`, `configuration?`, `mirror?`, `rotation?`, `scope?`, `transfer?`, `translation?` | Another part's bodies, linked to its file. |
+| `insert_part` | `path`, `bodies?`, `configuration?`, `mirror?`, `rotation?`, `scope?`, `transfer?`, `translation?` | Another part's bodies, linked to its file. |
 | `defeature` | `bodies?`, `faces?`, `fillets_below?`, `holes_below?`, `scope?` | Remove faces and small holes and fillets, healing the gaps. |
 | `slicing` | `plane`, `count`, `spacing`, `bodies?`, `offset?`, `scope?` | Section curves through bodies on evenly spaced planes. |
 | `parting_line` | `pull`, `body?`, `draft_angle?`, `reverse?`, `scope?`, `split_faces?` | Where the mould splits: edges between faces pulled each way. |
@@ -421,7 +421,10 @@ run `cargo run -p openforge -- generate` instead. -->
 | `sheet_metal_info` | `doc.sheet_metal` | read | `detail?`, `outline?` |
 | `set_part_properties` | `doc.properties.set` | edit (draft) | `properties`, `additionalProperties?`, `detail?` |
 | `set_dimension_display` | `doc.dimension_display.set` | edit (draft) | `key`, `detail?`, `name?`, `show?` |
-| `import` | `import` | file/session (not in drafts) | `path`, `detail?` |
+| `import` | `import` | file/session (not in drafts) | `path`, `detail?`, `mesh?` |
+| `analysis` | `doc.analysis` | read | `analysis`, `detail?` |
+| `save_bodies` | `bodies.save` | file/session (not in drafts) | `folder`, `bodies`, `assembly?`, `detail?` |
+| `mirror_part` | `part.mirror` | file/session (not in drafts) | `path`, `detail?`, `plane?` |
 | `undo` | `doc.undo` | file/session (not in drafts) | `detail?` |
 | `new_assembly` | `asm.new` | file/session (not in drafts) | `detail?` |
 | `assembly_info` | `asm.info` | read | `detail?` |
@@ -440,6 +443,7 @@ run `cargo run -p openforge -- generate` instead. -->
 | `add_explode_step` | `asm.explode.add` | file/session (not in drafts) | `components`, `motion`, `detail?`, `name?` |
 | `interference` | `asm.interference` | read | `components?`, `detail?`, `include_hidden?`, `subassemblies_as_components?`, `treat_coincidence?` |
 | `clearance` | `asm.clearance` | read | `minimum`, `components?`, `detail?` |
+| `defeature_assembly` | `asm.defeature` | read | `path`, `mode`, `detail?` |
 | `bill_of_materials` | `asm.bom` | read | `csv?`, `detail?`, `type?` |
 | `import_step_assembly` | `asm.import_step` | file/session (not in drafts) | `path`, `detail?`, `folder?` |
 | `new_drawing` | `drawing.new` | file/session (not in drafts) | `configuration?`, `detail?`, `model?`, `projection?`, `size?`, `standard?` |

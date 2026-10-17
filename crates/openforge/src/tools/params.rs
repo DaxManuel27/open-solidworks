@@ -101,6 +101,15 @@ pub struct FilePath {
 }
 
 #[derive(Deserialize, JsonSchema)]
+pub struct ImportFile {
+    pub path: PathBuf,
+    /// For meshes and point clouds: graphics body, surface or solid, the
+    /// units scale and the facet limit.
+    #[serde(default)]
+    pub mesh: Option<of_model::meshes::MeshImport>,
+}
+
+#[derive(Deserialize, JsonSchema)]
 pub struct SavePath {
     /// Omitted saves to the path the part was opened from.
     pub path: Option<PathBuf>,
