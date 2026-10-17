@@ -187,6 +187,19 @@ impl Shape {
             .collect()
     }
 
+    /// Edges a face meets itself along, like a cylinder's seam.
+    pub fn seam_edges(&self) -> Vec<u32> {
+        // The kernel leaves out seams on the silhouette of a view; a normal
+        // can't be square to all three axes, so the union has every seam.
+        let mut out: Vec<u32> = [DVec3::X, DVec3::Y, DVec3::Z]
+            .iter()
+            .flat_map(|v| ffi::seam_edges(&self.0, &crate::v3(*v)))
+            .collect();
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+
     /// Edges on only one face: the open boundary of a surface.
     pub fn free_edges(&self) -> Result<Shape> {
         Ok(Shape(ffi::free_edges(&self.0)?))

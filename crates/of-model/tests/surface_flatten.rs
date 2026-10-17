@@ -97,6 +97,43 @@ fn a_cylindrical_panel_unrolls_to_its_true_size() {
 }
 
 #[test]
+fn a_whole_tube_opens_along_its_seam() {
+    let mut doc = Document::new();
+    let mut sk = Sketch::new();
+    let a = sk.add_point(DVec2::new(10.0, 0.0));
+    let b = sk.add_point(DVec2::new(10.0, 20.0));
+    sk.add_line(a, b).unwrap();
+    let s = sketch(&mut doc, Ref::FrontPlane, sk);
+    let axis = y_axis(&mut doc);
+    doc.add(FeatureKind::RevolvedSurface(RevolvedSurface {
+        sketch: s,
+        axis,
+        angle: RevolveAngle::Blind { angle: 2.0 * PI },
+        reverse: false,
+    }));
+    let m = Model::new(doc);
+    ok(&m);
+    let (f, worst) = flatten(&m, vec![]);
+    assert!(worst < 2e-3, "strain {worst}");
+    let true_area = 2.0 * PI * 10.0 * 20.0;
+    let a = flat_area(&f);
+    assert!(
+        (a - true_area).abs() < true_area * 2e-3,
+        "{a} vs {true_area}"
+    );
+    // A 2πr by h rectangle: its perimeter.
+    let flat = &f.state().surfaces.last().unwrap().geometry.shape;
+    let perimeter: f64 = (0..flat.count(Kind::Edge))
+        .map(|e| flat.edge_info(e).unwrap().length)
+        .sum();
+    let expected = 2.0 * (2.0 * PI * 10.0 + 20.0);
+    assert!(
+        (perimeter - expected).abs() < expected * 2e-3,
+        "{perimeter} vs {expected}"
+    );
+}
+
+#[test]
 fn a_spherical_cap_flattens_with_a_little_stretch() {
     let mut doc = Document::new();
     let mut sk = Sketch::new();

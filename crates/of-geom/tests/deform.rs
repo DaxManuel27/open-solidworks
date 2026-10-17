@@ -50,3 +50,16 @@ fn deforming_by_identity_keeps_the_shape_and_twist_keeps_volume() {
     let bb = twisted.shape.bbox().unwrap();
     assert!(bb.max.x > 10.5, "the top corners turned: {bb:?}");
 }
+
+#[test]
+fn a_displayed_shape_scales_and_deforms() {
+    // Display meshes stay on the shape; they mustn't make the result invalid.
+    let b = Shape::make_box(40.0, 20.0, 10.0).unwrap();
+    b.mesh(0.1, 0.5).unwrap();
+    let x = b.scale(DVec3::ZERO, DVec3::new(1.0, 2.0, 3.0)).unwrap();
+    assert!((volume(&x.shape) - 48000.0).abs() < 1e-6);
+    let bent = b
+        .deform(4, |p| p + DVec3::new(0.0, 0.0, p.x * 0.01))
+        .unwrap();
+    assert!((volume(&bent.shape) - 8000.0).abs() < 1.0);
+}

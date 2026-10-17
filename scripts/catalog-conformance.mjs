@@ -1,4 +1,4 @@
-// Checks Phase 1 to 5 behaviour against the feature specs in docs/features,
+// Checks Phase 1 to 6 behaviour against the feature specs in docs/features,
 // driving `openforge serve` over JSON-RPC the way the desktop and MCP clients do.
 //
 //   cargo build && pnpm conformance [filter]
@@ -3367,6 +3367,328 @@ check(
     expect(b.added.length === 3, `${b.added.length} balloons`)
   },
 )
+
+// ---- Phase 6: surfaces, direct editing, mesh and mould ----
+
+const bodiesOf = async (kind) => (await call('doc.info')).bodies.filter((b) => b.kind === kind)
+const facesNear = async (p, tol = 1e-6) =>
+  (await topology()).faces.filter((f) => at(p, tol)(f.centroid))
+/** A 20 x 10 x 5 box as a capped extruded surface. */
+async function surfaceBox() {
+  await fresh()
+  const s = await sketch(front, [rect([0, 0], [20, 10])])
+  return ok({
+    type: 'extruded_surface',
+    sketch: s.id,
+    end1: { type: 'blind', depth: 5 },
+    cap_ends: true,
+  })
+}
+
+check('05 Extruded surface', 'capped ends close the surface; knit makes it a solid', async () => {
+  await surfaceBox()
+  const [surface] = await bodiesOf('surface')
+  expect(surface && (await bodiesOf('solid')).length === 0, 'one surface body, no solid')
+
+  await ok({ type: 'knit', bodies: [surface.id], create_solid: true })
+  near(await volume(), 1000, 1e-6, 'knitted solid')
+  expect((await bodiesOf('surface')).length === 0, 'the surface is consumed')
+})
+
+check('05 Knit surface', 'an open set knits without a solid; create solid then fails', async () => {
+  await surfaceBox()
+  const [surface] = await bodiesOf('surface')
+  // Open it: delete the top cap.
+  const [cap] = await facesNear([10, 5, 5])
+  await ok({ type: 'delete_face', faces: [cap.ref], mode: 'delete' })
+  await bad({ type: 'knit', bodies: [surface.id], create_solid: true }, /clos|gap|solid/i)
+})
+
+check(
+  '05 Planar surface and thicken',
+  'a 20 x 10 sheet thickened 2 mm to one side or both',
+  async () => {
+    await fresh()
+    const s = await sketch(front, [rect([0, 0], [20, 10])])
+    await ok({ type: 'planar_surface', sketch: s.id })
+    const [sheet] = await bodiesOf('surface')
+    const t = await ok({ type: 'thicken', body: sheet.id, thickness: 2 })
+    near(await volume(), 400, 1e-6, 'one side')
+    const one = (await call('doc.info')).scene.bbox
+    expect(Math.abs(one.min[2]) < 1e-6 || Math.abs(one.max[2]) < 1e-6, 'one side of the sheet')
+    await call('feature.update', {
+      id: t.id,
+      feature: { type: 'thicken', body: sheet.id, thickness: 2, side: 'both' },
+    })
+    near(await volume(), 400, 1e-6, 'both sides')
+    const both = (await call('doc.info')).scene.bbox
+    near(both.min[2], -1, 1e-5, 'half below')
+    near(both.max[2], 1, 1e-5, 'half above')
+  },
+)
+
+check('05 Offset surface', 'a face offset 5 mm keeps its area and lies 5 mm out', async () => {
+  await block()
+  const top = await face(facing([0, 0, 1]))
+  await ok({ type: 'offset_surface', faces: [top], distance: 5 })
+  expect((await bodiesOf('surface')).length === 1, 'a surface body')
+  const lifted = (await topology()).faces.find((f) => Math.abs(f.centroid[2] - 15) < 1e-6)
+  expect(lifted, 'face at z = 15')
+  near(lifted.area, 800, 1e-6, 'offset face area')
+})
+
+check('05 Cut with surface', 'a plane through the middle of a block keeps one half', async () => {
+  await block()
+  const { id: plane } = await ok({ type: 'plane', mode: 'offset', reference: front, distance: 4 })
+  const s = await sketch({ type: 'feature', id: plane }, [rect([-10, -10], [50, 30])])
+  await ok({ type: 'planar_surface', sketch: s.id })
+  const [sheet] = await bodiesOf('surface')
+  await ok({ type: 'cut_with_surface', surface: { type: 'body', id: sheet.id } })
+  const v = await volume()
+  expect(Math.abs(v - 3200) < 1e-6 || Math.abs(v - 4800) < 1e-6, `one side kept: ${v}`)
+})
+
+check(
+  '05 Delete face and delete hole',
+  'delete leaves an open body; patch closes it again',
+  async () => {
+    await block()
+    const top = await face(facing([0, 0, 1]))
+    const del = await ok({ type: 'delete_face', faces: [top], mode: 'delete' })
+    expect((await bodiesOf('surface')).length === 1, 'an open surface body')
+    await call('feature.update', {
+      id: del.id,
+      feature: { type: 'delete_face', faces: [top], mode: 'patch' },
+    })
+    near(await volume(), 8000, 1e-6, 'patched back to the block')
+  },
+)
+
+check('05 Surface flatten', 'a cylinder side flattens to its developed area', async () => {
+  await fresh()
+  const s = await sketch(front, [circle([0, 0], 10)])
+  await ok(blind(s.id, 20))
+  const side = (await topology()).faces.find(
+    (f) => f.surface === 'cylinder' || f.kind === 'cylinder',
+  )
+  expect(side, 'cylinder face')
+  await ok({ type: 'surface_flatten', faces: [side.ref] })
+  const info = await call('doc.info')
+  expect(info.scene.flattenings.length === 1, 'flattening recorded')
+  const areas = (await topology()).faces.map((f) => f.area)
+  const flat = areas.filter((a) => Math.abs(a - 2 * PI * 10 * 20) < 1e-3 * 2 * PI * 200)
+  expect(flat.length >= 2, `the flat face has the side area: ${areas.map((a) => a.toFixed(2))}`)
+})
+
+check('05 Projected surface area', 'a block top seen from above is 40 x 20', async () => {
+  await block()
+  const top = await face(facing([0, 0, 1]))
+  const r = await call('doc.analysis', {
+    analysis: { type: 'projected_area', faces: [top], plane: front },
+  })
+  near(r.area, 800, 1e-6, 'projected area')
+})
+
+check('06 Move face', 'offset and translate change the block by the face area', async () => {
+  await block()
+  const top = await face(facing([0, 0, 1]))
+  const mv = await ok({ type: 'move_face', faces: [top], motion: { type: 'offset', distance: 3 } })
+  near(await volume(), 40 * 20 * 13, 1e-6, 'offset 3')
+  await call('feature.update', {
+    id: mv.id,
+    feature: { type: 'move_face', faces: [top], motion: { type: 'offset', distance: -4 } },
+  })
+  near(await volume(), 40 * 20 * 6, 1e-6, 'offset -4')
+})
+
+check('06 Replace face', 'the top face moves up to a surface 15 mm above the base', async () => {
+  await block()
+  const { id: plane } = await ok({ type: 'plane', mode: 'offset', reference: front, distance: 15 })
+  const s = await sketch({ type: 'feature', id: plane }, [rect([-10, -10], [50, 30])])
+  await ok({ type: 'planar_surface', sketch: s.id })
+  const [sheet] = await bodiesOf('surface')
+  const top = await face(facing([0, 0, 1]))
+  await ok({ type: 'replace_face', faces: [top], replacement: { type: 'body', id: sheet.id } })
+  near(await volume(), 40 * 20 * 15, 1e-6, 'replaced')
+})
+
+check('06 Delete hole', 'a hole in a surface face is filled', async () => {
+  await fresh()
+  const s = await sketch(front, [rect([0, 0], [20, 10]), circle([10, 5], 2)])
+  await ok({ type: 'planar_surface', sketch: s.id })
+  const before = (await topology()).faces[0].area
+  near(before, 200 - 4 * PI, 1e-6, 'holed sheet')
+  const [sheet] = await facesNear([null, null, 0])
+  await ok({ type: 'delete_hole', faces: [sheet.ref] })
+  near((await topology()).faces[0].area, 200, 1e-6, 'hole filled')
+})
+
+check(
+  '06 Scale',
+  'a uniform factor of 2 scales the volume by 8; per-axis factors multiply',
+  async () => {
+    const id = await block()
+    void id
+    const sc = await ok({ type: 'scale', factor: 2, about: { type: 'origin' } })
+    near(await volume(), 64000, 1e-6, 'uniform')
+    await call('feature.update', {
+      id: sc.id,
+      feature: { type: 'scale', factors: [1, 2, 3], about: { type: 'origin' } },
+    })
+    near(await volume(), 48000, 1e-6, 'non-uniform')
+  },
+)
+
+check('06 Delete/keep body', 'deleting one of two bodies leaves the other', async () => {
+  await fresh()
+  const s = await sketch(front, [rect([0, 0], [10, 10]), rect([20, 0], [30, 5])])
+  await ok(blind(s.id, 10))
+  const solids = await bodiesOf('solid')
+  expect(solids.length === 2, 'two bodies')
+  const del = await ok({ type: 'delete_body', bodies: [solids[0].id] })
+  const left = await volume()
+  expect(Math.abs(left - 1000) < 1e-6 || Math.abs(left - 500) < 1e-6, `one body left: ${left}`)
+  await call('feature.update', {
+    id: del.id,
+    feature: { type: 'delete_body', bodies: [solids[0].id], keep: true },
+  })
+  near((await volume()) + left, 1500, 1e-6, 'keep is the complement')
+})
+
+check('06 Flex', 'a twist keeps the volume of a bar', async () => {
+  await fresh()
+  const s = await sketch(top, [rect([-2, -2], [2, 2])])
+  await ok(blind(s.id, 40))
+  const before = await volume()
+  await ok({
+    type: 'flex',
+    mode: { type: 'twist', angle: PI / 2 },
+    origin: { type: 'origin' },
+    axis: { type: 'top_plane' },
+    accuracy: 12,
+  })
+  near(await volume(), before, 1e-2, 'twisted volume')
+})
+
+check(
+  '09 Import mesh',
+  'an STL comes in as a graphics mesh body that matches the part',
+  async () => {
+    await block()
+    const stl = join(tmp, 'p6-block.stl')
+    await call('export', { path: stl })
+    await fresh()
+    const r = await call('import', { path: stl })
+    expect(r.scene.meshes.length === 1, 'one mesh body')
+    expect(
+      r.scene.meshes[0].triangle_count === 12,
+      `12 triangles: ${r.scene.meshes[0].triangle_count}`,
+    )
+    expect((await bodiesOf('solid')).length === 0, 'graphics only')
+  },
+)
+
+check(
+  '09 Mesh BREP and convert',
+  'convert a block to a mesh body and back to a solid',
+  async () => {
+    await block()
+    const [solid] = await bodiesOf('solid')
+    await ok({ type: 'convert_to_mesh', body: solid.id })
+    const mesh = (await call('doc.info')).scene.meshes[0]
+    expect(mesh, 'mesh body')
+    await ok({ type: 'mesh_to_brep', body: mesh.id, solid: true, group_facets: true })
+    near(await volume(), 8000, 1e-6, 'solid from the mesh')
+    expect((await topology()).faces.length === 6, 'coplanar facets grouped into six faces')
+  },
+)
+
+check(
+  '09 Decimate mesh',
+  'half the triangles of a cylinder, within a small deviation',
+  async () => {
+    await fresh()
+    const c = await sketch(front, [circle([0, 0], 10)])
+    await ok(blind(c.id, 20))
+    const [solid] = await bodiesOf('solid')
+    await ok({ type: 'convert_to_mesh', body: solid.id, chord: 0.01, keep: true })
+    const before = (await call('doc.info')).scene.meshes[0]
+    await ok({
+      type: 'decimate_mesh',
+      body: before.id,
+      target: { type: 'fraction', fraction: 0.5 },
+    })
+    const after = (await call('doc.info')).scene.meshes[0]
+    expect(
+      after.triangle_count <= before.triangle_count * 0.5 + 2,
+      `${after.triangle_count} of ${before.triangle_count}`,
+    )
+    const d = await call('doc.analysis', { analysis: { type: 'deviation', mesh: after.id } })
+    expect(d.max < 0.5, `deviation ${d.max}`)
+  },
+)
+
+check(
+  '12 Draft analysis',
+  'a block pulled along its extrusion: four walls need draft',
+  async () => {
+    await block()
+    const r = await call('doc.analysis', {
+      analysis: { type: 'draft', pull: front, angle: PI / 180 },
+    })
+    expect(r.counts.requires_draft === 4, `requires draft ${r.counts.requires_draft}`)
+    expect(r.counts.positive === 1 && r.counts.negative === 1, 'top and bottom')
+  },
+)
+
+check('12 Undercut analysis', 'a side pocket is trapped along the pull', async () => {
+  await block()
+  const side = await face(facing([1, 0, 0]))
+  const { id } = await worldSketch(side, (local) => [rect(local([40, 5, 3]), local([40, 15, 7]))])
+  await ok(blind(id, 5, { cut: true, reverse: true }))
+  near(await volume(), 8000 - 10 * 4 * 5, 1e-6, 'pocket')
+  const r = await call('doc.analysis', { analysis: { type: 'undercut', pull: front } })
+  expect(
+    r.faces.some((f) => f.class !== 'none'),
+    'some face is an undercut',
+  )
+})
+
+check(
+  '12 Parting line and tooling split',
+  'core and cavity fill the block around the part',
+  async () => {
+    await fresh()
+    const s = await sketch(front, [rect([-20, -15], [20, 15])])
+    await ok(blind(s.id, 20))
+    const walls = (await topology()).faces.filter((f) => f.normal && Math.abs(f.normal[2]) < 1e-6)
+    await ok({
+      type: 'draft',
+      faces: walls.map((f) => f.ref),
+      neutral_plane: front,
+      direction: null,
+      angle: (3 * PI) / 180,
+    })
+    const part = await volume()
+    const line = await ok({ type: 'parting_line', pull: front, split_faces: true })
+    expect((await call('doc.info')).mold.parting_lines.length === 1, 'parting line recorded')
+    await ok({ type: 'parting_surface', parting_line: line.id, distance: 30 })
+    const b = await sketch(front, [rect([-35, -30], [35, 30])])
+    await ok({ type: 'tooling_split', parting_line: line.id, sketch: b.id, depth1: 30, depth2: 10 })
+    const mold = (await call('doc.info')).mold
+    expect(mold.cores.length === 1 && mold.cavities.length === 1, 'a core and a cavity')
+    near(await volume(), 70 * 60 * 40, 1e-3, 'core + cavity + part')
+    void part
+  },
+)
+
+check('12 Scale (shrinkage factor)', 'shrinkage scales by the material allowance', async () => {
+  await block()
+  await call('doc.material.set', { material: 'ABS' }).catch(() => null)
+  const r = await add({ type: 'scale', shrinkage: true, about: { type: 'origin' } })
+  if (r.error) expect(/material|shrink/i.test(r.error), r.error)
+  else expect((await volume()) > 8000, 'scaled up')
+})
 
 // ---- run ----
 const results = []

@@ -5,6 +5,7 @@
 #include "of-kernel-sys/cpp/ofk.h"
 #include "of-kernel-sys/src/lib.rs.h"
 
+#include <BRepBuilderAPI_Copy.hxx>
 #include <BRepBuilderAPI_GTransform.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepBuilderAPI_NurbsConvert.hxx>
@@ -84,11 +85,15 @@ std::unique_ptr<Shape> scale_shape(const Shape &s, const Vec3 &center, const Vec
   g.SetValue(2, 2, factors.y);
   g.SetValue(3, 3, factors.z);
   g.SetTranslationPart(gp_XYZ(c.X() * (1 - factors.x), c.Y() * (1 - factors.y), c.Z() * (1 - factors.z)));
-  BRepBuilderAPI_GTransform op(s.shape, g, true);
+  // Display triangulations don't follow a stretch and fail the check; scale
+  // a copy without them. The copy keeps the sub-shape order, so history by
+  // index still names the input's shapes.
+  const TopoDS_Shape input = BRepBuilderAPI_Copy(s.shape, true, false).Shape();
+  BRepBuilderAPI_GTransform op(input, g, true);
   if (!op.IsDone()) throw std::runtime_error("the shape can't be scaled by axis");
   TopoDS_Shape out = op.Shape();
+  record(op, input, out, hist);
   if (!BRepCheck_Analyzer(out).IsValid()) throw std::runtime_error("scaling produced invalid geometry");
-  record(op, s.shape, out, hist);
   return wrap(out);
 }
 
@@ -134,8 +139,10 @@ Deformable::~Deformable() = default;
 
 std::unique_ptr<Deformable> deformable_new(const Shape &s, uint32_t refine) {
   auto d = std::make_unique<Deformable>();
-  d->impl->input = s.shape;
-  d->impl->convert.Perform(s.shape, true);
+  // Without display triangulations, which wouldn't follow the deformation;
+  // the copy keeps the sub-shape order, so history by index still holds.
+  d->impl->input = BRepBuilderAPI_Copy(s.shape, true, false).Shape();
+  d->impl->convert.Perform(d->impl->input, true);
   if (!d->impl->convert.IsDone()) throw std::runtime_error("the shape can't be converted to control points");
   d->impl->shape = d->impl->convert.Shape();
   TopTools_IndexedMapOfShape faces, edges, verts;

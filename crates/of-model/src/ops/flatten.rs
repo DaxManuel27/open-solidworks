@@ -64,10 +64,30 @@ pub(crate) fn surface_flatten(
             })
         })
     };
+    // A face that closes on itself (a cylinder's side) opens along its seam.
+    // Each side of a seam is already one set of vertices within its face;
+    // tags of their own keep the sides from welding together.
+    let seam_points: Vec<Vec<DVec3>> = region
+        .seam_edges()
+        .into_iter()
+        .filter_map(|e| region.edge_samples(e, size * 1e-3, 0.1).ok())
+        .collect();
+    let on_seam = |q: DVec3| {
+        seam_points.iter().any(|pts| {
+            pts.windows(2).any(|w| {
+                let d = w[1] - w[0];
+                let t = ((q - w[0]).dot(d) / d.length_squared().max(1e-300)).clamp(0.0, 1.0);
+                (w[0] + d * t - q).length() < size * 2e-4
+            })
+        })
+    };
     let mut tags = vec![0u32; mesh.positions.len()];
     for (t, tri) in mesh.triangles.iter().enumerate() {
         for v in tri {
-            if near_tear(mesh.positions[*v as usize]) {
+            let q = mesh.positions[*v as usize];
+            if on_seam(q) {
+                tags[*v as usize] = u32::MAX - *v;
+            } else if near_tear(q) {
                 tags[*v as usize] = mesh.groups[t] + 1;
             }
         }
