@@ -112,6 +112,7 @@ fn multiple_planes_retain_arbitrary_pieces_and_survive_tool_edits_reload_copy_co
         rotation: DVec3::ZERO,
         origin: DVec3::ZERO,
         copy: true,
+        ..Default::default()
     }));
     model.rebuild();
     check(&model);
@@ -233,6 +234,7 @@ fn solid_tools_and_bounded_faces_use_history_and_leave_tools_intact() {
         rotation: DVec3::ZERO,
         origin: DVec3::ZERO,
         copy: false,
+        ..Default::default()
     }));
     model.rebuild();
     check(&model);

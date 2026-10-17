@@ -594,6 +594,26 @@ pub mod ffi {
             fixed: u32,
             hist: &mut Vec<HistoryEntry>,
         ) -> Result<UniquePtr<Shape>>;
+        /// A shape scaled about `center` by `factors` along x, y and z.
+        fn scale_shape(
+            s: &Shape,
+            center: &Vec3,
+            factors: &Vec3,
+            hist: &mut Vec<HistoryEntry>,
+        ) -> Result<UniquePtr<Shape>>;
+        /// Planar faces closing each flat loop of free edges.
+        fn cap_loops(s: &Shape) -> Result<UniquePtr<Shape>>;
+        /// A copy of `s` as B-splines refined `refine` times per span, whose
+        /// control points can be moved.
+        fn deformable_new(s: &Shape, refine: u32) -> Result<UniquePtr<Deformable>>;
+        /// Every control point: face surfaces, then edge curves, then vertices.
+        fn deformable_points(d: &Deformable) -> Vec<f64>;
+        /// The shape with the control points moved to `points`.
+        fn deformable_apply(
+            d: Pin<&mut Deformable>,
+            points: &[f64],
+            hist: &mut Vec<HistoryEntry>,
+        ) -> Result<UniquePtr<Shape>>;
         /// A vertex at a point.
         fn make_vertex(p: &Vec3) -> UniquePtr<Shape>;
         /// A face's surface extended `length` past its boundary in every
@@ -633,6 +653,8 @@ pub mod ffi {
 
         /// A STEP file with product structure. Label 0 is the root assembly.
         type StepAssembly;
+        /// A shape as B-splines whose control points can be moved.
+        type Deformable;
         fn step_assembly_new(name: &str) -> Result<UniquePtr<StepAssembly>>;
         /// Add a part definition; returns its label.
         fn step_assembly_part(a: Pin<&mut StepAssembly>, name: &str, s: &Shape) -> Result<u32>;

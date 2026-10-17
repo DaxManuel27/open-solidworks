@@ -204,7 +204,7 @@ run `cargo run -p openforge -- generate` instead. -->
 | `loft` | `profiles`, `centerline?`, `closed?`, `cut?`, `end?`, `guides?`, `merge?`, `reversed?`, `ruled?`, `scope?`, `start?` | Loft through two or more closed profiles in order. |
 | `boundary` | `sections`, `curves`, `cut?`, `merge?`, `scope?` | A solid bounded by sections in one direction and crossing curves in the other. |
 | `combine` | `bodies`, `operation`, `scope?` | Boolean of bodies: fuse, cut (from the first) or common. |
-| `move_body` | `bodies`, `copy?`, `origin?`, `rotation?`, `scope?`, `translation?` | Move, rotate or copy bodies. |
+| `move_body` | `bodies`, `about?`, `along?`, `copies?`, `copy?`, `mates?`, `origin?`, `rotation?`, `scope?`, `to_point?`, `translation?` | Move, rotate or copy bodies. |
 | `split_body` | `bodies`, `keep?`, `plane?`, `retained_pieces?`, `scope?`, `tools?` | Split bodies with a plane. |
 | `plane` | `mode`, `reference`, `distance`, `flip?`, `scope?` | Parallel to a plane or planar face, `distance` along its normal. |
 | `plane` | `mode`, `reference`, `axis`, `angle`, `scope?` | Through a line, at `angle` to a plane. |
@@ -283,6 +283,15 @@ run `cargo run -p openforge -- generate` instead. -->
 | `mid_surface` | `body?`, `knit?`, `pairs?`, `position?`, `scope?`, `threshold?` | A surface midway between pairs of faces. |
 | `freeform` | `face`, `moves`, `continuity?`, `grid?`, `scope?` | Reshape a face by moving its control points. |
 | `surface_flatten` | `faces`, `accuracy?`, `fixed?`, `scope?`, `tears?` | Lay doubly curved faces out flat. |
+| `delete_body` | `bodies`, `keep?`, `scope?` | Remove bodies, or keep only the chosen ones. |
+| `intersect` | `tools`, `cap_planar?`, `consume_surfaces?`, `exclude?`, `merge?`, `mode?`, `scope?` | Solids from the regions bodies, surfaces and planes enclose. |
+| `scale` | `about?`, `bodies?`, `factor?`, `factors?`, `scope?` | Scale bodies uniformly or per axis. |
+| `flex` | `mode`, `origin`, `axis`, `accuracy?`, `bodies?`, `scope?`, `toward?`, `trim?` | Bend, twist, taper or stretch bodies between trim planes. |
+| `deform` | `mode`, `accuracy?`, `bodies?`, `scope?` | Freeform deformation: point, curve to curve or surface push. |
+| `indent` | `target`, `tool`, `thickness`, `clearance?`, `cut?`, `scope?` | Press a tool body into a target body. |
+| `insert_part` | `path`, `configuration?`, `mirror?`, `rotation?`, `scope?`, `transfer?`, `translation?` | Another part's bodies, linked to its file. |
+| `defeature` | `bodies?`, `faces?`, `fillets_below?`, `holes_below?`, `scope?` | Remove faces and small holes and fillets, healing the gaps. |
+| `slicing` | `plane`, `count`, `spacing`, `bodies?`, `offset?`, `scope?` | Section curves through bodies on evenly spaced planes. |
 
 <!-- /generated:features -->
 

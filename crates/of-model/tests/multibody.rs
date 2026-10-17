@@ -31,6 +31,7 @@ fn body_identity_survives_edit_move_copy_and_reload() {
         rotation: DVec3::ZERO,
         origin: DVec3::ZERO,
         copy: false,
+        ..Default::default()
     }));
     m.rebuild();
     check(&m, 2, 2000.0);
@@ -79,6 +80,7 @@ fn combine_order_and_failure_preserve_other_bodies() {
         rotation: DVec3::ZERO,
         origin: DVec3::ZERO,
         copy: false,
+        ..Default::default()
     }));
     m.rebuild();
     let combine = m.doc.add(FeatureKind::Combine(Combine {

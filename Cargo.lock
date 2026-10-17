@@ -814,6 +814,7 @@ name = "of-model"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "nalgebra",
  "of-geom",
  "of-mesh",
  "of-sketch",

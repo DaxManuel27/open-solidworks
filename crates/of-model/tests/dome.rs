@@ -243,6 +243,7 @@ fn dome_scope_preserves_other_bodies_and_reports_wrong_scope() {
         rotation: DVec3::ZERO,
         origin: DVec3::ZERO,
         copy: true,
+        ..Default::default()
     }));
     model.rebuild();
     valid(&model);
@@ -295,6 +296,7 @@ fn dome_delta_patterns_attach_to_copied_supporting_bodies() {
         rotation: DVec3::ZERO,
         origin: DVec3::ZERO,
         copy: true,
+        ..Default::default()
     }));
     model.rebuild();
     let dome = model.doc.add(FeatureKind::Dome(Dome {

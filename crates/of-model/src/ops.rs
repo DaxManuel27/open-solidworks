@@ -12,6 +12,7 @@ use crate::build::{Body, State, Tool};
 use crate::features::holes;
 use crate::naming::{Inputs, Naming};
 use crate::resolve::{RResult, Resolved, resolve};
+pub(crate) mod body_tools;
 mod direct;
 mod face_fillet;
 mod flatten;

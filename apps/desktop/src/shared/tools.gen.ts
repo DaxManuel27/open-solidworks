@@ -2,6 +2,12 @@
 // run `cargo run -p openforge -- generate` instead.
 // Lengths are millimetres and angles radians.
 
+export type About = {
+  axis: Ref
+  /** Radians. */
+  angle: number
+}
+
 /** Direction sense for mates between oriented entities. */
 export type Alignment = 'aligned' | 'anti_aligned' | 'closest'
 
@@ -27,6 +33,12 @@ export type Allowance =
     type: 'bend_calculation'
     ranges: CalculationRange[]
   }
+
+export type Along = {
+  reference: Ref
+  /** mm. */
+  distance: number
+}
 
 /** Where an annotation is attached. */
 export type Anchor =
@@ -743,6 +755,41 @@ export type BendOverride = {
 /** Where a sketched bend or jog sits relative to its sketch line. */
 export type BendPosition = 'centerline' | 'material_inside' | 'material_outside' | 'bend_outside'
 
+/** A mate between geometry on the moved bodies and other geometry. */
+export type BodyMate = {
+  kind: BodyMateKind
+  /** A face, edge, vertex or reference on a moved body. */
+  moving: Ref
+  /** A face, edge, vertex or reference that stays put. */
+  fixed: Ref
+}
+
+/** How a mate relates the moved geometry to the fixed geometry. */
+export type BodyMateKind =
+  | {
+    type: 'coincident'
+  }
+  | {
+    type: 'parallel'
+  }
+  | {
+    type: 'perpendicular'
+  }
+  | {
+    type: 'tangent'
+  }
+  | {
+    type: 'concentric'
+  }
+  | {
+    type: 'distance'
+    distance: number
+  }
+  | {
+    type: 'angle'
+    angle: number
+  }
+
 export type BomType = 'top_level' | 'parts_only' | 'indented'
 
 /** Boolean operations. */
@@ -1257,6 +1304,30 @@ export type DatumRef = {
   modifier?: Modifier | null
 }
 
+/** How Deform deforms. */
+export type DeformMode =
+  | {
+    type: 'point'
+    point: Ref
+    direction: Ref
+    distance: number
+    radius: number
+  }
+  | {
+    type: 'curve_to_curve'
+    from: Ref[]
+    to: Ref[]
+    radius: number
+  }
+  | {
+    type: 'surface_push'
+    tool: string
+    /** The direction the tool moves. */
+    direction: Ref
+    /** How far it moves, mm. */
+    distance: number
+  }
+
 /** How Delete Face closes the gap the faces leave. */
 export type DeleteFaceMode = 'delete' | 'patch' | 'fill' | 'fill_tangent'
 
@@ -1769,13 +1840,29 @@ export type Feature =
   | {
     type: 'move_body'
     bodies: string[]
+    /** Rotate about an edge or axis instead of `rotation`. */
+    about?: About | null
+    /** Move along an edge, axis or plane normal instead of `translation`. */
+    along?: Along | null
+    /** With `copy`: how many copies, each moved again from the one before. */
+    copies?: number
     copy?: boolean
+    /**
+     * Then place the bodies by mates between their geometry and other
+     * geometry, as in an assembly.
+     */
+    mates?: BodyMate[]
     /** XYZ, mm. */
     origin?: [number, number, number]
     /** Euler XYZ angles in radians, applied X then Y then Z about `origin`. */
     rotation?: [number, number, number]
     /** Body IDs this feature acts on; omitted acts on the whole part. */
     scope?: string[] | null
+    /**
+     * Move so the first point or vertex lands on the second, instead of
+     * `translation`.
+     */
+    to_point?: [Ref, Ref] | null
     /** XYZ, mm. */
     translation?: [number, number, number]
   }
@@ -2793,6 +2880,130 @@ export type Feature =
     /** Edges between the faces to cut open so they can lie flat. */
     tears?: Ref[]
   }
+  | {
+    type: 'delete_body'
+    /** Solid, surface or mesh bodies. */
+    bodies: string[]
+    /** Keep these bodies and delete every other one. */
+    keep?: boolean
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'intersect'
+    /** Bodies (solid or surface), faces or planes. */
+    tools: Ref[]
+    /** Close flat openings in the surfaces first. */
+    cap_planar?: boolean
+    /** Remove the surface bodies used as tools. */
+    consume_surfaces?: boolean
+    /** Points inside regions to leave out, mm. */
+    exclude?: ([number, number, number])[]
+    /** Join the regions into one body. */
+    merge?: boolean
+    mode?: IntersectMode
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'scale'
+    about?: ScaleAbout
+    /** The bodies to scale; empty scales every body. */
+    bodies?: string[]
+    /** A uniform factor. */
+    factor?: number
+    /** Factors along x, y and z instead of `factor`. */
+    factors?: [number, number, number] | null
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'flex'
+    mode: FlexMode
+    /** A point on the axis. */
+    origin: Ref
+    /** The flex axis direction. */
+    axis: Ref
+    /** How finely the shape follows the deformation, 1 to 16. */
+    accuracy?: number
+    /** The bodies to flex; empty flexes every solid. */
+    bodies?: string[]
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+    /** For a bend, the direction the bodies bend toward, across the axis. */
+    toward?: Ref | null
+    /**
+     * The trim planes' distances from the origin along the axis, mm. The
+     * region between them flexes; beyond the second it follows rigidly.
+     * Leave empty for the bodies' whole length.
+     */
+    trim?: [number, number] | null
+  }
+  | {
+    type: 'deform'
+    mode: DeformMode
+    /** How finely the shape follows the deformation, 1 to 16. */
+    accuracy?: number
+    /** The bodies to deform; empty deforms every solid. */
+    bodies?: string[]
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'indent'
+    target: string
+    tool: string
+    /** Wall thickness around the tool, mm. */
+    thickness: number
+    /** Gap between the tool and the target, mm. */
+    clearance?: number
+    /** Only cut the tool's shape out of the target. */
+    cut?: boolean
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'insert_part'
+    /** The `.ofp` file. */
+    path: string
+    configuration?: number | null
+    /** Mirror the part in this plane first, making the opposite hand. */
+    mirror?: Ref | null
+    /** Euler XYZ angles in radians about the origin. */
+    rotation?: [number, number, number]
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+    transfer?: InsertTransfer
+    /** XYZ move after mirroring, mm. */
+    translation?: [number, number, number]
+  }
+  | {
+    type: 'defeature'
+    /** The solids to simplify; empty simplifies every solid. */
+    bodies?: string[]
+    /** Faces to remove. */
+    faces?: Ref[]
+    /** Remove fillets smaller than this radius, mm. */
+    fillets_below?: number | null
+    /** Remove holes narrower than this diameter, mm. */
+    holes_below?: number | null
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'slicing'
+    /** The first slice's plane. */
+    plane: Ref
+    count: number
+    /** mm between slices. */
+    spacing: number
+    /** The bodies to slice; empty slices every body. */
+    bodies?: string[]
+    /** mm from the plane to the first slice. */
+    offset?: number
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
 
 /** One edge around a filled surface. */
 export type FillBoundary = {
@@ -2858,6 +3069,25 @@ export type FlatView = {
   /** Bend notes (`UP 90° R1`) beside the bend lines. */
   bend_notes?: boolean
 }
+
+/** How Flex deforms. */
+export type FlexMode =
+  | {
+    type: 'bend'
+    angle: number
+  }
+  | {
+    type: 'twist'
+    angle: number
+  }
+  | {
+    type: 'taper'
+    factor: number
+  }
+  | {
+    type: 'stretch'
+    distance: number
+  }
 
 /** A built-in forming tool shape. Sizes in mm. */
 export type FormShape =
@@ -3042,6 +3272,18 @@ export type HoleKind = 'simple' | 'counterbore' | 'countersink' | 'tapped'
 
 export type HoleStandard = 'iso' | 'ansi'
 
+/** What an inserted part brings in. */
+export type InsertTransfer = {
+  additionalProperties?: unknown
+  material?: boolean
+  /** Custom properties (the part's own win where both define one). */
+  properties?: boolean
+  /** Reference planes, axes, points and coordinate systems. */
+  reference_geometry?: boolean
+  solids?: boolean
+  surfaces?: boolean
+}
+
 /** Beads in pieces along the path. */
 export type Intermittent = {
   /** Each piece, mm. */
@@ -3051,6 +3293,9 @@ export type Intermittent = {
   /** With both sides: the other side's pieces fall in this side's gaps. */
   staggered?: boolean
 }
+
+/** Which regions Intersect makes. */
+export type IntersectMode = 'intersection' | 'internal' | 'both'
 
 /** How a jog's offset is measured. */
 export type JogDimension = 'outside' | 'inside' | 'overall'
@@ -3762,6 +4007,19 @@ export type Scale = {
   num: number
   den: number
 }
+
+/** Where Scale scales from. */
+export type ScaleAbout =
+  | {
+    type: 'centroid'
+  }
+  | {
+    type: 'origin'
+  }
+  | {
+    type: 'coordinate_system'
+    coordinate_system: Ref
+  }
 
 export type SectionKind = 'full' | 'half' | 'aligned'
 

@@ -179,6 +179,7 @@ fn downstream_body_moves_transform_the_annotation_and_bad_parameters_preserve_th
         rotation: DVec3::new(PI, 0.0, 0.0),
         origin: DVec3::ZERO,
         copy: false,
+        ..Default::default()
     }));
     model.rebuild();
     valid(&model);

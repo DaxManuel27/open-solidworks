@@ -8,6 +8,7 @@
 
 mod assembly;
 mod curves;
+mod deform;
 mod faceedit;
 mod hlr;
 mod plane;

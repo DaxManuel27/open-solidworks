@@ -11,6 +11,7 @@
 //! model as it is at that feature during every rebuild.
 
 pub mod bodies;
+pub mod body_tools;
 mod build;
 pub mod configurations;
 pub mod cosmetic_thread;
@@ -310,6 +311,24 @@ pub enum FeatureKind {
     Freeform(surfaces::Freeform),
     /// Lay doubly curved faces out flat.
     SurfaceFlatten(surfaces::SurfaceFlatten),
+    /// Remove bodies, or keep only the chosen ones.
+    DeleteBody(body_tools::DeleteBody),
+    /// Solids from the regions bodies, surfaces and planes enclose.
+    Intersect(body_tools::Intersect),
+    /// Scale bodies uniformly or per axis.
+    Scale(body_tools::Scale),
+    /// Bend, twist, taper or stretch bodies between trim planes.
+    Flex(body_tools::Flex),
+    /// Freeform deformation: point, curve to curve or surface push.
+    Deform(body_tools::Deform),
+    /// Press a tool body into a target body.
+    Indent(body_tools::Indent),
+    /// Another part's bodies, linked to its file.
+    InsertPart(body_tools::InsertPart),
+    /// Remove faces and small holes and fillets, healing the gaps.
+    Defeature(body_tools::Defeature),
+    /// Section curves through bodies on evenly spaced planes.
+    Slicing(body_tools::Slicing),
 }
 
 impl FeatureKind {
@@ -411,6 +430,17 @@ impl FeatureKind {
             FeatureKind::MidSurface(_) => "Surface-MidSurface",
             FeatureKind::Freeform(_) => "Freeform",
             FeatureKind::SurfaceFlatten(_) => "Surface Flatten",
+            FeatureKind::DeleteBody(d) if d.keep => "Body-Delete/Keep",
+            FeatureKind::DeleteBody(_) => "Body-Delete",
+            FeatureKind::Intersect(_) => "Intersect",
+            FeatureKind::Scale(_) => "Scale",
+            FeatureKind::Flex(_) => "Flex",
+            FeatureKind::Deform(_) => "Deform",
+            FeatureKind::Indent(_) => "Indent",
+            FeatureKind::InsertPart(p) if p.mirror.is_some() => "Mirror Part",
+            FeatureKind::InsertPart(_) => "Inserted Part",
+            FeatureKind::Defeature(_) => "Defeature",
+            FeatureKind::Slicing(_) => "Slicing",
         }
     }
 
@@ -661,6 +691,48 @@ impl FeatureKind {
                 refs.extend(&f.faces);
                 refs.extend(&f.fixed);
                 refs.extend(&f.tears);
+            }
+            FeatureKind::DeleteBody(d) => out.extend(d.bodies.iter().filter_map(BodyId::creator)),
+            FeatureKind::Intersect(i) => refs.extend(&i.tools),
+            FeatureKind::Scale(s) => {
+                out.extend(s.bodies.iter().filter_map(BodyId::creator));
+                if let body_tools::ScaleAbout::CoordinateSystem { coordinate_system } = &s.about {
+                    refs.push(coordinate_system);
+                }
+            }
+            FeatureKind::Flex(f) => {
+                out.extend(f.bodies.iter().filter_map(BodyId::creator));
+                refs.extend([&f.origin, &f.axis]);
+                refs.extend(&f.toward);
+            }
+            FeatureKind::Deform(d) => {
+                out.extend(d.bodies.iter().filter_map(BodyId::creator));
+                match &d.mode {
+                    body_tools::DeformMode::Point {
+                        point, direction, ..
+                    } => refs.extend([point, direction]),
+                    body_tools::DeformMode::CurveToCurve { from, to, .. } => {
+                        refs.extend(from.iter().chain(to))
+                    }
+                    body_tools::DeformMode::SurfacePush {
+                        tool, direction, ..
+                    } => {
+                        out.extend(tool.creator());
+                        refs.push(direction);
+                    }
+                }
+            }
+            FeatureKind::Indent(i) => {
+                out.extend([&i.target, &i.tool].into_iter().filter_map(BodyId::creator))
+            }
+            FeatureKind::InsertPart(p) => refs.extend(&p.mirror),
+            FeatureKind::Defeature(d) => {
+                out.extend(d.bodies.iter().filter_map(BodyId::creator));
+                refs.extend(&d.faces);
+            }
+            FeatureKind::Slicing(s) => {
+                refs.push(&s.plane);
+                out.extend(s.bodies.iter().filter_map(BodyId::creator));
             }
             FeatureKind::Fillet(f) => refs.extend(f.edges.iter().chain(&f.faces)),
             FeatureKind::Chamfer(c) => refs.extend(c.edges.iter().chain(&c.faces)),

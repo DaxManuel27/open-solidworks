@@ -51,6 +51,15 @@ public:
 };
 
 // Assembly STEP writer and reader; their XCAF state lives in assembly.cpp.
+// A shape converted to B-splines whose control points can be moved.
+class Deformable {
+public:
+  struct Impl;
+  Deformable();
+  ~Deformable();
+  std::unique_ptr<Impl> impl;
+};
+
 class StepAssembly {
 public:
   struct Impl;
@@ -216,6 +225,13 @@ std::unique_ptr<Shape> freeform_face(const Shape &s, uint32_t face_index, uint32
                                      rust::Slice<const double> moves, uint32_t fixed,
                                      rust::Vec<HistoryEntry> &hist);
 std::unique_ptr<Shape> make_vertex(const Vec3 &p);
+std::unique_ptr<Shape> scale_shape(const Shape &s, const Vec3 &center, const Vec3 &factors,
+                                   rust::Vec<HistoryEntry> &hist);
+std::unique_ptr<Shape> cap_loops(const Shape &s);
+std::unique_ptr<Deformable> deformable_new(const Shape &s, uint32_t refine);
+rust::Vec<double> deformable_points(const Deformable &d);
+std::unique_ptr<Shape> deformable_apply(Deformable &d, rust::Slice<const double> points,
+                                        rust::Vec<HistoryEntry> &hist);
 std::unique_ptr<Shape> extend_face(const Shape &face_in, double length);
 std::unique_ptr<Shape> cells(const Shape &faces);
 int8_t classify(const Shape &solid, const Vec3 &point);

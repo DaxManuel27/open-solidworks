@@ -181,6 +181,10 @@ fn changes_material(kind: &FeatureKind) -> bool {
             | DeleteFace(_)
             | MoveFace(_)
             | Freeform(_)
+            | Intersect(_)
+            | Scale(_)
+            | Indent(_)
+            | Defeature(_)
             | ReplaceFace(_)
             | Knit(of_model::surfaces::Knit {
                 create_solid: true,

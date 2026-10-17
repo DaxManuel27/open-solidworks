@@ -63,6 +63,85 @@ pub struct MoveBody {
     pub origin: DVec3,
     #[serde(default)]
     pub copy: bool,
+    /// With `copy`: how many copies, each moved again from the one before.
+    #[serde(default = "one_copy", skip_serializing_if = "is_one")]
+    pub copies: u32,
+    /// Move along an edge, axis or plane normal instead of `translation`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub along: Option<Along>,
+    /// Move so the first point or vertex lands on the second, instead of
+    /// `translation`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_point: Option<[Ref; 2]>,
+    /// Rotate about an edge or axis instead of `rotation`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub about: Option<About>,
+    /// Then place the bodies by mates between their geometry and other
+    /// geometry, as in an assembly.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mates: Vec<BodyMate>,
+}
+
+fn one_copy() -> u32 {
+    1
+}
+
+impl Default for MoveBody {
+    fn default() -> Self {
+        MoveBody {
+            bodies: Vec::new(),
+            translation: DVec3::ZERO,
+            rotation: DVec3::ZERO,
+            origin: DVec3::ZERO,
+            copy: false,
+            copies: 1,
+            along: None,
+            to_point: None,
+            about: None,
+            mates: Vec::new(),
+        }
+    }
+}
+
+fn is_one(n: &u32) -> bool {
+    *n == 1
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Along {
+    pub reference: Ref,
+    /// mm.
+    pub distance: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct About {
+    pub axis: Ref,
+    /// Radians.
+    pub angle: f64,
+}
+
+/// How a mate relates the moved geometry to the fixed geometry.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum BodyMateKind {
+    Coincident,
+    Parallel,
+    Perpendicular,
+    Tangent,
+    Concentric,
+    Distance { distance: f64 },
+    Angle { angle: f64 },
+}
+
+/// A mate between geometry on the moved bodies and other geometry.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct BodyMate {
+    pub kind: BodyMateKind,
+    /// A face, edge, vertex or reference on a moved body.
+    pub moving: Ref,
+    /// A face, edge, vertex or reference that stays put.
+    pub fixed: Ref,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -406,6 +485,244 @@ pub(crate) fn combine(
     state.aggregate_bodies()
 }
 
+/// Geometry a mate can relate.
+#[derive(Debug, Clone, Copy)]
+enum MateGeo {
+    Plane { p: DVec3, n: DVec3 },
+    Axis { o: DVec3, d: DVec3, r: f64 },
+    Point(DVec3),
+}
+
+fn mate_geo(state: &State, r: &Ref) -> Result<MateGeo, String> {
+    let res = resolve(state, r)?;
+    if let crate::Resolved::Face { info, .. } = &res {
+        return Ok(match info.kind {
+            of_geom::SurfaceKind::Plane => MateGeo::Plane {
+                p: info.point,
+                n: info.normal.normalize(),
+            },
+            of_geom::SurfaceKind::Cylinder | of_geom::SurfaceKind::Cone => MateGeo::Axis {
+                o: info.axis_origin,
+                d: info.axis_dir.normalize(),
+                r: info.radius,
+            },
+            _ => return Err("mate flat faces, cylinders, edges, axes or points".into()),
+        });
+    }
+    if let Ok(plane) = res.plane() {
+        return Ok(MateGeo::Plane {
+            p: plane.origin,
+            n: plane.normal,
+        });
+    }
+    if let Ok((o, d)) = res.axis() {
+        let r = match &res {
+            crate::Resolved::Edge { info, .. } if info.kind == of_geom::CurveKind::Circle => {
+                info.radius
+            }
+            _ => 0.0,
+        };
+        return Ok(MateGeo::Axis { o, d, r });
+    }
+    Ok(MateGeo::Point(res.point()?))
+}
+
+fn moved_geo(g: MateGeo, t: &DAffine3) -> MateGeo {
+    match g {
+        MateGeo::Plane { p, n } => MateGeo::Plane {
+            p: t.transform_point3(p),
+            n: t.transform_vector3(n),
+        },
+        MateGeo::Axis { o, d, r } => MateGeo::Axis {
+            o: t.transform_point3(o),
+            d: t.transform_vector3(d),
+            r,
+        },
+        MateGeo::Point(p) => MateGeo::Point(t.transform_point3(p)),
+    }
+}
+
+fn mate_residuals(
+    kind: &BodyMateKind,
+    m: MateGeo,
+    f: MateGeo,
+    out: &mut Vec<f64>,
+) -> Result<(), String> {
+    use MateGeo::*;
+    let perp = |v: DVec3, d: DVec3| v - d * v.dot(d);
+    match (kind, m, f) {
+        (BodyMateKind::Coincident, Plane { p: pm, n: nm }, Plane { p: pf, n: nf }) => {
+            out.extend((nm + nf).to_array());
+            out.push((pm - pf).dot(nf));
+        }
+        (BodyMateKind::Coincident, Point(q), Plane { p, n })
+        | (BodyMateKind::Coincident, Plane { p, n }, Point(q)) => out.push((q - p).dot(n)),
+        (BodyMateKind::Coincident, Point(a), Point(b)) => out.extend((a - b).to_array()),
+        (
+            BodyMateKind::Coincident | BodyMateKind::Concentric,
+            Axis { o: om, d: dm, .. },
+            Axis { o: of, d: df, .. },
+        ) => {
+            out.extend(dm.cross(df).to_array());
+            out.extend(perp(om - of, df).to_array());
+        }
+        (BodyMateKind::Coincident | BodyMateKind::Concentric, Point(q), Axis { o, d, .. })
+        | (BodyMateKind::Coincident | BodyMateKind::Concentric, Axis { o, d, .. }, Point(q)) => {
+            out.extend(perp(q - o, d).to_array())
+        }
+        (BodyMateKind::Parallel, Plane { n: a, .. }, Plane { n: b, .. })
+        | (BodyMateKind::Parallel, Axis { d: a, .. }, Axis { d: b, .. }) => {
+            out.extend(a.cross(b).to_array())
+        }
+        (BodyMateKind::Parallel, Axis { d, .. }, Plane { n, .. })
+        | (BodyMateKind::Parallel, Plane { n, .. }, Axis { d, .. }) => out.push(d.dot(n)),
+        (BodyMateKind::Perpendicular, Plane { n: a, .. }, Plane { n: b, .. })
+        | (BodyMateKind::Perpendicular, Axis { d: a, .. }, Axis { d: b, .. }) => out.push(a.dot(b)),
+        (BodyMateKind::Perpendicular, Axis { d, .. }, Plane { n, .. })
+        | (BodyMateKind::Perpendicular, Plane { n, .. }, Axis { d, .. }) => {
+            out.extend(d.cross(n).to_array())
+        }
+        (BodyMateKind::Distance { distance }, Plane { p: pm, n: nm }, Plane { p: pf, n: nf }) => {
+            out.extend(nm.cross(nf).to_array());
+            out.push((pm - pf).dot(nf).abs() - distance);
+        }
+        (BodyMateKind::Distance { distance }, Point(a), Point(b)) => {
+            out.push((a - b).length() - distance)
+        }
+        (BodyMateKind::Distance { distance }, Point(q), Plane { p, n })
+        | (BodyMateKind::Distance { distance }, Plane { p, n }, Point(q)) => {
+            out.push((q - p).dot(n).abs() - distance)
+        }
+        (BodyMateKind::Angle { angle }, Plane { n: a, .. }, Plane { n: b, .. })
+        | (BodyMateKind::Angle { angle }, Axis { d: a, .. }, Axis { d: b, .. }) => {
+            out.push(a.dot(b).clamp(-1.0, 1.0).acos() - angle)
+        }
+        (BodyMateKind::Tangent, Axis { o, d, r }, Plane { p, n })
+        | (BodyMateKind::Tangent, Plane { p, n }, Axis { o, d, r }) => {
+            out.push(d.dot(n));
+            out.push((o - p).dot(n).abs() - r);
+        }
+        _ => return Err("this mate doesn't apply to the selected geometry".into()),
+    }
+    Ok(())
+}
+
+/// The motion that satisfies `mates`, starting from `start`, turning about
+/// `pivot`.
+fn solve_mates(
+    state: &State,
+    mates: &[BodyMate],
+    start: DAffine3,
+    pivot: DVec3,
+) -> Result<DAffine3, String> {
+    let pairs: Vec<(BodyMateKind, MateGeo, MateGeo)> = mates
+        .iter()
+        .map(|m| {
+            Ok((
+                m.kind.clone(),
+                mate_geo(state, &m.moving)?,
+                mate_geo(state, &m.fixed)?,
+            ))
+        })
+        .collect::<Result<_, String>>()?;
+    let motion = |q: &[f64; 6]| {
+        let rv = DVec3::new(q[0], q[1], q[2]);
+        let rot = if rv.length() > 1e-15 {
+            DMat3::from_axis_angle(rv.normalize(), rv.length())
+        } else {
+            DMat3::IDENTITY
+        };
+        let turn = DAffine3::from_translation(pivot)
+            * DAffine3::from_mat3(rot)
+            * DAffine3::from_translation(-pivot);
+        DAffine3::from_translation(DVec3::new(q[3], q[4], q[5])) * turn * start
+    };
+    let residual = |q: &[f64; 6]| -> Result<Vec<f64>, String> {
+        let t = motion(q);
+        let mut out = Vec::new();
+        for (kind, m, f) in &pairs {
+            mate_residuals(kind, moved_geo(*m, &t), *f, &mut out)?;
+        }
+        Ok(out)
+    };
+    let mut q = [0.0; 6];
+    let mut lambda: f64 = 1e-3;
+    for _ in 0..100 {
+        let r0 = residual(&q)?;
+        let e0: f64 = r0.iter().map(|x| x * x).sum();
+        if e0.sqrt() < 1e-10 {
+            break;
+        }
+        let mut j = nalgebra::DMatrix::zeros(r0.len(), 6);
+        for k in 0..6 {
+            let mut qk = q;
+            let h = 1e-7;
+            qk[k] += h;
+            let r1 = residual(&qk)?;
+            for i in 0..r0.len() {
+                j[(i, k)] = (r1[i] - r0[i]) / h;
+            }
+        }
+        let jt = j.transpose();
+        let a = &jt * &j + nalgebra::DMatrix::identity(6, 6) * lambda;
+        let g = &jt * nalgebra::DVector::from_vec(r0.clone());
+        let Some(step) = a.lu().solve(&(-g)) else {
+            break;
+        };
+        let mut trial = q;
+        for k in 0..6 {
+            trial[k] += step[k];
+        }
+        let e1: f64 = residual(&trial)?.iter().map(|x| x * x).sum();
+        if e1 < e0 {
+            q = trial;
+            lambda = (lambda * 0.3).max(1e-12);
+        } else {
+            lambda *= 10.0;
+        }
+    }
+    let e: f64 = residual(&q)?.iter().map(|x| x * x).sum();
+    if e.sqrt() > 1e-6 {
+        return Err("the mates can't all be satisfied".into());
+    }
+    Ok(motion(&q))
+}
+
+/// The rigid motion a Move/Copy Body describes.
+fn motion_of(p: &MoveBody, prev: &State, inputs: &[&SolidBody]) -> Result<DAffine3, String> {
+    let rotation = match &p.about {
+        Some(a) => {
+            let (o, d) = resolve(prev, &a.axis)?.axis()?;
+            DAffine3::from_translation(o)
+                * DAffine3::from_axis_angle(d.normalize(), a.angle)
+                * DAffine3::from_translation(-o)
+        }
+        None => {
+            let r = DMat3::from_rotation_z(p.rotation.z)
+                * DMat3::from_rotation_y(p.rotation.y)
+                * DMat3::from_rotation_x(p.rotation.x);
+            DAffine3::from_mat3_translation(r, p.origin - r * p.origin)
+        }
+    };
+    let translation = match (&p.along, &p.to_point) {
+        (Some(_), Some(_)) => return Err("move along a direction or to a point, not both".into()),
+        (Some(a), None) => resolve(prev, &a.reference)?.direction()?.normalize() * a.distance,
+        (None, Some([from, to])) => {
+            let a = rotation.transform_point3(resolve(prev, from)?.point()?);
+            resolve(prev, to)?.point()? - a
+        }
+        (None, None) => p.translation,
+    };
+    let start = DAffine3::from_translation(translation) * rotation;
+    if p.mates.is_empty() {
+        return Ok(start);
+    }
+    let pivot = Shape::compound(inputs.iter().map(|b| &b.geometry.shape))
+        .bbox()
+        .map_or(DVec3::ZERO, |b| b.center());
+    solve_mates(prev, &p.mates, start, start.transform_point3(pivot))
+}
+
 pub(crate) fn move_body(
     fid: FeatureId,
     p: &MoveBody,
@@ -415,49 +732,55 @@ pub(crate) fn move_body(
     if !p.translation.is_finite() || !p.rotation.is_finite() || !p.origin.is_finite() {
         return Err("translation, rotation and origin must be finite".into());
     }
+    if p.copies == 0 || (!p.copy && p.copies != 1) {
+        return Err("make at least one copy, and only when copying".into());
+    }
     let inputs = selected(prev, &p.bodies, 1)?;
-    let r = DMat3::from_rotation_z(p.rotation.z)
-        * DMat3::from_rotation_y(p.rotation.y)
-        * DMat3::from_rotation_x(p.rotation.x);
-    let transform = DAffine3::from_mat3_translation(r, p.translation + p.origin - r * p.origin);
+    let transform = motion_of(p, prev, &inputs)?;
     for input in inputs {
-        let result = input
-            .geometry
-            .shape
-            .transform(&transform)
-            .map_err(|e| e.0)?;
-        let names = if p.copy {
-            input.geometry.names.prefixed(
-                &result.shape,
-                &result.history,
-                &format!("{fid}.copy({}).", input.id.0),
-            )
-        } else {
-            Naming::from_history(
-                &result.shape,
-                &result.history,
-                Inputs {
-                    named: [Some(&input.geometry.names), None],
-                },
-                &mut |_| None,
-                &fid.to_string(),
-            )
-        };
-        let body = SolidBody {
-            id: if p.copy {
-                BodyId(format!("b{fid}:copy:{}", input.id.0))
+        let mut step = transform;
+        for n in 1..=p.copies {
+            let result = input.geometry.shape.transform(&step).map_err(|e| e.0)?;
+            let suffix = if p.copies > 1 {
+                format!("{n}.")
             } else {
-                input.id.clone()
-            },
-            geometry: Body {
-                shape: result.shape,
-                names,
-            },
-        };
-        if p.copy {
-            state.bodies.push(body);
-        } else {
-            *state.bodies.iter_mut().find(|b| b.id == input.id).unwrap() = body;
+                String::new()
+            };
+            let names = if p.copy {
+                input.geometry.names.prefixed(
+                    &result.shape,
+                    &result.history,
+                    &format!("{fid}.copy({}).{suffix}", input.id.0),
+                )
+            } else {
+                Naming::from_history(
+                    &result.shape,
+                    &result.history,
+                    Inputs {
+                        named: [Some(&input.geometry.names), None],
+                    },
+                    &mut |_| None,
+                    &fid.to_string(),
+                )
+            };
+            let id = match (p.copy, p.copies > 1) {
+                (true, true) => BodyId(format!("b{fid}:copy{n}:{}", input.id.0)),
+                (true, false) => BodyId(format!("b{fid}:copy:{}", input.id.0)),
+                (false, _) => input.id.clone(),
+            };
+            let body = SolidBody {
+                id,
+                geometry: Body {
+                    shape: result.shape,
+                    names,
+                },
+            };
+            if p.copy {
+                state.bodies.push(body);
+            } else {
+                *state.bodies.iter_mut().find(|b| b.id == input.id).unwrap() = body;
+            }
+            step = transform * step;
         }
     }
     state.aggregate_bodies()
