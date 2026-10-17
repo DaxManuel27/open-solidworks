@@ -371,8 +371,8 @@ export const assemblyTabOrder = [
 // Placeholder tabs never enter the store's selectable Tab union.
 export const availableTabs: { id: Tab; label: string }[] = [
   { id: 'features', label: 'Features' },
-  { id: 'sheet_metal', label: 'Sheet Metal' },
   { id: 'sketch', label: 'Sketch' },
+  { id: 'sheet_metal', label: 'Sheet Metal' },
   { id: 'evaluate', label: 'Evaluate' },
 ]
 export const unavailableTabs = [

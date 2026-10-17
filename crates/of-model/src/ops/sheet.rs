@@ -140,20 +140,43 @@ pub(super) fn base_flange(
 }
 
 /// A sheet metal body with a planar face on `plane` facing either way.
-fn tab_target(prev: &State, plane: &Plane) -> Option<(usize, DVec3)> {
+/// The sheet metal body a closed profile is a tab of: one with a broad face
+/// (a side of the sheet, not a face one thickness wide) in the profile's
+/// plane that the profile touches.
+fn tab_target(prev: &State, plane: &Plane, profile: &Shape) -> Option<(usize, DVec3)> {
     for (i, record) in prev.sheet_metal.iter().enumerate() {
         let Some(b) = record_body(prev, record) else {
             continue;
         };
+        let t = record.params.thickness;
         let shape = &prev.bodies[b].geometry.shape;
         for f in 0..shape.count(Kind::Face) {
             let Ok(info) = shape.face_info(f) else {
                 continue;
             };
-            if info.kind == of_geom::SurfaceKind::Plane
-                && info.normal.cross(plane.normal).length() < 1e-9
-                && plane.distance(info.point).abs() < 1e-6
+            if info.kind != of_geom::SurfaceKind::Plane
+                || info.normal.cross(plane.normal).length() > 1e-9
+                || plane.distance(info.point).abs() > 1e-6
             {
+                continue;
+            }
+            let Ok(face) = shape.sub_shape(Kind::Face, f) else {
+                continue;
+            };
+            // A thickness face is about t across in one direction.
+            let local: Vec<DVec2> = (0..face.count(Kind::Vertex))
+                .filter_map(|v| face.vertex_point(v).ok())
+                .map(|q| plane.to_local(q))
+                .collect();
+            let span = |pick: fn(DVec2) -> f64| {
+                let v: Vec<f64> = local.iter().map(|q| pick(*q)).collect();
+                v.iter().copied().fold(f64::MIN, f64::max)
+                    - v.iter().copied().fold(f64::MAX, f64::min)
+            };
+            if span(|q| q.x).min(span(|q| q.y)) <= t + 1e-6 {
+                continue;
+            }
+            if face.distance(profile).is_ok_and(|d| d.value < 1e-6) {
                 return Some((i, info.normal));
             }
         }
@@ -169,7 +192,7 @@ fn closed_base(
     state: &mut State,
 ) -> RResult<()> {
     let prof = sketch_profile(prev, p.sketch, None)?;
-    if let Some((record, outward)) = tab_target(prev, &prof.plane) {
+    if let Some((record, outward)) = tab_target(prev, &prof.plane, &prof.shape) {
         // A tab: grow into the sheet's material from its face, at its thickness.
         let t = prev.sheet_metal[record].params.thickness;
         let (tool, names) = extrude_side(
@@ -1024,7 +1047,42 @@ pub(super) fn edge_flange(
             },
         ));
     }
-    apply_flanges(fid, state, cuts, flanges, new_bends)
+    // Bodies reached by an up-to-edge-and-merge flange join its body: their
+    // sheet metal records become one (the flange's).
+    let mut joins: Vec<(usize, usize)> = Vec::new();
+    if let FlangeLength::UpToEdgeAndMerge { target } = &p.length
+        && let Resolved::Edge { index, .. } = resolve(prev, target)?
+    {
+        let face = body_of(prev)?.shape.edge_faces()[index as usize][0];
+        let other = record_for_face(prev, face)?;
+        for f in &frames {
+            if f.record != other && !joins.contains(&(f.record, other)) {
+                joins.push((f.record, other));
+            }
+        }
+    }
+    apply_flanges(fid, state, cuts, flanges, new_bends)?;
+    join_records(state, joins);
+    Ok(())
+}
+
+/// Fold each `(keep, absorbed)` record's bends into `keep` and drop it.
+fn join_records(state: &mut State, mut joins: Vec<(usize, usize)>) {
+    // Remove from the highest index down so the others stay valid.
+    joins.sort_by_key(|j| std::cmp::Reverse(j.1));
+    for (keep, absorbed) in joins {
+        if absorbed >= state.sheet_metal.len() || keep >= state.sheet_metal.len() {
+            continue;
+        }
+        let other = state.sheet_metal.remove(absorbed);
+        let keep = if absorbed < keep { keep - 1 } else { keep };
+        let first = &mut state.sheet_metal[keep];
+        first.bends.extend(other.bends);
+        first.cross_breaks.extend(other.cross_breaks);
+        first.facets.extend(other.facets);
+        first.forms.extend(other.forms);
+        first.welds.extend(other.welds);
+    }
 }
 
 /// The bend angle that makes a flange from frame `f` run parallel or square

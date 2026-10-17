@@ -286,6 +286,8 @@ async function run(win) {
   await key('ArrowRight')
   assert.equal(await js(`document.activeElement.id`), 'tab-sketch')
   await key('ArrowRight')
+  assert.equal(await js(`document.activeElement.id`), 'tab-sheet_metal')
+  await key('ArrowRight')
   assert.equal(await js(`document.activeElement.id`), 'tab-evaluate')
   await key('Home')
   await js(`document.querySelector('[data-command="new"]').focus()`)

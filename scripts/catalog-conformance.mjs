@@ -1,4 +1,4 @@
-// Checks Phase 1 to 4 behaviour against the feature specs in docs/features,
+// Checks Phase 1 to 5 behaviour against the feature specs in docs/features,
 // driving `openforge serve` over JSON-RPC the way the desktop and MCP clients do.
 //
 //   cargo build && pnpm conformance [filter]
@@ -2246,6 +2246,686 @@ check(
     const gone = await render()
     expect(gone.views[0].error, 'missing model drawn')
     ;(await import('node:fs')).renameSync(path + '.moved', path)
+  },
+)
+
+// ---- 10 Sheet metal ----
+
+const HALF_PI = PI / 2
+const smParams = (t, r, k = 0.44, more = {}) => ({
+  thickness: t,
+  radius: r,
+  allowance: { type: 'k_factor', k },
+  ...more,
+})
+/** Lines chained point to point, so they make one open profile. */
+async function chain(plane, pts) {
+  const { id } = await call('sketch.new', { plane })
+  let prev = null
+  for (let i = 0; i + 1 < pts.length; i++) {
+    const r = await call('sketch.edit', {
+      id,
+      op: {
+        op: 'add_line',
+        a: prev === null ? { at: pts[i] } : { id: prev },
+        b: { at: pts[i + 1] },
+      },
+    })
+    prev = r.created[2]
+  }
+  await call('sketch.close')
+  return id
+}
+async function smPlate(w, h, t = 1, r = 1, k = 0.5, more = {}) {
+  await fresh()
+  const s = await sketch(front, [rect([0, 0], [w, h])])
+  await ok({ type: 'base_flange', sketch: s.id, sheet: smParams(t, r, k, more) })
+}
+const edgeAt = async (p) => {
+  const e = (await topology()).edges.find(
+    (e) =>
+      e.curve === 'line' &&
+      Math.hypot(...[0, 1, 2].map((i) => (e.start[i] + e.end[i]) / 2 - p[i])) < 1e-3,
+  )
+  expect(e, `edge at ${p}`)
+  return e.ref
+}
+const faceWhere = async (f) => {
+  const faces = (await topology()).faces.filter(f)
+  faces.sort((a, b) => b.area - a.area)
+  expect(faces.length, 'face found')
+  return faces[0].ref
+}
+const smInfo = async (outline = false) => (await call('doc.sheet_metal', { outline })).bodies
+const flatProps = async () => (await smInfo())[0].properties
+const edgeFlange = (edges, length, more = {}) => ({
+  type: 'edge_flange',
+  edges,
+  length: { type: 'blind', length },
+  ...more,
+})
+check(
+  '10 Sheet metal parameters',
+  'K-factor, bend allowance and bend deduction set the flat length',
+  async () => {
+    const lengths = []
+    for (const allowance of [
+      { type: 'k_factor', k: 0.44 },
+      { type: 'bend_allowance', value: 5 },
+      { type: 'bend_deduction', value: 4 },
+    ]) {
+      await fresh()
+      const s = await chain(front, [
+        [0, 30],
+        [0, 0],
+        [50, 0],
+      ])
+      await ok({
+        type: 'base_flange',
+        sketch: s,
+        sheet: { thickness: 2, radius: 2, allowance },
+        end1: { type: 'blind', depth: 20 },
+      })
+      lengths.push((await flatProps()).flat_length)
+    }
+    near(lengths[0], 30 - 4 + 50 - 4 + HALF_PI * (2 + 0.44 * 2), 1e-6, 'K-factor')
+    near(lengths[1], 30 - 4 + 50 - 4 + 5, 1e-6, 'bend allowance')
+    near(lengths[2], 30 + 50 - 4, 1e-6, 'bend deduction')
+  },
+)
+
+check(
+  '10 Sheet metal parameters',
+  'a gauge table sets thickness and radius; an unknown gauge fails',
+  async () => {
+    const gauges = await call('sheet_metal.gauges', { table: 'steel' })
+    expect(gauges.tables.includes('steel'), 'built-in tables listed')
+    const g16 = gauges.gauges.find((g) => g.gauge === '16')
+    await smPlate(60, 40, 1, 1, 0.5, { gauge: { table: 'steel', gauge: '16' } })
+    near((await flatProps()).thickness, g16.thickness, 1e-9, 'gauge thickness')
+    await fresh()
+    const s = await sketch(front, [rect([0, 0], [60, 40])])
+    await bad(
+      {
+        type: 'base_flange',
+        sketch: s.id,
+        sheet: smParams(1, 1, 0.5, { gauge: { table: 'steel', gauge: '99' } }),
+      },
+      /gauge 99/,
+    )
+  },
+)
+
+check(
+  '10 Base flange/tab',
+  'a closed sketch makes a plate; a tab on it merges at the sheet thickness',
+  async () => {
+    await smPlate(60, 40, 2, 2)
+    near(await volume(), 60 * 40 * 2, 1e-9, 'plate')
+    const topFace = await faceWhere((f) => f.normal?.[2] > 0.99)
+    const tab = await worldSketch(topFace, (local) => [
+      rect(local([60, 10, 2]), local([80, 30, 2])),
+    ])
+    await ok({ type: 'base_flange', sketch: tab.id, sheet: smParams(2, 2) })
+    near(await volume(), (60 * 40 + 20 * 20) * 2, 1e-6, 'tab merged')
+    expect((await smInfo()).length === 1, 'one sheet metal body')
+  },
+)
+
+check('10 Base flange/tab', 'an open profile is thickened and bent at its corners', async () => {
+  await fresh()
+  const s = await chain(front, [
+    [0, 30],
+    [0, 0],
+    [50, 0],
+    [50, 20],
+  ])
+  await ok({
+    type: 'base_flange',
+    sketch: s,
+    sheet: smParams(1.5, 1.5),
+    end1: { type: 'blind', depth: 25 },
+  })
+  const info = await smInfo()
+  expect(info[0].bends.length === 2, `two bends, got ${info[0].bends.length}`)
+})
+
+check('10 Edge flange', 'length measures and angle from a face', async () => {
+  // The flat's side across the flange: the one that isn't the plate's 60.
+  const flat = async (more) => {
+    await smPlate(60, 40, 1, 1, 0.5)
+    const e = await edgeAt([30, 40, 1])
+    await ok(edgeFlange([e], 20, more))
+    const p = await flatProps()
+    return Math.abs(p.flat_length - 60) < 1e-9 ? p.flat_width : p.flat_length
+  }
+  const ba = HALF_PI * (1 + 0.5)
+  const outer = await flat({ measure: 'outer_virtual_sharp' })
+  const inner = await flat({ measure: 'inner_virtual_sharp' })
+  const tangent = await flat({ measure: 'tangent_to_bend' })
+  near(outer, 40 - 2 + (20 - 2) + ba, 1e-6, 'outer virtual sharp')
+  near(inner, 40 - 2 + (20 - 1) + ba, 1e-6, 'inner virtual sharp')
+  near(tangent, 40 - 2 + 20 + ba, 1e-6, 'tangent to bend')
+  const square = await flat({ angle: 0.2, angle_from: { face: front, parallel: false } })
+  near(square, outer, 1e-9, 'square to the sheet plane is 90°')
+})
+
+check('10 Edge flange', 'gap at a shared corner, offsets and a wall outline', async () => {
+  await smPlate(60, 40, 1, 1, 0.5)
+  const edges = [await edgeAt([30, 40, 1]), await edgeAt([60, 20, 1])]
+  await ok(edgeFlange(edges, 15, { gap: 0.4 }))
+  expect((await smInfo())[0].bends.length === 2, 'two flanges')
+  await smPlate(60, 40, 1, 1, 0.5)
+  const e = await edgeAt([30, 40, 1])
+  const plain = await (async () => {
+    await ok(edgeFlange([e], 20, { measure: 'tangent_to_bend', start_offset: 10, end_offset: 10 }))
+    return volume()
+  })()
+  await smPlate(60, 40, 1, 1, 0.5)
+  const e2 = await edgeAt([30, 40, 1])
+  await ok(
+    edgeFlange([e2], 99, {
+      profiles: [
+        {
+          edge: 0,
+          points: [
+            [10, 0],
+            [50, 0],
+            [40, 20],
+            [20, 20],
+          ],
+        },
+      ],
+    }),
+  )
+  near(plain - (await volume()), 200, 1e-6, 'trapezoid wall')
+})
+
+check('10 Miter flange', 'a profile runs round a corner along two edges', async () => {
+  await smPlate(60, 40, 1, 1, 0.5)
+  const edges = [await edgeAt([30, 40, 1]), await edgeAt([60, 20, 1])]
+  const s = await chain(right, [
+    [-1, 40],
+    [-11, 40],
+    [-11, 45],
+  ])
+  await ok({ type: 'miter_flange', sketch: s, edges, gap: 0.2 })
+  expect((await smInfo())[0].bends.length === 4, 'two bends per edge')
+  await ok({ type: 'flat_pattern' })
+})
+
+check('10 Hem', 'every hem kind builds; an open hem flattens to its length', async () => {
+  for (const kind of [
+    { type: 'closed' },
+    { type: 'open', gap: 2 },
+    { type: 'tear_drop', angle: (220 * PI) / 180, radius: 2 },
+    { type: 'rolled', angle: (270 * PI) / 180, radius: 3 },
+    { type: 'double', gap: 0.5 },
+  ]) {
+    await smPlate(60, 40, 1, 1, 0.5)
+    await ok({ type: 'hem', edges: [await edgeAt([30, 40, 1])], kind, length: 8 })
+    await ok({ type: 'flat_pattern' })
+    if (kind.type === 'open') {
+      near((await flatProps()).flat_width, 40 - 2 + PI * (1 + 0.5) + 8, 1e-6, 'open hem flat')
+    }
+  }
+})
+
+/** A line across the plate's top face at x = `x`. */
+async function lineAcross(x, h, t) {
+  const topFace = await faceWhere((f) => f.normal?.[2] > 0.99)
+  return worldSketch(topFace, (local) => [line(local([x, -5, t]), local([x, h + 5, t]))])
+}
+
+check('10 Jog', 'a jog lifts the far side by its offset', async () => {
+  await smPlate(100, 40, 1.5, 1.5, 0.44)
+  const s = await lineAcross(60, 40, 1.5)
+  await ok({ type: 'jog', sketch: s.id, offset: 10, position: 'bend_outside' })
+  expect((await smInfo())[0].bends.length === 2, 'two bends')
+  near((await call('doc.info')).scene.bbox.max[2], 11.5, 1e-6, 'offset')
+})
+
+check('10 Sketched bend', 'a sketched bend folds the plate and flattens back', async () => {
+  await smPlate(80, 40, 2, 2, 0.44)
+  const before = await volume()
+  const s = await lineAcross(50, 40, 2)
+  await ok({ type: 'sketched_bend', sketch: s.id, angle: HALF_PI })
+  await ok({ type: 'flat_pattern' })
+  const p = await flatProps()
+  near(p.flat_length, 80, 1e-6, 'flat length kept')
+  near(await volume(), before, 1e-6, 'volume kept')
+})
+
+check('10 Lofted bend', 'square to round, bent and formed, flatten', async () => {
+  for (const method of ['bent', 'formed']) {
+    await fresh()
+    const sq = await chain(front, [
+      [1, -20],
+      [20, -20],
+      [20, 20],
+      [-20, 20],
+      [-20, -20],
+      [-1, -20],
+    ])
+    const { id: plane } = await ok({
+      type: 'plane',
+      mode: 'offset',
+      reference: front,
+      distance: 30,
+    })
+    const { id: arc } = await call('sketch.new', { plane: { type: 'feature', id: plane } })
+    const g = 1 / 15
+    await call('sketch.edit', {
+      id: arc,
+      op: {
+        op: 'add_center_arc',
+        center: { at: [0, 0] },
+        start: { at: [15 * Math.cos(-HALF_PI + g), 15 * Math.sin(-HALF_PI + g)] },
+        end: [15 * Math.cos(-HALF_PI - g), 15 * Math.sin(-HALF_PI - g)],
+      },
+    })
+    await call('sketch.close')
+    await ok({
+      type: 'lofted_bend',
+      profile1: sq,
+      profile2: arc,
+      method,
+      facets: 8,
+      sheet: smParams(1, 1, 0.5),
+    })
+    await ok({ type: 'flat_pattern' })
+    expect((await flatProps()).thickness === 1, method)
+  }
+})
+
+check('10 Swept flange', 'an open profile along a path rolls out along it', async () => {
+  await fresh()
+  const { id: path } = await call('sketch.new', { plane: front })
+  const l1 = await call('sketch.edit', { id: path, op: line([0, 0], [40, 0]) })
+  const arc = await call('sketch.edit', {
+    id: path,
+    op: {
+      op: 'add_center_arc',
+      center: { at: [40, 20] },
+      start: { id: l1.created[2] },
+      end: [60, 20],
+    },
+  })
+  const arcEnd = arc.created[arc.created.length - 1]
+  await call('sketch.edit', {
+    id: path,
+    op: { op: 'add_line', a: { id: arcEnd }, b: { at: [60, 60] } },
+  })
+  await call('sketch.close')
+  const profile = await chain(right, [
+    [0, 0],
+    [-15, 0],
+  ])
+  await ok({
+    type: 'swept_flange',
+    profile,
+    path: { type: 'feature', id: path },
+    sheet: smParams(1, 1, 0.5),
+  })
+  await ok({ type: 'flat_pattern' })
+  near(
+    (await flatProps()).flat_length,
+    80 + HALF_PI * 20.5,
+    1e-6,
+    'path length at the neutral radius',
+  )
+})
+
+check('10 Cross break', 'recorded on a face; the solid is unchanged', async () => {
+  await smPlate(60, 40)
+  const v = await volume()
+  await ok({ type: 'cross_break', face: await faceWhere((f) => f.normal?.[2] > 0.99) })
+  near(await volume(), v, 1e-9, 'unchanged')
+})
+
+/** A 60 × 40 × 30 block. */
+async function smBlock() {
+  await fresh()
+  const s = await sketch(front, [rect([0, 0], [60, 40])])
+  await ok(blind(s.id, 30))
+}
+
+check(
+  '10 Insert bends and convert to sheet metal',
+  'a block converts to a tray; a shell gets bends and rips',
+  async () => {
+    await smBlock()
+    const bottom = await faceWhere((f) => f.normal?.[2] < -0.99)
+    const edges = []
+    for (const p of [
+      [30, 0, 0],
+      [60, 20, 0],
+      [30, 40, 0],
+      [0, 20, 0],
+    ])
+      edges.push(await edgeAt(p))
+    await ok({
+      type: 'convert_to_sheet_metal',
+      fixed_face: bottom,
+      sheet: smParams(1.5, 1, 0.5),
+      bend_edges: edges,
+    })
+    expect((await smInfo())[0].bends.length === 4, 'four bends')
+    await smBlock()
+    await ok({ type: 'shell', faces: [await faceWhere((f) => f.normal?.[2] > 0.99)], thickness: 2 })
+    const rips = []
+    for (const [x, y] of [
+      [0, 0],
+      [60, 0],
+      [60, 40],
+      [0, 40],
+    ])
+      rips.push({ edge: await edgeAt([x, y, 15]) })
+    await ok({
+      type: 'insert_bends',
+      fixed_face: await faceWhere((f) => f.normal?.[2] < -0.99),
+      sheet: smParams(2, 2, 0.44),
+      rips,
+    })
+    expect((await smInfo())[0].bends.length === 4, 'four bends')
+    await ok({ type: 'flat_pattern' })
+  },
+)
+
+check('10 Rip', 'ripping a corner edge opens it', async () => {
+  await smBlock()
+  await ok({ type: 'shell', faces: [await faceWhere((f) => f.normal?.[2] > 0.99)], thickness: 2 })
+  const v = await volume()
+  await ok({ type: 'rip', edges: [{ edge: await edgeAt([0, 0, 15]) }], gap: 0.5 })
+  expect((await volume()) < v, 'material removed')
+})
+
+/** A 60 × 40 × 1 plate with a 20 mm flange on y = 40. */
+async function flanged() {
+  await smPlate(60, 40, 1, 1, 0.5)
+  await ok(edgeFlange([await edgeAt([30, 40, 1])], 20))
+}
+
+check('10 Unfold and fold', 'a cut made across a bend while unfolded refolds', async () => {
+  await flanged()
+  const formed = await volume()
+  await ok({ type: 'unfold' })
+  const s = await sketch(front, [circle([30, 40], 3)])
+  await ok({ ...blind(s.id, 0, { cut: true, end1: { type: 'through_all' } }) })
+  await ok({ type: 'fold' })
+  expect((await volume()) < formed - 1, 'hole folded with the bend')
+  expect((await smInfo())[0].bends.length === 1, 'still one bend')
+})
+
+check('10 Normal cut', 'a sketch projected through the bend cuts square to the sheet', async () => {
+  await flanged()
+  const formed = await volume()
+  const { id: plane } = await ok({ type: 'plane', mode: 'offset', reference: front, distance: 50 })
+  const s = await sketch({ type: 'feature', id: plane }, [circle([30, 39], 3)])
+  await ok({ type: 'normal_cut', sketch: s.id })
+  expect((await volume()) < formed - 1, 'cut')
+})
+
+check(
+  '10 Flatten and flat pattern',
+  'flatten toggles by suppression; options split bend regions and simplify bends',
+  async () => {
+    await flanged()
+    const formed = (await call('doc.info')).scene.body.positions.length
+    const { id } = await ok({ type: 'flat_pattern' })
+    expect((await smInfo())[0].flattened, 'flattened')
+    await call('feature.suppress', { id, suppressed: true })
+    expect(!(await smInfo())[0].flattened, 'formed again')
+    expect((await call('doc.info')).scene.body.positions.length === formed, 'same body back')
+    await call('feature.suppress', { id, suppressed: false })
+    const merged = (await topology()).faces.length
+    await call('feature.update', {
+      id,
+      feature: { type: 'flat_pattern', split_bend_regions: true },
+    })
+    expect((await topology()).faces.length === merged + 4, 'front and back split in three')
+  },
+)
+
+check(
+  '10 Flat pattern configurations and DXF export',
+  'a part exported to .dxf writes its flat with bend layers',
+  async () => {
+    await flanged()
+    const path = join(tmp, 'c10-flat.dxf')
+    const r = await call('export', { path, dxf_version: 'r12' })
+    expect(r.files.length === 1 && existsSync(path), 'written')
+    const text = (await import('node:fs')).readFileSync(path, 'utf8')
+    expect(text.includes('CUT') && /BEND_(UP|DOWN)/.test(text), 'layers')
+    expect(/(UP|DOWN) 90/.test(text), 'bend note')
+    await fresh()
+    expect(/no sheet metal/.test(await fails('export', { path })), 'parts without sheet metal fail')
+  },
+)
+
+check(
+  '10 Corner treatments',
+  'reliefs of every type, a closed corner and a broken corner',
+  async () => {
+    const tray = async () => {
+      await smPlate(60, 40, 1, 1, 0.5)
+      await ok(edgeFlange([await edgeAt([30, 40, 1]), await edgeAt([60, 20, 1])], 15, { gap: 0.2 }))
+    }
+    for (const kind of [
+      'rectangular',
+      'circular',
+      'tear',
+      'obround',
+      'constant_width',
+      'full_round',
+      'suitcase',
+    ]) {
+      await tray()
+      const v = await volume()
+      await ok({ type: 'corner_relief', kind })
+      expect((await volume()) < v, `${kind} relief cut`)
+    }
+    await tray()
+    const end = await faceWhere(
+      (f) =>
+        f.surface === 'plane' &&
+        f.centroid[0] > 55 &&
+        f.centroid[1] > 37 &&
+        f.centroid[2] > 2 &&
+        f.normal[0] > 0.3,
+    )
+    const v = await volume()
+    await ok({ type: 'closed_corner', faces: [end], kind: 'overlap', gap: 0.2 })
+    expect((await volume()) > v, 'corner closed')
+    await smPlate(60, 40, 1)
+    await ok({ type: 'break_corner', corner: { type: 'fillet', radius: 5 } })
+    near(await volume(), 2400 - 4 * (25 - (PI * 25) / 4), 1e-6, 'four rounded corners')
+  },
+)
+
+check('10 Bend notch', 'notches at both ends of a bend line', async () => {
+  await flanged()
+  const v = await volume()
+  await ok({ type: 'bend_notch', shape: 'rectangular', width: 1, depth: 1.5, both_ends: true })
+  expect((await volume()) < v, 'notched')
+})
+
+check('10 Tab and slot', 'tabs through slots in another body', async () => {
+  await smPlate(80, 40, 2, 1, 0.5)
+  const { id: plane } = await ok({ type: 'plane', mode: 'offset', reference: top, distance: 20 })
+  const s = await sketch({ type: 'feature', id: plane }, [rect([10, -40], [70, -2])])
+  await ok({ type: 'base_flange', sketch: s.id, sheet: smParams(2, 1, 0.5) })
+  const before = await volume()
+  await ok({
+    type: 'tab_and_slot',
+    edge: await edgeAt([40, 20, 2]),
+    face: await faceWhere((f) => f.normal?.[2] > 0.99 && Math.abs(f.centroid[2] - 2) < 1e-6),
+    count: 3,
+    length: 8,
+    clearance: 0.1,
+  })
+  near(await volume(), before + 3 * 32 - 3 * 8.2 * 2.2 * 2, 1e-6, 'three tabs and slots')
+})
+
+check(
+  '10 Sheet metal gusset',
+  'a gusset stiffens the bend and is left out of the flat',
+  async () => {
+    await fresh()
+    const s = await chain(front, [
+      [0, 30],
+      [0, 0],
+      [50, 0],
+    ])
+    await ok({
+      type: 'base_flange',
+      sketch: s,
+      sheet: smParams(2, 2),
+      end1: { type: 'blind', depth: 40 },
+    })
+    const v = await volume()
+    const bend = (await topology()).faces.find((f) => f.surface === 'cylinder').ref
+    await ok({ type: 'sheet_metal_gusset', bend, depth: 8, width: 3 })
+    expect((await volume()) > v, 'gusset added')
+    await ok({ type: 'flat_pattern' })
+    expect((await flatProps()).forms === 1, 'marked in the flat')
+  },
+)
+
+check(
+  '10 Forming tools and stamp tool',
+  'a louver array shows as punch marks in the flat',
+  async () => {
+    await smPlate(120, 60, 1.5, 1.5)
+    const pts = await sketch(front, [
+      { op: 'add_point', at: [30, 30] },
+      { op: 'add_point', at: [60, 30] },
+      { op: 'add_point', at: [90, 30] },
+    ])
+    const v = await volume()
+    await ok({
+      type: 'form_tool',
+      shape: { type: 'louver', length: 20, width: 5, height: 3 },
+      face: await faceWhere((f) => f.normal?.[2] > 0.99),
+      sketch: pts.id,
+      punch_id: 'LV',
+    })
+    expect((await volume()) !== v, 'pressed')
+    const body = (await smInfo(true))[0]
+    expect(
+      body.properties.forms === 3 && body.outline.marks.every((m) => m.punch_id === 'LV'),
+      'punch marks',
+    )
+  },
+)
+
+check(
+  '10 Gauge tables and bend tables',
+  'a bend table CSV interpolates the allowance',
+  async () => {
+    const csv = join(tmp, 'c10-bends.csv')
+    ;(await import('node:fs')).writeFileSync(
+      csv,
+      'thickness,radius,angle,allowance\n1,1,90,3\n1,1,180,6\n',
+    )
+    await fresh()
+    const s = await chain(front, [
+      [0, 30],
+      [0, 0],
+      [50, 0],
+    ])
+    await ok({
+      type: 'base_flange',
+      sketch: s,
+      sheet: { thickness: 1, radius: 1, allowance: { type: 'bend_table', table: csv } },
+      end1: { type: 'blind', depth: 20 },
+    })
+    near((await flatProps()).flat_length, 30 - 2 + 50 - 2 + 3, 1e-9, 'table allowance')
+  },
+)
+
+check(
+  '10 Bend lines and bend notes in drawings',
+  'a flat pattern view draws bend lines, notes and a bend table',
+  async () => {
+    await flanged()
+    const path = join(tmp, 'c10-flanged.ofp')
+    await call('doc.save', { path })
+    await call('drawing.new')
+    const view = await addView(modelView(path, 'front', {}), [150, 150])
+    await call('drawing.view.update', {
+      id: view,
+      view: {
+        type: 'model',
+        model: { path, flat: { bend_lines: true, bend_notes: true } },
+        orientation: { type: 'front' },
+      },
+    })
+    await annotate({ type: 'table', table: 'bend', view, at: [20, 280] })
+    const r = await render()
+    noErrors(r)
+    const layers = r.graphics.items.map((i) => i.layer)
+    expect(
+      layers.some((l) => l === 'BEND_UP' || l === 'BEND_DOWN'),
+      'bend line',
+    )
+    const words = r.graphics.items
+      .filter((i) => i.prim.type === 'text')
+      .map((i) => i.prim.text)
+      .join(' ')
+    expect(/(UP|DOWN) 90° R1/.test(words), 'bend note')
+    expect(words.includes('DIRECTION'), 'bend table')
+  },
+)
+
+check(
+  '10 Multibody sheet metal and merging bodies',
+  'an up-to-edge flange merges two sheet metal bodies',
+  async () => {
+    await smPlate(60, 40, 1, 1, 0.5)
+    const { id: plane } = await ok({ type: 'plane', mode: 'offset', reference: top, distance: 40 })
+    const s = await sketch({ type: 'feature', id: plane }, [rect([0, -30], [60, -10])])
+    // A wall standing at y = 39..40 from z = 10 up.
+    await ok({ type: 'base_flange', sketch: s.id, sheet: smParams(1, 1, 0.5), side: 'reverse' })
+    expect((await smInfo()).length === 2, 'two bodies')
+    const target = (await topology()).edges.find(
+      (e) =>
+        e.curve === 'line' &&
+        [39, 40, 41].some(
+          (y) =>
+            Math.hypot(
+              (e.start[0] + e.end[0]) / 2 - 30,
+              (e.start[1] + e.end[1]) / 2 - y,
+              (e.start[2] + e.end[2]) / 2 - 10,
+            ) < 1e-3,
+        ),
+    ).ref
+    await ok({
+      type: 'edge_flange',
+      edges: [await edgeAt([30, 40, 1])],
+      length: { type: 'up_to_edge_and_merge', target },
+    })
+    expect((await smInfo()).length === 1, 'merged')
+  },
+)
+
+check(
+  '10 Sheet metal cut list and bounding box',
+  'flat size, cutting lengths and property links',
+  async () => {
+    await fresh()
+    const s = await sketch(front, [rect([0, 0], [80, 30]), circle([20, 15], 4)])
+    await ok({ type: 'base_flange', sketch: s.id, sheet: smParams(1.5, 1) })
+    const p = await flatProps()
+    near(p.flat_length, 80, 1e-9, 'length')
+    near(p.flat_width, 30, 1e-9, 'width')
+    near(p.inner_cut, 8 * PI, 1e-6, 'hole cutting length')
+    expect(p.cutouts === 1, 'one cut-out')
+    await call('doc.properties.set', {
+      properties: { Blank: { value: '{flat_length} x {flat_width}' } },
+    })
+    const props = (await call('doc.info')).properties
+    expect(props.Blank.value === '{flat_length} x {flat_width}', 'link stored as written')
   },
 )
 

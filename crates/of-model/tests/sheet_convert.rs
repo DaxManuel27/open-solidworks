@@ -240,6 +240,8 @@ fn edge_flange_merges_two_bodies() {
     let mut m = Model::new(doc);
     ok(&m);
     assert_eq!(m.state().bodies.len(), 2);
+    // Two sheet metal bodies: the wall is not a tab on the plate's edge face.
+    assert_eq!(m.state().sheet_metal.len(), 2);
     let e = edge_at(&m, DVec3::new(30.0, 40.0, t));
     let shape = &m.state().body.as_ref().unwrap().shape;
     let target = (0..shape.count(Kind::Edge))
