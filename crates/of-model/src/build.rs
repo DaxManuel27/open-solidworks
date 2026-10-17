@@ -75,6 +75,8 @@ pub struct State {
     pub weldment: Option<FeatureId>,
     /// Structural member bodies, for the cut list.
     pub members: Vec<crate::weldment::MemberRecord>,
+    /// Weld beads, for the weld folder.
+    pub welds: Vec<crate::weldment::WeldRecord>,
 }
 
 /// A content hash for change detection.
@@ -563,6 +565,7 @@ fn build_kind(id: FeatureId, kind: &FeatureKind, prev: &State, state: &mut State
         }
         FeatureKind::EndCap(p) => return crate::weldment::details::end_cap(id, p, prev, state),
         FeatureKind::WeldGusset(p) => return crate::weldment::details::gusset(id, p, prev, state),
+        FeatureKind::WeldBead(p) => return crate::weldment::beads::weld_bead(id, p, prev, state),
         FeatureKind::Weldment(_) => {
             if prev.weldment.is_some() {
                 return Err("a part has one Weldment feature".into());

@@ -259,6 +259,7 @@ run `cargo run -p openforge -- generate` instead. -->
 | `trim_extend` | `bodies`, `boundary`, `allow_extension?`, `gap?`, `kind?`, `scope?` | Members cut back or lengthened to faces, planes or other bodies. |
 | `end_cap` | `faces`, `thickness`, `corners?`, `direction?`, `offset?`, `scope?` | Plates closing members' ends. |
 | `weld_gusset` | `faces`, `shape`, `thickness`, `chamfer?`, `location?`, `offset?`, `scope?`, `side?` | A plate in the corner between two members. |
+| `weld_bead` | `path`, `size`, `from_to?`, `intermittent?`, `kind?`, `mass_per_length?`, `material?`, `process?`, `scope?`, `sides?`, `symbol?`, `tangent?` | A cosmetic or modeled fillet weld bead. |
 
 <!-- /generated:features -->
 

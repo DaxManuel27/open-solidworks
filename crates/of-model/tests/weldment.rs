@@ -531,3 +531,105 @@ fn gusset_in_the_corner_of_a_post_and_beam() {
         close(volume(&m) - before, area * 10.0, 1e-6);
     }
 }
+
+/// A 60 mm post up the y axis (flat sides 44 wide) and a 40 mm beam
+/// butting into its right side at y = 250.
+fn post_and_beam() -> Model {
+    let mut doc = Document::new();
+    doc.add(FeatureKind::Weldment(WeldmentDef::default()));
+    let post = lines(&mut doc, &[([0.0, 0.0], [0.0, 500.0])]);
+    doc.add(along(
+        ProfileSource::Standard {
+            family: Family::Rhs,
+            size: "SHS 60x60x4".into(),
+        },
+        post,
+    ));
+    let beam = lines(&mut doc, &[([30.0, 250.0], [300.0, 250.0])]);
+    doc.add(along(shs(), beam));
+    let m = Model::new(doc);
+    ok(&m);
+    m
+}
+
+fn bead(path: BeadPath) -> WeldBead {
+    WeldBead {
+        path,
+        kind: BeadKind::Cosmetic,
+        size: 5.0,
+        sides: BeadSides::One,
+        tangent: false,
+        intermittent: None,
+        from_to: None,
+        symbol: Some("5 ⊿".into()),
+        material: Some("ER70S-6".into()),
+        process: Some("MIG".into()),
+        mass_per_length: Some(0.15),
+    }
+}
+
+/// The beam's four flat sides and the post's right face.
+fn seam_faces(m: &Model) -> (Vec<Ref>, Ref) {
+    use of_model::geom::DVec3;
+    let sides = [DVec3::Y, -DVec3::Y, DVec3::Z, -DVec3::Z]
+        .iter()
+        .map(|n| face(m, *n, |c| c.x > 100.0 && (c.y - 250.0).abs() < 30.0))
+        .collect();
+    let post = face(m, DVec3::X, |c| (c.x - 30.0).abs() < 1e-6);
+    (sides, post)
+}
+
+#[test]
+fn cosmetic_beads_on_the_seams_between_faces() {
+    let mut m = post_and_beam();
+    let before = volume(&m);
+    let (sides, post) = seam_faces(&m);
+    let path = BeadPath::Faces {
+        from: sides,
+        to: vec![post],
+    };
+    // Whole seams: four flats of 40 less the R6 corners.
+    let mut p = bead(path.clone());
+    m.doc.add(FeatureKind::WeldBead(p.clone()));
+    m.rebuild();
+    ok(&m);
+    let w = &m.state().welds[0];
+    assert_eq!(w.pieces.len(), 4);
+    close(w.length, 4.0 * 28.0, 1e-6);
+    close(volume(&m), before, 1e-9);
+    // Both sides, intermittent 10 on 10, staggered.
+    let mut m2 = post_and_beam();
+    p.sides = BeadSides::Both;
+    p.intermittent = Some(Intermittent {
+        length: 10.0,
+        gap: 10.0,
+        staggered: true,
+    });
+    m2.doc.add(FeatureKind::WeldBead(p));
+    m2.rebuild();
+    ok(&m2);
+    let w = &m2.state().welds[0];
+    // Side one: 0–10, 20–28 per seam; side two: 10–20 per seam.
+    close(w.length, 4.0 * (10.0 + 8.0 + 10.0), 1e-6);
+    assert_eq!(w.pieces.len(), 4 * 3);
+}
+
+#[test]
+fn modeled_fillet_bead_adds_its_triangle() {
+    use of_model::geom::DVec3;
+    let mut m = post_and_beam();
+    let before = volume(&m);
+    let top = face(&m, DVec3::Y, |c| c.x > 100.0 && (c.y - 270.0).abs() < 1e-6);
+    let (_, post) = seam_faces(&m);
+    let mut p = bead(BeadPath::Faces {
+        from: vec![top],
+        to: vec![post],
+    });
+    p.kind = BeadKind::Fillet;
+    m.doc.add(FeatureKind::WeldBead(p));
+    m.rebuild();
+    ok(&m);
+    assert_eq!(m.state().bodies.len(), 3);
+    close(volume(&m) - before, 0.5 * 5.0 * 5.0 * 28.0, 1e-6);
+    assert_eq!(m.state().welds[0].bodies.len(), 1);
+}

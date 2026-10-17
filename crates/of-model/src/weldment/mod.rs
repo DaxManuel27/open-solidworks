@@ -1,6 +1,7 @@
 //! Weldments: structural members cut from standard or custom profiles,
 //! their trims, end caps and gussets, weld beads and cut lists.
 
+pub mod beads;
 pub mod details;
 pub mod members;
 pub mod profiles;
@@ -11,6 +12,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::FeatureId;
+pub use beads::{BeadKind, BeadPath, BeadSides, Intermittent, WeldBead, WeldRecord};
 pub use details::{
     CapDirection, CapOffset, EndCap, GussetLocation, GussetShape, GussetSide, WeldGusset,
 };

@@ -668,6 +668,22 @@ export type BalloonText =
     text: string
   }
 
+export type BeadKind = 'cosmetic' | 'fillet'
+
+/** What a bead follows. */
+export type BeadPath =
+  | {
+    type: 'edges'
+    edges: Ref[]
+  }
+  | {
+    type: 'faces'
+    from: Ref[]
+    to: Ref[]
+  }
+
+export type BeadSides = 'one' | 'both'
+
 /** Per-feature changes to the body's bend defaults. */
 export type BendOverride = {
   allowance?: Allowance | null
@@ -2361,6 +2377,28 @@ export type Feature =
     scope?: string[] | null
     side?: GussetSide
   }
+  | {
+    type: 'weld_bead'
+    path: BeadPath
+    /** Leg size, mm. */
+    size: number
+    /** Weld only from `start` to `end` along each seam, mm from its start. */
+    from_to?: [number, number] | null
+    intermittent?: Intermittent | null
+    kind?: BeadKind
+    /** For cosmetic beads, kg per metre of bead. */
+    mass_per_length?: number | null
+    /** Weld folder properties. */
+    material?: string | null
+    process?: string | null
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+    sides?: BeadSides
+    /** Weld symbol text. */
+    symbol?: string | null
+    /** Carry on along edges tangent to the selected ones. */
+    tangent?: boolean
+  }
 
 export type FinishProcess = 'any' | 'removal' | 'no_removal'
 
@@ -2586,6 +2624,16 @@ export type HoleFit = 'close' | 'normal' | 'loose'
 export type HoleKind = 'simple' | 'counterbore' | 'countersink' | 'tapped'
 
 export type HoleStandard = 'iso' | 'ansi'
+
+/** Beads in pieces along the path. */
+export type Intermittent = {
+  /** Each piece, mm. */
+  length: number
+  /** Between pieces, mm. */
+  gap: number
+  /** With both sides: the other side's pieces fall in this side's gaps. */
+  staggered?: boolean
+}
 
 /** How a jog's offset is measured. */
 export type JogDimension = 'outside' | 'inside' | 'overall'

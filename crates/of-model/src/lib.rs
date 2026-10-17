@@ -259,6 +259,8 @@ pub enum FeatureKind {
     EndCap(weldment::EndCap),
     /// A plate in the corner between two members.
     WeldGusset(weldment::WeldGusset),
+    /// A cosmetic or modeled fillet weld bead.
+    WeldBead(weldment::WeldBead),
 }
 
 impl FeatureKind {
@@ -335,6 +337,7 @@ impl FeatureKind {
             FeatureKind::TrimExtend(_) => "Trim/Extend",
             FeatureKind::EndCap(_) => "End Cap",
             FeatureKind::WeldGusset(_) => "Gusset",
+            FeatureKind::WeldBead(_) => "Weld Bead",
         }
     }
 
@@ -482,6 +485,10 @@ impl FeatureKind {
             }
             FeatureKind::EndCap(c) => refs.extend(&c.faces),
             FeatureKind::WeldGusset(g) => refs.extend(&g.faces),
+            FeatureKind::WeldBead(b) => match &b.path {
+                weldment::BeadPath::Edges { edges } => refs.extend(edges),
+                weldment::BeadPath::Faces { from, to } => refs.extend(from.iter().chain(to)),
+            },
             FeatureKind::TrimExtend(t) => {
                 out.extend(t.bodies.iter().filter_map(BodyId::creator));
                 match &t.boundary {
