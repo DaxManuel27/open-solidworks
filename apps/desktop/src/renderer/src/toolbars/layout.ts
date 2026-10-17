@@ -113,6 +113,27 @@ export const sheetMetalGroups: CommandGroup[] = [
     columns: [[{ command: 'flatten', variant: 'large' }], [{ command: 'flatPattern' }]],
   },
 ]
+export const weldmentGroups: CommandGroup[] = [
+  {
+    label: 'Weldment',
+    columns: [
+      [{ command: 'weldment', variant: 'large' }],
+      [{ command: 'structuralMember', variant: 'large' }],
+    ],
+  },
+  {
+    label: 'Members',
+    columns: [[{ command: 'trimExtend' }, { command: 'endCap' }, { command: 'weldGusset' }]],
+  },
+  {
+    label: 'Welds',
+    columns: [[{ command: 'weldBead' }, { command: 'filletBead' }]],
+  },
+  {
+    label: 'Cut List',
+    columns: [[{ command: 'cutList', variant: 'large' }]],
+  },
+]
 export const sketchGroups = (editing: boolean): CommandGroup[] => [
   {
     label: 'Sketch',
@@ -373,6 +394,7 @@ export const availableTabs: { id: Tab; label: string }[] = [
   { id: 'features', label: 'Features' },
   { id: 'sketch', label: 'Sketch' },
   { id: 'sheet_metal', label: 'Sheet Metal' },
+  { id: 'weldments', label: 'Weldments' },
   { id: 'evaluate', label: 'Evaluate' },
 ]
 export const unavailableTabs = [
@@ -387,6 +409,7 @@ export const tabOrder = [
   'Sketch',
   'Surfaces',
   'Sheet Metal',
+  'Weldments',
   'Direct Editing',
   'Evaluate',
   'Annotations',

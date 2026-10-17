@@ -62,6 +62,12 @@ export interface PickTarget {
 }
 
 export type PanelType =
+  | 'structural_member'
+  | 'trim_extend'
+  | 'end_cap'
+  | 'weld_gusset'
+  | 'weld_bead'
+  | 'cut_list'
   | 'base_flange'
   | 'edge_flange'
   | 'miter_flange'
@@ -195,7 +201,14 @@ export interface Toast {
 }
 
 export type Tab =
-  'features' | 'sheet_metal' | 'sketch' | 'evaluate' | 'assembly' | 'drawing' | 'annotation'
+  | 'features'
+  | 'sheet_metal'
+  | 'weldments'
+  | 'sketch'
+  | 'evaluate'
+  | 'assembly'
+  | 'drawing'
+  | 'annotation'
 
 export type ViewName =
   'front' | 'back' | 'left' | 'right' | 'top' | 'bottom' | 'iso' | 'normal' | 'fit'

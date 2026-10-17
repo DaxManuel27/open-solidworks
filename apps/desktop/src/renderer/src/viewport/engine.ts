@@ -289,6 +289,20 @@ export class Engine {
       if (annotation.hidden) continue
       this.addThreadLines(annotation.polylines, this.datumGroup)
     }
+    for (const bead of scene.weld_beads ?? []) {
+      const geometry = new THREE.BufferGeometry().setAttribute(
+        'position',
+        new THREE.Float32BufferAttribute(bead.polyline, 3),
+      )
+      const line = new THREE.Line(
+        geometry,
+        new THREE.LineBasicMaterial({ color: 0xd97706, linewidth: 3, depthTest: false }),
+      )
+      line.renderOrder = 4
+      line.userData.cosmeticThread = true
+      line.userData.weldBead = bead.feature
+      this.datumGroup.add(line)
+    }
     for (const bend of scene.bend_lines ?? []) {
       const geometry = new THREE.BufferGeometry().setAttribute(
         'position',

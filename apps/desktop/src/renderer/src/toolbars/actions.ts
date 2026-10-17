@@ -51,3 +51,20 @@ export function isFlattened(s: ReturnType<typeof useStore.getState>): boolean {
   const flat = s.snapshot?.features.find((f) => f.type === 'flat_pattern')
   return !!flat && !flat.suppressed && !flat.rolled_back
 }
+
+/** Make the part a weldment once. */
+export async function ensureWeldment(): Promise<boolean> {
+  const s = useStore.getState()
+  if (s.snapshot?.features.some((f) => f.type === 'weldment')) return true
+  return !!(await s.run('feature.add', { feature: { type: 'weldment' }, formulas: {} }))
+}
+
+/** Open a weldment feature's panel, adding the Weldment feature first. */
+export async function startWeldmentFeature(type: PanelType, variant?: string): Promise<void> {
+  const s = useStore.getState()
+  const sketch = s.sketch?.id
+  if (sketch !== undefined) await s.closeSketch()
+  if (s.panel) await s.closePanel()
+  if (!(await ensureWeldment())) return
+  useStore.getState().openPanel({ type, sketch, variant })
+}

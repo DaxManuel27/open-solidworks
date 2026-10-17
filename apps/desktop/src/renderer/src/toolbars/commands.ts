@@ -1,6 +1,13 @@
 import { create } from 'zustand'
 import { useStore, type PanelType, type SketchTool, type ViewName } from '../store'
-import { beginSketch, isFlattened, startFeature, toggleFlatten } from './actions'
+import {
+  beginSketch,
+  ensureWeldment,
+  isFlattened,
+  startFeature,
+  startWeldmentFeature,
+  toggleFlatten,
+} from './actions'
 import type { IconId } from './icons'
 
 type State = ReturnType<typeof useStore.getState>
@@ -68,6 +75,28 @@ const sheetMetal = (
     (needsSketch && !s.snapshot?.features.some((f) => f.type === 'sketch' && !f.suppressed)
       ? 'Requires a sketch'
       : undefined),
+})
+/** A weldment feature; the part becomes a weldment first if it isn't. */
+const weld = (
+  type: PanelType,
+  label: string,
+  icon: IconId,
+  needs: 'nothing' | 'sketch' | 'body' = 'body',
+  variant?: string,
+): Definition => ({
+  label,
+  icon,
+  run: () => startWeldmentFeature(type, variant),
+  unavailable: (s) =>
+    (s.assembly ? 'Open a part to use this' : undefined) ??
+    idlePanel(s) ??
+    (needs === 'sketch' &&
+    !s.snapshot?.features.some(
+      (f) => (f.type === 'sketch' || f.type === 'sketch3d') && !f.suppressed,
+    )
+      ? 'Requires a sketch'
+      : undefined) ??
+    (needs === 'body' && !s.scene?.body ? 'Requires a solid body' : undefined),
 })
 const panel = (type: PanelType, label: string, icon: IconId, needsBody = false): Definition => ({
   label,
@@ -400,6 +429,29 @@ export const commands = {
   formTool: sheetMetal('form_tool', 'Forming Tool', 'formTool'),
   formingToolDef: sheetMetal('forming_tool', 'Make Forming Tool', 'formingToolDef', false),
   flatPattern: sheetMetal('flat_pattern', 'Flat-Pattern Options', 'flatPattern'),
+  weldment: {
+    label: 'Weldment',
+    icon: 'weldment',
+    run: () => ensureWeldment(),
+    active: (s) => !!s.snapshot?.features.some((f) => f.type === 'weldment'),
+    unavailable: (s) => (s.assembly ? 'Open a part to use this' : undefined) ?? idlePanel(s),
+  },
+  structuralMember: weld('structural_member', 'Structural Member', 'structuralMember', 'sketch'),
+  trimExtend: weld('trim_extend', 'Trim/Extend', 'trimExtend'),
+  endCap: weld('end_cap', 'End Cap', 'endCap'),
+  weldGusset: weld('weld_gusset', 'Gusset', 'weldGusset'),
+  weldBead: weld('weld_bead', 'Weld Bead', 'weldBead'),
+  filletBead: weld('weld_bead', 'Fillet Bead', 'filletBead', 'body', 'fillet'),
+  cutList: {
+    label: 'Cut List',
+    icon: 'cutList',
+    run: (s) => s.openPanel({ type: 'cut_list' }),
+    unavailable: (s) =>
+      idlePanel(s) ??
+      (!s.snapshot?.features.some((f) => f.type === 'weldment')
+        ? 'Requires a weldment'
+        : undefined),
+  },
   flatten: {
     label: 'Flatten',
     icon: 'flatten',

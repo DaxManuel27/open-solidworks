@@ -276,6 +276,7 @@ async function run(win) {
       ['Sketch', false],
       ['Surfaces', true],
       ['Sheet Metal', false],
+      ['Weldments', false],
       ['Direct Editing', true],
       ['Evaluate', false],
       ['Annotations', true],
@@ -287,6 +288,8 @@ async function run(win) {
   assert.equal(await js(`document.activeElement.id`), 'tab-sketch')
   await key('ArrowRight')
   assert.equal(await js(`document.activeElement.id`), 'tab-sheet_metal')
+  await key('ArrowRight')
+  assert.equal(await js(`document.activeElement.id`), 'tab-weldments')
   await key('ArrowRight')
   assert.equal(await js(`document.activeElement.id`), 'tab-evaluate')
   await key('Home')

@@ -15,6 +15,7 @@ import {
   evaluateGroups,
   featureGroups,
   sheetMetalGroups,
+  weldmentGroups,
   sketchGroups,
   tabOrder as partTabOrder,
   unavailableTabs,
@@ -55,7 +56,9 @@ export function CommandManager() {
               ? featureGroups
               : tab === 'sheet_metal'
                 ? sheetMetalGroups
-                : sketchGroups(editing)
+                : tab === 'weldments'
+                  ? weldmentGroups
+                  : sketchGroups(editing)
   useEffect(() => {
     const el = track.current!
     const update = () =>

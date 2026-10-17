@@ -3,6 +3,9 @@ import { SpatialPanel } from './spatial'
 import { DomePanel } from './dome'
 import { FaceFilletPanel } from './face-fillet'
 import { RibPanel } from './rib'
+import { CutListPanel } from './weldment/cutlist'
+import { EndCapPanel, TrimExtendPanel, WeldBeadPanel, WeldGussetPanel } from './weldment/details'
+import { StructuralMemberPanel } from './weldment/members'
 import {
   BaseFlangePanel,
   EdgeFlangePanel,
@@ -205,6 +208,18 @@ export function PanelHost({ panel }: { panel: Panel }) {
       return <FaceFilletPanel key={key} panel={panel} />
     case 'rib':
       return <RibPanel key={key} panel={panel} />
+    case 'structural_member':
+      return <StructuralMemberPanel key={key} panel={panel} />
+    case 'trim_extend':
+      return <TrimExtendPanel key={key} panel={panel} />
+    case 'end_cap':
+      return <EndCapPanel key={key} panel={panel} />
+    case 'weld_gusset':
+      return <WeldGussetPanel key={key} panel={panel} />
+    case 'weld_bead':
+      return <WeldBeadPanel key={key} panel={panel} />
+    case 'cut_list':
+      return <CutListPanel key={key} />
     case 'base_flange':
       return <BaseFlangePanel key={key} panel={panel} />
     case 'edge_flange':

@@ -94,6 +94,7 @@ export interface SheetMetalView {
 
 export interface Scene {
   bend_lines?: BendLineView[]
+  weld_beads?: { feature: number; polyline: number[]; size: number }[]
   cosmetic_threads: {
     id: number
     name: string

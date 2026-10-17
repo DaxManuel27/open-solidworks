@@ -112,6 +112,14 @@ const paths = {
   formingToolDef: 'M8 4h8v6a4 4 0 0 1-8 0z M4 20h16',
   flatten: 'M3 15h18 M6 15V9 M18 15V9 M3 19h18',
   flatPattern: 'M3 9h18v6H3z M8 9v6 M16 9v6',
+  weldment: 'M3 6h18 M3 18h18 M6 6v12 M18 6v12 M6 6l12 12',
+  structuralMember: 'M4 4h6v16H4z M14 4h6v16h-6z M10 12h4',
+  trimExtend: 'M4 12h10 M14 6v12 M18 8l2 2-2 2 M18 14l2 2-2 2',
+  endCap: 'M5 4h10v16H5z M15 3h4v18h-4z',
+  weldGusset: 'M4 20V4 M4 20h16 M4 9l11 11',
+  weldBead: 'M3 18h18 M3 18c2-3 4-3 6 0s4 3 6 0 4-3 6 0',
+  filletBead: 'M4 20V6 M4 20h14 M4 14l6 6',
+  cutList: 'M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h5',
 } as const
 
 export type IconId = keyof typeof paths

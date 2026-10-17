@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { FeatureView, Ref } from './protocol'
+import { useCutList } from './panels/weldment/cutlist'
 import { type PanelType, useStore } from './store'
 
 const ICONS: Record<string, string> = {
@@ -25,6 +26,12 @@ const ICONS: Record<string, string> = {
   miter_flange: '⌐',
   hem: '⊃',
   flat_pattern: '▬',
+  weldment: '⌗',
+  structural_member: '▥',
+  trim_extend: '✂',
+  end_cap: '▣',
+  weld_gusset: '◺',
+  weld_bead: '〰',
 }
 
 const STD: { ref: Ref; name: string }[] = [
@@ -47,6 +54,11 @@ export function panelFor(f: FeatureView): PanelType | null {
       return f.params['cut'] ? 'loft_cut' : 'loft'
     case 'boundary':
       return f.params['cut'] ? 'boundary_cut' : 'boundary'
+    case 'structural_member':
+    case 'trim_extend':
+    case 'end_cap':
+    case 'weld_gusset':
+    case 'weld_bead':
     case 'base_flange':
     case 'edge_flange':
     case 'miter_flange':
@@ -135,6 +147,7 @@ interface Menu {
 export function FeatureTree() {
   const snapshot = useStore((s) => s.snapshot)
   const bodies = useStore((s) => s.scene?.bodies) ?? []
+  const cutList = useCutList()
   const editing = useStore((s) => !!s.panel || !!s.sketch || s.busy)
   const treeSelection = useStore((s) => s.treeSelection)
   const selection = useStore((s) => s.selection)
@@ -384,6 +397,39 @@ export function FeatureTree() {
               </div>
             )
           })}
+        </>
+      )}
+      {cutList && (
+        <>
+          <div
+            className="tree-item meta"
+            title="Double-click to edit the cut list"
+            onDoubleClick={() => useStore.getState().openPanel({ type: 'cut_list' })}
+          >
+            Cut List ({cutList.items.filter((i) => !i.excluded).length})
+          </div>
+          {cutList.items.map((item) => (
+            <div
+              className={`tree-item ${item.excluded ? 'suppressed' : ''}`}
+              key={item.bodies[0]}
+              onDoubleClick={() => useStore.getState().openPanel({ type: 'cut_list' })}
+            >
+              <span className="icon">▤</span>
+              <span className="name">
+                {item.folder ? `${item.folder} / ` : ''}
+                {item.number ? `${item.number}. ` : ''}
+                {item.properties['DESCRIPTION']}
+                {item.properties['LENGTH'] ? ` · ${item.properties['LENGTH']} mm` : ''} ×{' '}
+                {item.quantity}
+              </span>
+            </div>
+          ))}
+          {cutList.welds.beads.length > 0 && (
+            <div className="tree-item meta">
+              Weld Folder ({cutList.welds.beads.length} beads,{' '}
+              {cutList.welds.total_length.toFixed(0)} mm)
+            </div>
+          )}
         </>
       )}
       <div className="tree-item meta">Bodies ({bodies.length})</div>
