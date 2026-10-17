@@ -1,3 +1,41 @@
+# Handoff: Phase 5 complete locally (2026-10-17, session 11)
+
+Read this first. Earlier sections below are history.
+
+## State
+
+- Branch `phase-5` (local, not pushed). Every step of `docs/phase-5-remaining-plan.md`
+  through R4 is implemented and verified; `docs/phase-5-status.md` has what was built, the
+  decisions, limits and the verification run. Feature docs 10 and 11 say what is supported.
+- Only the release step is left, and it needs the owner: push `phase-5`, hosted CI on
+  macOS, Windows and Linux, record the run in the status doc, rebase onto `main` after
+  Phase 4 merges, merge.
+
+## This session
+
+- W6 desktop weldments (Weldments tab, panels, tree Cut List, Cut List panel, viewport beads).
+- W7 weldment drawings: `ModelSource.bodies`, `TableKind::CutList`/`Weld`,
+  `BalloonText::CutListItem`/`CutListQuantity`, `Weld.bead`, `drawing.model.bodies`.
+- R: machine frame corpus (`of-drawing/tests/frame_corpus.rs`), conformance area 11,
+  weldment smoke (`scripts/weldment-smoke.mjs`, run alone with
+  `OPENFORGE_SMOKE_ONLY=weldment`), docs.
+- Plan gaps filled: member `align`, `allow_protrusion`, `connected` (overlap/simple/coped),
+  `GussetShape::LegAngle`, `BeadPath::Smart`, cut list `name` templates.
+
+## Gotchas
+
+- Rectangular tube flats are narrower than the tube: an SHS 40's flat side spans ±14, so
+  a bead seam from a 30 mm member's top face doesn't lie on it ("faces don't meet").
+- Body-filtered views map local edge indices to the part's (`Piece.edge_map`), so
+  references still resolve against the whole part.
+- Auto balloons on weldment part views key items as `item<n>` internally and emit
+  `CutListItem` balloons; hidden items get none.
+
+## Verified on this tree
+
+Every gate in AGENTS.md, `openforge generate` current, native desktop smoke, conformance
+146/146, `perf:check`, `perf:asm:check`, `perf:draw:check`, `perf:phase5:check`.
+
 # Handoff: Phase 5 sheet metal (2026-10-16, session 10)
 
 Read this first. Earlier sections below are history.
