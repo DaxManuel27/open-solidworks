@@ -415,3 +415,23 @@ pub struct Freeform {
 fn freeform_grid() -> u32 {
     8
 }
+
+/// Lay doubly curved faces out flat, as for fabric, leather or formed sheet.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SurfaceFlatten {
+    /// Connected faces to flatten.
+    #[schemars(length(min = 1))]
+    pub faces: Vec<Ref>,
+    /// A vertex or point that stays put; the flat lies in the plane
+    /// tangent to the faces there. Defaults to the point nearest the faces'
+    /// middle.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fixed: Option<Ref>,
+    /// From 0 (fast, coarse) to 1 (fine, slow).
+    #[serde(default = "half")]
+    #[schemars(range(min = 0.0, max = 1.0))]
+    pub accuracy: f64,
+    /// Edges between the faces to cut open so they can lie flat.
+    #[serde(default)]
+    pub tears: Vec<Ref>,
+}

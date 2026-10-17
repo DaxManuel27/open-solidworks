@@ -85,6 +85,8 @@ pub struct State {
     pub members: Vec<crate::weldment::MemberRecord>,
     /// Weld beads, for the weld folder.
     pub welds: Vec<crate::weldment::WeldRecord>,
+    /// How much each Surface Flatten stretched its faces, for display.
+    pub flattenings: HashMap<FeatureId, std::sync::Arc<crate::meshes::Flattening>>,
 }
 
 /// A content hash for change detection.

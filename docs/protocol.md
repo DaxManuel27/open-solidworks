@@ -282,6 +282,7 @@ run `cargo run -p openforge -- generate` instead. -->
 | `extend_surface` | `edges`, `end`, `linear?`, `scope?` | Extend surfaces past their open edges. |
 | `mid_surface` | `body?`, `knit?`, `pairs?`, `position?`, `scope?`, `threshold?` | A surface midway between pairs of faces. |
 | `freeform` | `face`, `moves`, `continuity?`, `grid?`, `scope?` | Reshape a face by moving its control points. |
+| `surface_flatten` | `faces`, `accuracy?`, `fixed?`, `scope?`, `tears?` | Lay doubly curved faces out flat. |
 
 <!-- /generated:features -->
 

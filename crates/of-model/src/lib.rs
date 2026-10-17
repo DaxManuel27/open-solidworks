@@ -28,6 +28,7 @@ pub mod file;
 pub mod flat;
 pub mod materials;
 pub mod measure;
+pub mod meshes;
 pub mod naming;
 mod ops;
 pub mod properties;
@@ -307,6 +308,8 @@ pub enum FeatureKind {
     MidSurface(surfaces::MidSurface),
     /// Reshape a face by moving its control points.
     Freeform(surfaces::Freeform),
+    /// Lay doubly curved faces out flat.
+    SurfaceFlatten(surfaces::SurfaceFlatten),
 }
 
 impl FeatureKind {
@@ -407,6 +410,7 @@ impl FeatureKind {
             FeatureKind::ExtendSurface(_) => "Surface-Extend",
             FeatureKind::MidSurface(_) => "Surface-MidSurface",
             FeatureKind::Freeform(_) => "Freeform",
+            FeatureKind::SurfaceFlatten(_) => "Surface Flatten",
         }
     }
 
@@ -653,6 +657,11 @@ impl FeatureKind {
                 out.extend(m.body.as_ref().and_then(BodyId::creator));
             }
             FeatureKind::Freeform(f) => refs.push(&f.face),
+            FeatureKind::SurfaceFlatten(f) => {
+                refs.extend(&f.faces);
+                refs.extend(&f.fixed);
+                refs.extend(&f.tears);
+            }
             FeatureKind::Fillet(f) => refs.extend(f.edges.iter().chain(&f.faces)),
             FeatureKind::Chamfer(c) => refs.extend(c.edges.iter().chain(&c.faces)),
             FeatureKind::Shell(s) => refs.extend(&s.faces),

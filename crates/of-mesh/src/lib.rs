@@ -174,6 +174,13 @@ impl TriMesh {
     /// Merge vertices closer than `tolerance`, dropping triangles that
     /// collapse. Returns the old-to-new vertex map.
     pub fn weld(&mut self, tolerance: f64) -> Vec<u32> {
+        let tags = vec![0; self.positions.len()];
+        self.weld_tagged(tolerance, &tags)
+    }
+
+    /// [`TriMesh::weld`], merging only vertices with the same tag: tagging
+    /// the two sides of a cut differently keeps them apart.
+    pub fn weld_tagged(&mut self, tolerance: f64, tags: &[u32]) -> Vec<u32> {
         let cell = tolerance.max(1e-12);
         let key = |p: DVec3| {
             (
@@ -184,6 +191,7 @@ impl TriMesh {
         };
         let mut grid: HashMap<(i64, i64, i64), Vec<u32>> = HashMap::new();
         let mut map = vec![0u32; self.positions.len()];
+        let mut new_tags: Vec<u32> = Vec::new();
         let mut positions: Vec<DVec3> = Vec::new();
         let mut colors = self.colors.as_ref().map(|_| Vec::new());
         for (i, p) in self.positions.iter().enumerate() {
@@ -194,7 +202,9 @@ impl TriMesh {
                     for dz in -1..=1 {
                         if let Some(list) = grid.get(&(kx + dx, ky + dy, kz + dz)) {
                             for &j in list {
-                                if (positions[j as usize] - *p).length() <= tolerance {
+                                if new_tags[j as usize] == tags[i]
+                                    && (positions[j as usize] - *p).length() <= tolerance
+                                {
                                     found = Some(j);
                                     break 'search;
                                 }
@@ -205,6 +215,7 @@ impl TriMesh {
             }
             let j = found.unwrap_or_else(|| {
                 positions.push(*p);
+                new_tags.push(tags[i]);
                 if let (Some(out), Some(src)) = (&mut colors, &self.colors) {
                     out.push(src[i]);
                 }

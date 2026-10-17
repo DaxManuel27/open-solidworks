@@ -2776,6 +2776,23 @@ export type Feature =
     /** Body IDs this feature acts on; omitted acts on the whole part. */
     scope?: string[] | null
   }
+  | {
+    type: 'surface_flatten'
+    /** Connected faces to flatten. */
+    faces: Ref[]
+    /** From 0 (fast, coarse) to 1 (fine, slow). */
+    accuracy?: number
+    /**
+     * A vertex or point that stays put; the flat lies in the plane
+     * tangent to the faces there. Defaults to the point nearest the faces'
+     * middle.
+     */
+    fixed?: Ref | null
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+    /** Edges between the faces to cut open so they can lie flat. */
+    tears?: Ref[]
+  }
 
 /** One edge around a filled surface. */
 export type FillBoundary = {

@@ -14,6 +14,7 @@ use crate::naming::{Inputs, Naming};
 use crate::resolve::{RResult, Resolved, resolve};
 mod direct;
 mod face_fillet;
+mod flatten;
 mod rib;
 mod shaping;
 pub(crate) mod sheet;
@@ -83,6 +84,7 @@ pub(crate) fn build(
         FeatureKind::ExtendSurface(p) => shaping::extend_surface(fid, p, prev, state),
         FeatureKind::MidSurface(p) => shaping::mid_surface(fid, p, prev, state),
         FeatureKind::Freeform(p) => shaping::freeform(fid, p, prev, state),
+        FeatureKind::SurfaceFlatten(p) => flatten::surface_flatten(fid, p, prev, state),
         _ => Ok(()),
     };
     if result.is_ok() && state.tools.contains_key(&fid) {
