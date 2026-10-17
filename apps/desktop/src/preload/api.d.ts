@@ -25,9 +25,18 @@ export interface OpenForgeApi {
   onAssistant(handler: (event: AssistantEvent) => void): () => void
   /** Call a core method (JSON-RPC). */
   call(method: string, params?: unknown): Promise<CallResult>
-  /** `part`/`document`: open an .ofp, .ofa or .ofd; `component`/`model`: an .ofp or .ofa; `import`: STEP/IGES; `step`: STEP only; `standard`: .ofstd; `template`: .ofdt. */
+  /** `part`/`document`: open an .ofp, .ofa or .ofd; `component`/`model`: an .ofp or .ofa; `import`: STEP/IGES, meshes and point clouds; `step`: STEP only; `standard`: .ofstd; `template`: .ofdt; `folder`: a folder. */
   openDialog(
-    kind: 'part' | 'document' | 'component' | 'import' | 'step' | 'model' | 'standard' | 'template',
+    kind:
+      | 'part'
+      | 'document'
+      | 'component'
+      | 'import'
+      | 'step'
+      | 'model'
+      | 'standard'
+      | 'template'
+      | 'folder',
   ): Promise<string | null>
   saveDialog(
     kind:

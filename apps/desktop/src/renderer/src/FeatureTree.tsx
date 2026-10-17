@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { FeatureView, Ref } from './protocol'
 import { useCutList } from './panels/weldment/cutlist'
 import { type PanelType, useStore } from './store'
+import { FORM_FEATURES } from './toolbars/phase6'
 
 const ICONS: Record<string, string> = {
   sketch: '✎',
@@ -124,6 +125,10 @@ export function editFeature(f: FeatureView): void {
     void s.editSketch(f.id)
     return
   }
+  if (FORM_FEATURES[f.type]) {
+    s.openPanel({ type: 'feature_form', variant: f.type, editing: f.id })
+    return
+  }
   const p = panelFor(f)
   if (p) s.openPanel({ type: p, editing: f.id })
 }
@@ -147,6 +152,8 @@ interface Menu {
 export function FeatureTree() {
   const snapshot = useStore((s) => s.snapshot)
   const bodies = useStore((s) => s.scene?.bodies) ?? []
+  const hoverFeature = useStore((s) => s.hoverFeature)
+  const mold = useStore((s) => s.snapshot?.mold)
   const cutList = useCutList()
   const editing = useStore((s) => !!s.panel || !!s.sketch || s.busy)
   const treeSelection = useStore((s) => s.treeSelection)
@@ -235,6 +242,12 @@ export function FeatureTree() {
     </button>
   )
 
+  // Dependency display: the hovered feature's parents and children.
+  const hovered = features.find((f) => f.id === hoverFeature)
+  const parents = new Set(hovered?.depends_on ?? [])
+  const children = new Set(
+    hovered ? features.filter((f) => f.depends_on?.includes(hovered.id)).map((f) => f.id) : [],
+  )
   const rows: React.ReactNode[] = []
   features.forEach((f, i) => {
     if (i === rollback) rows.push(<RollbackBar key="rb" />)
@@ -249,6 +262,8 @@ export function FeatureTree() {
           f.rolled_back ? 'rolled-back' : '',
           f.error ? 'error' : '',
           drop === i ? 'drop' : '',
+          parents.has(f.id) ? 'parent' : '',
+          children.has(f.id) ? 'child' : '',
         ].join(' ')}
         draggable={renaming !== f.id}
         onDragStart={(e) => e.dataTransfer.setData('text/plain', String(f.id))}
@@ -438,31 +453,74 @@ export function FeatureTree() {
           )}
         </>
       )}
-      <div className="tree-item meta">Bodies ({bodies.length})</div>
-      {bodies.map((body) => (
-        <div className="tree-item" key={body.id}>
-          <input
-            type="checkbox"
-            aria-label={`Show ${body.name}`}
-            checked={!body.hidden}
-            onChange={() => void run('body.display', { id: body.id, hidden: !body.hidden })}
-          />
-          <button
-            className="link"
-            onClick={() => {
-              const index = body.faces[0]
-              if (index !== undefined) void useStore.getState().pick({ kind: 'face', index }, false)
-            }}
-            onDoubleClick={() => {
-              const name = prompt('Body name', body.name)
-              if (name?.trim()) void run('body.display', { id: body.id, name })
-            }}
-            title="Select; double-click to rename"
-          >
-            {body.name}
-          </button>
-        </div>
-      ))}
+      {(
+        [
+          ['solid', 'Solid Bodies'],
+          ['surface', 'Surface Bodies'],
+          ['mesh', 'Mesh Bodies'],
+        ] as const
+      ).map(([kind, title]) => {
+        const list = bodies.filter((b) => (b.kind ?? 'solid') === kind)
+        if (!list.length && kind !== 'solid') return null
+        return (
+          <div key={kind}>
+            <div className="tree-item meta">
+              {title} ({list.length})
+            </div>
+            {list.map((body) => (
+              <div className="tree-item" key={body.id}>
+                <input
+                  type="checkbox"
+                  aria-label={`Show ${body.name}`}
+                  checked={!body.hidden}
+                  onChange={() => void run('body.display', { id: body.id, hidden: !body.hidden })}
+                />
+                <button
+                  className="link"
+                  onClick={() => {
+                    const index = body.faces[0]
+                    if (index !== undefined)
+                      void useStore.getState().pick({ kind: 'face', index }, false)
+                  }}
+                  onDoubleClick={() => {
+                    const name = prompt('Body name', body.name)
+                    if (name?.trim()) void run('body.display', { id: body.id, name })
+                  }}
+                  title={
+                    body.kind === 'mesh'
+                      ? `${body.triangles ?? 0} triangles; double-click to rename`
+                      : 'Select; double-click to rename'
+                  }
+                >
+                  {body.name}
+                </button>
+              </div>
+            ))}
+          </div>
+        )
+      })}
+      {mold && (mold.parting_lines.length > 0 || mold.cores.length > 0) && (
+        <>
+          <div className="tree-item meta">Mould</div>
+          {mold.parting_lines.map((p) => (
+            <div className="tree-item" key={`pl${p.feature}`}>
+              Parting line: {p.edges} edges, {p.openings} openings
+            </div>
+          ))}
+          {mold.shut_off.length > 0 && (
+            <div className="tree-item">Shut-off surfaces ({mold.shut_off.length})</div>
+          )}
+          {mold.parting_surfaces.length > 0 && (
+            <div className="tree-item">Parting surfaces ({mold.parting_surfaces.length})</div>
+          )}
+          {mold.cavities.length > 0 && (
+            <div className="tree-item">Cavity bodies ({mold.cavities.length})</div>
+          )}
+          {mold.cores.length > 0 && (
+            <div className="tree-item">Core bodies ({mold.cores.length})</div>
+          )}
+        </>
+      )}
       {rows}
       <div className="tree-tail" {...dropZone(features.length)} />
       {menu && (

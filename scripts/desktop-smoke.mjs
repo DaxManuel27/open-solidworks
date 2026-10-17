@@ -11,6 +11,7 @@ import { assemblySmoke } from './assembly-smoke.mjs'
 import { drawingSmoke } from './drawing-smoke.mjs'
 import { sheetMetalSmoke } from './sheet-metal-smoke.mjs'
 import { weldmentSmoke } from './weldment-smoke.mjs'
+import { surfacingSmoke } from './surfacing-smoke.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 process.env.OPENFORGE_CORE = join(
@@ -238,6 +239,25 @@ async function run(win) {
     await weldmentSmoke({ js, call, click, wait, temp })
     return
   }
+  if (process.env.OPENFORGE_SMOKE_ONLY === 'surfacing') {
+    await surfacingSmoke({
+      js,
+      call,
+      click,
+      wait,
+      temp,
+      win,
+      dialogs: {
+        open: (path) => {
+          nextOpen = path
+        },
+        save: (path) => {
+          nextSave = path
+        },
+      },
+    })
+    return
+  }
   if (process.env.OPENFORGE_SMOKE_ONLY === 'sheet_metal') {
     await sheetMetalSmoke({
       js,
@@ -279,24 +299,31 @@ async function run(win) {
     [
       ['Features', false],
       ['Sketch', false],
-      ['Surfaces', true],
+      ['Surfaces', false],
       ['Sheet Metal', false],
       ['Weldments', false],
-      ['Direct Editing', true],
+      ['Direct Editing', false],
+      ['Mold Tools', false],
+      ['Mesh', false],
       ['Evaluate', false],
       ['Annotations', true],
       ['Add-ins', true],
     ],
   )
   await js(`document.querySelector('#tab-features').focus()`)
-  await key('ArrowRight')
-  assert.equal(await js(`document.activeElement.id`), 'tab-sketch')
-  await key('ArrowRight')
-  assert.equal(await js(`document.activeElement.id`), 'tab-sheet_metal')
-  await key('ArrowRight')
-  assert.equal(await js(`document.activeElement.id`), 'tab-weldments')
-  await key('ArrowRight')
-  assert.equal(await js(`document.activeElement.id`), 'tab-evaluate')
+  for (const id of [
+    'tab-sketch',
+    'tab-surfaces',
+    'tab-sheet_metal',
+    'tab-weldments',
+    'tab-direct_editing',
+    'tab-mold_tools',
+    'tab-mesh',
+    'tab-evaluate',
+  ]) {
+    await key('ArrowRight')
+    assert.equal(await js(`document.activeElement.id`), id)
+  }
   await key('Home')
   await js(`document.querySelector('[data-command="new"]').focus()`)
   await key('ArrowRight')
@@ -708,11 +735,27 @@ async function run(win) {
     },
   })
   await weldmentSmoke({ js, call, click, wait, temp })
+  await surfacingSmoke({
+    js,
+    call,
+    click,
+    wait,
+    temp,
+    win,
+    dialogs: {
+      open: (path) => {
+        nextOpen = path
+      },
+      save: (path) => {
+        nextSave = path
+      },
+    },
+  })
   const screenshot = await win.capturePage()
   const artifact = process.env.OPENFORGE_SMOKE_SCREENSHOT
   if (artifact) writeFileSync(artifact, screenshot.toPNG())
   console.log(
-    'Desktop smoke passed: toolbar layout/themes, keyboard/menu isolation, sketch tools, dropdown panels, views, draw/extrude/revolve, body visibility/copy/split retention, scoped formulas, configurations, spatial sketches, hollow sweeps, domes, cosmetic threads, ribs with formula entry, modeled threads, boundaries, tangent lofts, undo/redo, save/reopen/import/export, assemblies (insert, mates, collision drag, patterns, interference, explode, BOM, save/reopen), drawings (make drawing, model items, driving dimensions, smart dimensions, notes, section/detail views, revision table, BOM with auto balloons, PDF/DXF export, undo/redo, save/reopen), sheet metal (base and edge flanges, flatten, gauge, flat DXF, flat pattern view, bend and punch tables), weldments (members from a sketch, trim, cut list, cut list table)',
+    'Desktop smoke passed: toolbar layout/themes, keyboard/menu isolation, sketch tools, dropdown panels, views, draw/extrude/revolve, body visibility/copy/split retention, scoped formulas, configurations, spatial sketches, hollow sweeps, domes, cosmetic threads, ribs with formula entry, modeled threads, boundaries, tangent lofts, undo/redo, save/reopen/import/export, assemblies (insert, mates, collision drag, patterns, interference, explode, BOM, save/reopen), drawings (make drawing, model items, driving dimensions, smart dimensions, notes, section/detail views, revision table, BOM with auto balloons, PDF/DXF export, undo/redo, save/reopen), sheet metal (base and edge flanges, flatten, gauge, flat DXF, flat pattern view, bend and punch tables), weldments (members from a sketch, trim, cut list, cut list table), surfaces (capped extruded surface, knit to solid, move face, draft analysis, parting line, mesh import and deviation)',
   )
 }
 

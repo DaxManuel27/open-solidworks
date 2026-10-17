@@ -62,6 +62,16 @@ export interface PickTarget {
 }
 
 export type PanelType =
+  /** A Phase 6 feature, edited through its schema; `variant` is its type. */
+  | 'feature_form'
+  | 'draft_analysis'
+  | 'undercut_analysis'
+  | 'deviation_analysis'
+  | 'compare_bodies'
+  | 'projected_area'
+  | 'save_bodies'
+  | 'mirror_part'
+  | 'asm_defeature'
   | 'structural_member'
   | 'trim_extend'
   | 'end_cap'
@@ -202,6 +212,10 @@ export interface Toast {
 
 export type Tab =
   | 'features'
+  | 'surfaces'
+  | 'direct_editing'
+  | 'mold_tools'
+  | 'mesh'
   | 'sheet_metal'
   | 'weldments'
   | 'sketch'
@@ -273,6 +287,28 @@ interface State {
   asmMarks: AsmMarks
   /** The open drawing, when the document is one; `snapshot` then mirrors its file state. */
   drawing: DrawingSnapshot | null
+  /** Faces coloured by an analysis (face index to 0xRRGGBB), with its legend. */
+  analysis: AnalysisOverlay | null
+  /** Painted triangles of a mesh body, and whether painting is on. */
+  facets: FacetSelection | null
+  /** Drag handles on faces change feature sizes. */
+  instant3d: boolean
+}
+
+export interface AnalysisOverlay {
+  title: string
+  faces: Record<number, number>
+  legend: { label: string; color: number; count: number }[]
+  /** Per-vertex colours for a mesh body (deviation), 0xRRGGBB. */
+  mesh?: { body: string; colors: number[] }
+}
+
+export interface FacetSelection {
+  body: string
+  triangles: number[]
+  painting: boolean
+  /** Brush radius, mm. */
+  radius: number
 }
 
 interface Actions {
@@ -283,6 +319,9 @@ interface Actions {
   setView(name: ViewName): void
   setStatus(text: string): void
   setTab(tab: Tab): void
+  setAnalysis(a: AnalysisOverlay | null): void
+  setFacets(f: FacetSelection | null): void
+  toggleInstant3d(): void
 
   newDoc(): Promise<void>
   open(): Promise<void>
@@ -439,6 +478,9 @@ export const useStore = create<State & Actions>((set, get) => ({
   asmTarget: null,
   asmMarks: { faces: [], meshes: [] },
   drawing: null,
+  analysis: null,
+  facets: null,
+  instant3d: false,
 
   async init() {
     try {
@@ -536,6 +578,18 @@ export const useStore = create<State & Actions>((set, get) => ({
 
   setTab(tab) {
     set({ tab })
+  },
+
+  setAnalysis(analysis) {
+    set({ analysis })
+  },
+
+  setFacets(facets) {
+    set({ facets })
+  },
+
+  toggleInstant3d() {
+    set({ instant3d: !get().instant3d })
   },
 
   async newDoc() {

@@ -211,6 +211,45 @@ input.bad {
   color: var(--danger);
 }
 
+.tree-item.parent {
+  box-shadow: inset 3px 0 0 #2563eb;
+}
+.tree-item.child {
+  box-shadow: inset 3px 0 0 #d97706;
+}
+.legend {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 0;
+}
+.legend-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.swatch {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid rgb(0 0 0 / 20%);
+}
+.panel-help {
+  color: var(--muted, #64748b);
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+.list-item {
+  border-left: 2px solid rgb(0 0 0 / 10%);
+  padding-left: 6px;
+  margin-bottom: 6px;
+}
+.ref-chip {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+}
 .tree-item.drop {
   border-top-color: var(--accent);
 }

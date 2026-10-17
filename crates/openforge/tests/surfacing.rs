@@ -146,6 +146,25 @@ fn analysis_surfaces_meshes_and_saved_bodies() {
     assert_eq!(kinds, vec!["solid", "surface"]);
     let _ = r;
 
+    // Flatten the offset surface: the part's DXF holds its outline.
+    let lifted = core.ok("doc.topology", json!({}))["faces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["centroid"][2].as_f64().unwrap() > 14.9)
+        .unwrap()["ref"]
+        .clone();
+    core.ok(
+        "feature.add",
+        json!({"feature": {"type": "surface_flatten", "faces": [lifted]}}),
+    );
+    let dxf = dir.path("flat.dxf");
+    core.ok("export", json!({ "path": dxf }));
+    let text = std::fs::read_to_string(&dxf).unwrap();
+    assert!(text.contains("CUT"), "{}", &text[..text.len().min(400)]);
+    // Back to the part as it was, for the rest of the test.
+    core.ok("doc.undo", json!({}));
+
     // An STL beside it, as a graphics mesh body.
     let stl = dir.path("cube.stl");
     core.ok("export", json!({ "path": stl }));

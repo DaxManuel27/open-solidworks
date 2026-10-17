@@ -277,8 +277,23 @@ ipcMain.on('chatgpt:cancel', () => chatGPT().cancel())
 ipcMain.on('assistant:stop', (e) => assistantOf(e.sender).stop())
 
 type OpenKind =
-  'part' | 'document' | 'component' | 'import' | 'step' | 'model' | 'standard' | 'template'
+  | 'part'
+  | 'document'
+  | 'component'
+  | 'import'
+  | 'step'
+  | 'model'
+  | 'standard'
+  | 'template'
+  | 'folder'
 ipcMain.handle('dialog:open', async (e, kind: OpenKind) => {
+  if (kind === 'folder') {
+    const win = BrowserWindow.fromWebContents(e.sender) ?? undefined
+    const r = await dialog.showOpenDialog(win!, {
+      properties: ['openDirectory', 'createDirectory'],
+    })
+    return r.canceled ? null : (r.filePaths[0] ?? null)
+  }
   const filters =
     kind === 'part' || kind === 'document'
       ? [DOCUMENT_FILTER, PART_FILTER, ASSEMBLY_FILTER, DRAWING_FILTER]
@@ -290,7 +305,29 @@ ipcMain.handle('dialog:open', async (e, kind: OpenKind) => {
             ? [{ name: 'Sheet Format', extensions: ['ofdt'] }]
             : kind === 'step'
               ? [{ name: 'STEP', extensions: ['step', 'stp'] }]
-              : [{ name: 'STEP or IGES', extensions: ['step', 'stp', 'iges', 'igs'] }]
+              : [
+                  {
+                    name: 'Models, meshes and point clouds',
+                    extensions: [
+                      'step',
+                      'stp',
+                      'iges',
+                      'igs',
+                      'stl',
+                      'obj',
+                      'off',
+                      'ply',
+                      '3mf',
+                      'amf',
+                      'xyz',
+                      'txt',
+                      'asc',
+                    ],
+                  },
+                  { name: 'STEP or IGES', extensions: ['step', 'stp', 'iges', 'igs'] },
+                  { name: 'Meshes', extensions: ['stl', 'obj', 'off', 'ply', '3mf', 'amf'] },
+                  { name: 'Point clouds', extensions: ['xyz', 'txt', 'asc'] },
+                ]
   const win = BrowserWindow.fromWebContents(e.sender) ?? undefined
   const r = await dialog.showOpenDialog(win!, { properties: ['openFile'], filters })
   return r.canceled ? null : (r.filePaths[0] ?? null)

@@ -2,9 +2,9 @@ import * as THREE from 'three'
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js'
 import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js'
 import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js'
-import type { DatumGeometry, Kind, PlaneData, Ref, Scene, Vec3 } from '../protocol'
+import type { DatumGeometry, Kind, MeshBodyView, PlaneData, Ref, Scene, Vec3 } from '../protocol'
 import { decodeF32, decodeU32 } from '../protocol'
-import type { Pick, PickKind, ViewName } from '../store'
+import type { AnalysisOverlay, FacetSelection, Pick, PickKind, ViewName } from '../store'
 
 export const COLORS = {
   body: 0xb9c3cd,
@@ -16,6 +16,18 @@ export const COLORS = {
   plane: 0x5b8def,
   sketch: 0x1d4ed8,
   datum: 0x64748b,
+  /** Edges of surface bodies, so open boundaries stand out. */
+  surfaceEdge: 0x7c3aed,
+  mesh: 0xa9b7a4,
+  handle: 0xdc2626,
+}
+
+/** A graphics mesh body in the viewport. */
+interface MeshBody {
+  id: string
+  mesh: THREE.Mesh
+  positions: Float32Array
+  indices: Uint32Array
 }
 
 /** A body uploaded to the GPU, with lookups for picking. */
@@ -93,6 +105,14 @@ export class Engine {
   private datumGroup = new THREE.Group()
   private planeGroup = new THREE.Group()
   private sketchGroup = new THREE.Group()
+  private meshGroup = new THREE.Group()
+  private meshBodies: MeshBody[] = []
+  private facetGroup = new THREE.Group()
+  private handleGroup = new THREE.Group()
+  private surfaceEdges = new Set<number>()
+  private analysis: AnalysisOverlay | null = null
+  /** Extra face materials by colour, for analysis overlays. */
+  private analysisMaterials = new Map<number, number>()
   readonly overlayGroup = new THREE.Group()
   private highlightGroup = new THREE.Group()
   private stdPlaneMeshes: { mesh: THREE.Mesh; ref: Ref }[] = []
@@ -137,7 +157,10 @@ export class Engine {
       this.datumGroup,
       this.planeGroup,
       this.sketchGroup,
+      this.meshGroup,
+      this.facetGroup,
       this.highlightGroup,
+      this.handleGroup,
       this.overlayGroup,
     ]) {
       this.scene.add(g)
@@ -258,8 +281,12 @@ export class Engine {
     } else {
       this.bounds.set(new THREE.Vector3(-50, -50, -50), new THREE.Vector3(50, 50, 50))
     }
+    this.surfaceEdges = new Set(
+      scene.bodies.filter((b) => b.kind === 'surface' && !b.hidden).flatMap((b) => b.edges),
+    )
     if (scene.body)
       this.body = this.uploadBody(scene.body, this.bodyGroup, false, hiddenTopology(scene))
+    this.setMeshes(scene.meshes ?? [])
     for (const d of scene.datums) this.addDatum(d.id, d.geometry)
     for (const curve of [
       ...scene.curves,
@@ -450,6 +477,21 @@ export class Engine {
       new THREE.LineBasicMaterial({ color: preview ? 0x92400e : COLORS.edge }),
     )
     group.add(edges)
+    if (!preview && this.surfaceEdges.size) {
+      const open: number[] = []
+      for (const e of this.surfaceEdges) {
+        if (hidden.edge.has(e) || e + 1 >= edgeRanges.length) continue
+        for (let i = edgeRanges[e]!; i + 1 < edgeRanges[e + 1]!; i++)
+          for (let k = 0; k < 6; k++) open.push(edgePoints[3 * i + k]!)
+      }
+      const og = new THREE.BufferGeometry().setAttribute(
+        'position',
+        new THREE.Float32BufferAttribute(open, 3),
+      )
+      group.add(
+        new THREE.LineSegments(og, new THREE.LineBasicMaterial({ color: COLORS.surfaceEdge })),
+      )
+    }
     this.requestRender()
     return {
       hidden,
@@ -598,6 +640,12 @@ export class Engine {
     const style = new Uint8Array(b.faceCount)
     const mark = (p: { kind: string; index?: number }, s: number) => {
       if (p.kind === 'face' && p.index !== undefined && p.index < b.faceCount) style[p.index] = s
+    }
+    if (this.analysis) {
+      for (const [face, color] of Object.entries(this.analysis.faces)) {
+        const f = Number(face)
+        if (f < b.faceCount) style[f] = this.analysisMaterial(b, color)
+      }
     }
     for (const a of this.highlights.aux) mark(a, 3)
     for (const s of this.highlights.selected) mark(s as { kind: string; index?: number }, 2)
@@ -792,6 +840,236 @@ export class Engine {
       }
     }
     return null
+  }
+
+  // ---- Phase 6: meshes, analysis, painting and handles ----
+
+  private analysisMaterial(b: BodyMesh, color: number): number {
+    const known = this.analysisMaterials.get(color)
+    if (known !== undefined && b.materials[known]) return known
+    const m = new THREE.MeshStandardMaterial({
+      color,
+      metalness: 0.05,
+      roughness: 0.6,
+      polygonOffset: true,
+      polygonOffsetFactor: 1,
+      polygonOffsetUnits: 1,
+      side: THREE.DoubleSide,
+    })
+    b.materials.push(m)
+    b.mesh.material = b.materials
+    const index = b.materials.length - 1
+    this.analysisMaterials.set(color, index)
+    return index
+  }
+
+  /** Colour faces (and a mesh body's vertices) by an analysis, or clear it. */
+  setAnalysis(a: AnalysisOverlay | null): void {
+    this.analysis = a
+    for (const m of this.meshBodies) {
+      const geom = m.mesh.geometry
+      const colors = a?.mesh?.body === m.id ? a.mesh.colors : null
+      if (colors) {
+        const c = new Float32Array(colors.length * 3)
+        colors.forEach((v, i) => {
+          c[3 * i] = ((v >> 16) & 255) / 255
+          c[3 * i + 1] = ((v >> 8) & 255) / 255
+          c[3 * i + 2] = (v & 255) / 255
+        })
+        geom.setAttribute('color', new THREE.BufferAttribute(c, 3))
+        ;(m.mesh.material as THREE.MeshStandardMaterial).vertexColors = true
+      } else if (!m.mesh.userData.fileColors) {
+        geom.deleteAttribute('color')
+        ;(m.mesh.material as THREE.MeshStandardMaterial).vertexColors = false
+      }
+      ;(m.mesh.material as THREE.Material).needsUpdate = true
+    }
+    this.applyHighlights()
+  }
+
+  private setMeshes(meshes: MeshBodyView[]): void {
+    for (const m of this.meshBodies) {
+      m.mesh.geometry.dispose()
+      ;(m.mesh.material as THREE.Material).dispose()
+    }
+    this.meshGroup.clear()
+    this.meshBodies = []
+    for (const view of meshes) {
+      if (view.hidden) continue
+      const positions = decodeF32(view.positions)
+      const indices = decodeU32(view.indices)
+      const geom = new THREE.BufferGeometry()
+      geom.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+      geom.setIndex(new THREE.BufferAttribute(indices, 1))
+      geom.computeVertexNormals()
+      const material = new THREE.MeshStandardMaterial({
+        color: COLORS.mesh,
+        metalness: 0.02,
+        roughness: 0.7,
+        side: THREE.DoubleSide,
+        flatShading: true,
+      })
+      const mesh = new THREE.Mesh(geom, material)
+      if (view.colors) {
+        const raw = decodeU32(view.colors)
+        const c = new Float32Array(raw.length * 3)
+        raw.forEach((v, i) => {
+          c[3 * i] = ((v >> 16) & 255) / 255
+          c[3 * i + 1] = ((v >> 8) & 255) / 255
+          c[3 * i + 2] = (v & 255) / 255
+        })
+        geom.setAttribute('color', new THREE.BufferAttribute(c, 3))
+        material.vertexColors = true
+        mesh.userData.fileColors = true
+      }
+      mesh.userData.meshBody = view.id
+      this.meshGroup.add(mesh)
+      this.meshBodies.push({ id: view.id, mesh, positions, indices })
+    }
+    if (this.analysis) this.setAnalysis(this.analysis)
+  }
+
+  /** The mesh body triangle under the cursor. */
+  pickFacet(
+    clientX: number,
+    clientY: number,
+  ): { body: string; triangle: number; point: THREE.Vector3 } | null {
+    if (!this.meshBodies.length) return null
+    this.raycaster.setFromCamera(this.ndc(clientX, clientY), this.camera)
+    const hit = this.raycaster.intersectObjects(this.meshBodies.map((m) => m.mesh))[0]
+    if (!hit || hit.faceIndex == null) return null
+    return {
+      body: hit.object.userData.meshBody as string,
+      triangle: hit.faceIndex,
+      point: hit.point,
+    }
+  }
+
+  /** Triangles of a mesh body with their centre within `radius` of `point`. */
+  trianglesNear(body: string, point: THREE.Vector3, radius: number): number[] {
+    const m = this.meshBodies.find((x) => x.id === body)
+    if (!m) return []
+    const out: number[] = []
+    const p = m.positions
+    const r2 = radius * radius
+    for (let t = 0; t < m.indices.length / 3; t++) {
+      let cx = 0
+      let cy = 0
+      let cz = 0
+      for (let k = 0; k < 3; k++) {
+        const v = m.indices[3 * t + k]!
+        cx += p[3 * v]!
+        cy += p[3 * v + 1]!
+        cz += p[3 * v + 2]!
+      }
+      const dx = cx / 3 - point.x
+      const dy = cy / 3 - point.y
+      const dz = cz / 3 - point.z
+      if (dx * dx + dy * dy + dz * dz <= r2) out.push(t)
+    }
+    return out
+  }
+
+  /** Highlight painted triangles of a mesh body. */
+  setFacets(sel: FacetSelection | null): void {
+    this.facetGroup.traverse((o) => (o as THREE.Mesh).geometry?.dispose())
+    this.facetGroup.clear()
+    const m = sel && this.meshBodies.find((x) => x.id === sel.body)
+    if (m && sel.triangles.length) {
+      const idx = new Uint32Array(sel.triangles.length * 3)
+      sel.triangles.forEach((t, i) => {
+        idx[3 * i] = m.indices[3 * t]!
+        idx[3 * i + 1] = m.indices[3 * t + 1]!
+        idx[3 * i + 2] = m.indices[3 * t + 2]!
+      })
+      const geom = new THREE.BufferGeometry()
+      geom.setAttribute('position', new THREE.BufferAttribute(m.positions, 3))
+      geom.setIndex(new THREE.BufferAttribute(idx, 1))
+      const mat = new THREE.MeshBasicMaterial({
+        color: COLORS.selected,
+        transparent: true,
+        opacity: 0.55,
+        side: THREE.DoubleSide,
+        polygonOffset: true,
+        polygonOffsetFactor: -2,
+        polygonOffsetUnits: -2,
+      })
+      this.facetGroup.add(new THREE.Mesh(geom, mat))
+    }
+    this.requestRender()
+  }
+
+  /** A face's area-weighted centre and its normal there. */
+  faceFrame(face: number): { center: THREE.Vector3; normal: THREE.Vector3 } | null {
+    const b = this.body
+    if (!b || face >= b.faceCount) return null
+    const pos = b.mesh.geometry.getAttribute('position') as THREE.BufferAttribute
+    const index = b.mesh.geometry.getIndex()!
+    const center = new THREE.Vector3()
+    const normal = new THREE.Vector3()
+    let area = 0
+    const a = new THREE.Vector3()
+    const c = new THREE.Vector3()
+    const d = new THREE.Vector3()
+    for (let t = b.faceRanges[face]!; t < b.faceRanges[face + 1]!; t++) {
+      a.fromBufferAttribute(pos, index.getX(3 * t))
+      c.fromBufferAttribute(pos, index.getX(3 * t + 1))
+      d.fromBufferAttribute(pos, index.getX(3 * t + 2))
+      const n = new THREE.Vector3().crossVectors(c.clone().sub(a), d.clone().sub(a))
+      const w = n.length() / 2
+      center.addScaledVector(a.clone().add(c).add(d).divideScalar(3), w)
+      normal.add(n)
+      area += w
+    }
+    if (area <= 0) return null
+    return { center: center.divideScalar(area), normal: normal.normalize() }
+  }
+
+  /** Show (or hide) a drag arrow along `dir` from `origin`. */
+  setHandle(h: { origin: THREE.Vector3; dir: THREE.Vector3 } | null): void {
+    this.handleGroup.clear()
+    if (h) {
+      const arrow = new THREE.ArrowHelper(
+        h.dir.clone().normalize(),
+        h.origin,
+        this.size * 0.12,
+        COLORS.handle,
+        this.size * 0.035,
+        this.size * 0.02,
+      )
+      arrow.renderOrder = 10
+      arrow.traverse((o) => {
+        const m = (o as THREE.Mesh).material as THREE.Material | undefined
+        if (m) m.depthTest = false
+      })
+      this.handleGroup.add(arrow)
+    }
+    this.requestRender()
+  }
+
+  /** Whether the cursor is on the drag arrow. */
+  onHandle(clientX: number, clientY: number): boolean {
+    if (!this.handleGroup.children.length) return false
+    this.raycaster.setFromCamera(this.ndc(clientX, clientY), this.camera)
+    this.raycaster.params.Line = { threshold: this.pixel * 6 }
+    return this.raycaster.intersectObjects(this.handleGroup.children, true).length > 0
+  }
+
+  /** How far along the line (origin, dir) the cursor is, in model units. */
+  along(origin: THREE.Vector3, dir: THREE.Vector3, clientX: number, clientY: number): number {
+    this.raycaster.setFromCamera(this.ndc(clientX, clientY), this.camera)
+    const ray = this.raycaster.ray
+    const d = dir.clone().normalize()
+    // Closest points between the ray and the line.
+    const w0 = ray.origin.clone().sub(origin)
+    const a = ray.direction.dot(ray.direction)
+    const b = ray.direction.dot(d)
+    const c = d.dot(d)
+    const dd = ray.direction.dot(w0)
+    const e = d.dot(w0)
+    const den = a * c - b * b
+    if (Math.abs(den) < 1e-12) return 0
+    return (a * e - b * dd) / den
   }
 
   // ---- Camera ----

@@ -16,6 +16,10 @@ import {
   featureGroups,
   sheetMetalGroups,
   weldmentGroups,
+  surfaceGroups,
+  directGroups,
+  moldGroups,
+  meshGroups,
   sketchGroups,
   tabOrder as partTabOrder,
   unavailableTabs,
@@ -58,7 +62,15 @@ export function CommandManager() {
                 ? sheetMetalGroups
                 : tab === 'weldments'
                   ? weldmentGroups
-                  : sketchGroups(editing)
+                  : tab === 'surfaces'
+                    ? surfaceGroups
+                    : tab === 'direct_editing'
+                      ? directGroups
+                      : tab === 'mold_tools'
+                        ? moldGroups
+                        : tab === 'mesh'
+                          ? meshGroups
+                          : sketchGroups(editing)
   useEffect(() => {
     const el = track.current!
     const update = () =>

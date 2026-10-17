@@ -69,11 +69,45 @@ export type DatumGeometry =
 
 export interface BodyView {
   id: string
+  /** Solid, surface (zero thickness) or graphics mesh. */
+  kind?: 'solid' | 'surface' | 'mesh'
   name: string
   hidden: boolean
   faces: number[]
   edges: number[]
   vertices: number[]
+  /** Mesh bodies: their triangle count. */
+  triangles?: number
+}
+
+/** A graphics mesh body: base64 positions, triangle indices and groups. */
+export interface MeshBodyView {
+  id: string
+  name: string
+  hidden: boolean
+  positions: string
+  indices: string
+  groups: string
+  /** 0xRRGGBB per vertex, when the file had colours. */
+  colors: string | null
+  triangle_count: number
+}
+
+/** A Surface Flatten's triangles in the model, with each one's stretch. */
+export interface FlatteningView {
+  id: number
+  positions: string
+  indices: string
+  strain: string
+}
+
+/** Mould folders. */
+export interface MoldView {
+  parting_lines: { feature: number; body: string; edges: number; openings: number }[]
+  shut_off: string[]
+  parting_surfaces: string[]
+  cores: string[]
+  cavities: string[]
 }
 
 /** A bend line of a flattened sheet metal body: two model points. */
@@ -118,6 +152,8 @@ export interface Scene {
     segments: { reference: Extract<Ref, { type: 'curve_segment' }>; polylines: number[][] }[]
   }[]
   bodies: BodyView[]
+  meshes?: MeshBodyView[]
+  flattenings?: FlatteningView[]
   body: MeshPayload | null
   bbox: { min: Vec3; max: Vec3 } | null
   datums: { id: number; name: string; geometry: DatumGeometry }[]
@@ -152,6 +188,8 @@ export interface FeatureView {
   rolled_back: boolean
   sketch_status: string | null
   params: FeatureParams
+  /** Features this one uses. */
+  depends_on?: number[]
 }
 
 export interface Units {
@@ -180,6 +218,7 @@ export interface Snapshot {
   can_redo: boolean
   editing: number | null
   sheet_metal?: SheetMetalView[]
+  mold?: MoldView
   scene?: Scene
 }
 

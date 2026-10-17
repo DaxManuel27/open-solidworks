@@ -454,6 +454,7 @@ pub fn snapshot(model: &Model) -> Value {
                 "rolled_back": s.rolled_back,
                 "sketch_status": s.sketch.as_ref().map(|r| r.summary()),
                 "params": params,
+                "depends_on": f.depends_on(),
             })
         })
         .collect();

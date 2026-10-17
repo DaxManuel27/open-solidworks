@@ -9,6 +9,7 @@ import {
   toggleFlatten,
 } from './actions'
 import type { IconId } from './icons'
+import { FORM_FEATURES, type Needs } from './phase6'
 
 type State = ReturnType<typeof useStore.getState>
 interface Definition {
@@ -119,6 +120,54 @@ const view = (name: ViewName, label: string, icon: IconId = 'orientation'): Defi
   run: (s) => s.setView(name),
 })
 const placeholder = (label: string, icon: IconId): Definition => ({ label, icon })
+const needsReason = (s: State, needs: Needs): string | undefined => {
+  const bodies = s.scene?.bodies ?? []
+  const has = (kind: string) => bodies.some((b) => (b.kind ?? 'solid') === kind)
+  switch (needs) {
+    case 'sketch':
+      return !s.snapshot?.features.some(
+        (f) => (f.type === 'sketch' || f.type === 'sketch3d') && !f.suppressed,
+      )
+        ? 'Requires a sketch'
+        : undefined
+    case 'solid':
+      return has('solid') ? undefined : 'Requires a solid body'
+    case 'surface':
+      return has('surface') ? undefined : 'Requires a surface body'
+    case 'mesh':
+      return has('mesh')
+        ? undefined
+        : 'Requires a mesh body; import an STL, OBJ, PLY or point cloud'
+    case 'body':
+      return bodies.length ? undefined : 'Requires a body'
+    case 'parting':
+      return s.snapshot?.features.some((f) => f.type === 'parting_line' && !f.error)
+        ? undefined
+        : 'Add a Parting Line first'
+    default:
+      return undefined
+  }
+}
+/** A Phase 6 feature, edited in the generic feature panel. */
+const form = (type: keyof typeof FORM_FEATURES & string): Definition => {
+  const f = FORM_FEATURES[type]!
+  return {
+    label: f.label,
+    icon: f.icon,
+    run: () => startFeature('feature_form', type),
+    unavailable: (s) =>
+      (s.assembly ? 'Open a part to use this' : undefined) ??
+      idlePanel(s) ??
+      needsReason(s, f.needs),
+  }
+}
+const analysisPanel = (type: PanelType, label: string, icon: IconId, needs: Needs): Definition => ({
+  label,
+  icon,
+  run: (s) => s.openPanel({ type }),
+  unavailable: (s) =>
+    (s.assembly ? 'Open a part to use this' : undefined) ?? part(s) ?? needsReason(s, needs),
+})
 const drawingOnly = (s: State) =>
   !s.drawing ? 'Requires a drawing' : s.panel ? 'Finish or cancel the current panel' : undefined
 const hasViews = (s: State) =>
@@ -523,6 +572,72 @@ export const commands = {
   appearance: placeholder('Appearance', 'appearance'),
   scene: placeholder('Scene', 'scene'),
   viewSettings: placeholder('View Settings', 'settings'),
+  p6ExtrudedSurface: form('extruded_surface'),
+  p6RevolvedSurface: form('revolved_surface'),
+  p6SweptSurface: form('swept_surface'),
+  p6LoftedSurface: form('lofted_surface'),
+  p6BoundarySurface: form('boundary_surface'),
+  p6PlanarSurface: form('planar_surface'),
+  p6OffsetSurface: form('offset_surface'),
+  p6FilledSurface: form('filled_surface'),
+  p6RuledSurface: form('ruled_surface'),
+  p6RadiateSurface: form('radiate_surface'),
+  p6Knit: form('knit'),
+  p6Thicken: form('thicken'),
+  p6CutWithSurface: form('cut_with_surface'),
+  p6TrimSurface: form('trim_surface'),
+  p6UntrimSurface: form('untrim_surface'),
+  p6ExtendSurface: form('extend_surface'),
+  p6MidSurface: form('mid_surface'),
+  p6Freeform: form('freeform'),
+  p6SurfaceFlatten: form('surface_flatten'),
+  p6DeleteFace: form('delete_face'),
+  p6MoveFace: form('move_face'),
+  p6ReplaceFace: form('replace_face'),
+  p6DeleteHole: form('delete_hole'),
+  p6DeleteBody: form('delete_body'),
+  p6Intersect: form('intersect'),
+  p6Scale: form('scale'),
+  p6Flex: form('flex'),
+  p6Deform: form('deform'),
+  p6Indent: form('indent'),
+  p6InsertPart: form('insert_part'),
+  p6Defeature: form('defeature'),
+  p6Slicing: form('slicing'),
+  p6PartingLine: form('parting_line'),
+  p6ShutOffSurfaces: form('shut_off_surfaces'),
+  p6PartingSurface: form('parting_surface'),
+  p6ToolingSplit: form('tooling_split'),
+  p6MoldCore: form('mold_core'),
+  p6ConvertToMesh: form('convert_to_mesh'),
+  p6DecimateMesh: form('decimate_mesh'),
+  p6SegmentMesh: form('segment_mesh'),
+  p6MeshPrep: form('mesh_prep'),
+  p6MeshToBrep: form('mesh_to_brep'),
+  p6SurfaceFromMesh: form('surface_from_mesh'),
+  p6MeshToSolid: form('mesh_to_solid'),
+  p6MeshSections: form('mesh_sections'),
+  draftAnalysis: analysisPanel('draft_analysis', 'Draft Analysis', 'draftAnalysis', 'solid'),
+  undercutAnalysis: analysisPanel('undercut_analysis', 'Undercut Analysis', 'undercut', 'solid'),
+  deviationAnalysis: analysisPanel('deviation_analysis', 'Deviation Analysis', 'deviation', 'mesh'),
+  compareBodies: analysisPanel('compare_bodies', 'Body Compare', 'compareBodies', 'body'),
+  projectedArea: analysisPanel('projected_area', 'Projected Area', 'measure', 'body'),
+  saveBodies: analysisPanel('save_bodies', 'Save Bodies', 'saveBodies', 'body'),
+  mirrorPart: analysisPanel('mirror_part', 'Mirror Part', 'mirrorPart', 'body'),
+  asmDefeature: asm('asm_defeature', 'Defeature', 'defeature'),
+  instant3d: {
+    label: 'Instant3D',
+    icon: 'instant3d',
+    run: (s) => s.toggleInstant3d(),
+    active: (s) => s.instant3d,
+    unavailable: (s) => (s.assembly ? 'Open a part to use this' : undefined),
+  },
+  importMesh: {
+    label: 'Import Mesh or Scan',
+    icon: 'meshBody',
+    run: (s) => s.importFile(),
+    unavailable: (s) => (s.assembly ? 'Open a part to use this' : idlePanel(s)),
+  },
 } satisfies Record<string, Definition>
 
 export type CommandId = keyof typeof commands

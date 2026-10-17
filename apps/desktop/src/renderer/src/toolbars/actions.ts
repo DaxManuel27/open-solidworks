@@ -29,12 +29,12 @@ export function beginSketch(): void | Promise<void> {
 }
 
 /** Open a feature panel, finishing the current sketch first and using it. */
-export async function startFeature(type: PanelType): Promise<void> {
+export async function startFeature(type: PanelType, variant?: string): Promise<void> {
   const s = useStore.getState()
   const sketch = s.sketch?.id
   if (sketch !== undefined) await s.closeSketch()
   if (s.panel) await s.closePanel()
-  useStore.getState().openPanel({ type, sketch })
+  useStore.getState().openPanel({ type, sketch, ...(variant ? { variant } : {}) })
 }
 
 /** Flatten every sheet metal body or form it again: the Flat-Pattern feature's suppression. */

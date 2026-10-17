@@ -113,6 +113,110 @@ export const sheetMetalGroups: CommandGroup[] = [
     columns: [[{ command: 'flatten', variant: 'large' }], [{ command: 'flatPattern' }]],
   },
 ]
+export const surfaceGroups: CommandGroup[] = [
+  {
+    label: 'Surfaces',
+    columns: [
+      [{ command: 'p6ExtrudedSurface', variant: 'large' }],
+      [{ command: 'p6RevolvedSurface', variant: 'large' }],
+      [
+        { command: 'p6SweptSurface' },
+        { command: 'p6LoftedSurface' },
+        { command: 'p6BoundarySurface' },
+      ],
+      [
+        { command: 'p6PlanarSurface' },
+        { command: 'p6OffsetSurface' },
+        { command: 'p6FilledSurface' },
+      ],
+      [{ command: 'p6RuledSurface' }, { command: 'p6RadiateSurface' }, { command: 'p6MidSurface' }],
+    ],
+  },
+  {
+    label: 'Edit',
+    columns: [
+      [{ command: 'p6Knit', variant: 'large' }],
+      [{ command: 'p6Thicken', variant: 'large' }],
+      [
+        { command: 'p6TrimSurface' },
+        { command: 'p6UntrimSurface' },
+        { command: 'p6ExtendSurface' },
+      ],
+      [{ command: 'p6CutWithSurface' }, { command: 'p6DeleteFace' }, { command: 'p6DeleteHole' }],
+      [{ command: 'p6Freeform' }, { command: 'p6SurfaceFlatten' }, { command: 'p6ReplaceFace' }],
+    ],
+  },
+]
+export const directGroups: CommandGroup[] = [
+  {
+    label: 'Faces',
+    columns: [
+      [{ command: 'p6MoveFace', variant: 'large' }],
+      [{ command: 'p6DeleteFace', variant: 'large' }],
+      [{ command: 'p6ReplaceFace' }, { command: 'p6Defeature' }],
+      [{ command: 'instant3d', variant: 'large' }],
+    ],
+  },
+  {
+    label: 'Bodies',
+    columns: [
+      [{ command: 'p6DeleteBody' }, { command: 'p6Intersect' }, { command: 'moveBody' }],
+      [{ command: 'splitBody' }, { command: 'p6InsertPart' }, { command: 'mirrorPart' }],
+      [{ command: 'saveBodies' }, { command: 'compareBodies' }, { command: 'p6Slicing' }],
+    ],
+  },
+  {
+    label: 'Shape',
+    columns: [
+      [{ command: 'p6Scale' }, { command: 'p6Flex' }, { command: 'p6Deform' }],
+      [{ command: 'p6Indent' }, { command: 'p6Freeform' }],
+    ],
+  },
+]
+export const moldGroups: CommandGroup[] = [
+  {
+    label: 'Analysis',
+    columns: [
+      [{ command: 'draftAnalysis', variant: 'large' }],
+      [{ command: 'undercutAnalysis', variant: 'large' }],
+    ],
+  },
+  {
+    label: 'Mould',
+    columns: [
+      [{ command: 'p6Scale', variant: 'large' }],
+      [{ command: 'p6PartingLine', variant: 'large' }],
+      [{ command: 'p6ShutOffSurfaces' }, { command: 'p6PartingSurface' }],
+      [{ command: 'p6ToolingSplit', variant: 'large' }],
+      [{ command: 'p6MoldCore', variant: 'large' }],
+    ],
+  },
+  {
+    label: 'Surfaces',
+    columns: [
+      [{ command: 'p6RuledSurface' }, { command: 'p6RadiateSurface' }, { command: 'p6Knit' }],
+    ],
+  },
+]
+export const meshGroups: CommandGroup[] = [
+  {
+    label: 'Mesh',
+    columns: [
+      [{ command: 'importMesh', variant: 'large' }],
+      [{ command: 'p6ConvertToMesh' }, { command: 'p6MeshToBrep' }, { command: 'p6DecimateMesh' }],
+      [{ command: 'p6SegmentMesh' }, { command: 'p6MeshPrep' }],
+    ],
+  },
+  {
+    label: 'Scan to Model',
+    columns: [
+      [{ command: 'p6SurfaceFromMesh', variant: 'large' }],
+      [{ command: 'p6MeshToSolid', variant: 'large' }],
+      [{ command: 'p6MeshSections', variant: 'large' }],
+      [{ command: 'deviationAnalysis', variant: 'large' }],
+    ],
+  },
+]
 export const weldmentGroups: CommandGroup[] = [
   {
     label: 'Weldment',
@@ -166,7 +270,12 @@ export const sketchGroups = (editing: boolean): CommandGroup[] => [
 export const evaluateGroups: CommandGroup[] = [
   {
     label: 'Analysis',
-    columns: [[{ command: 'measure', variant: 'large' }], [{ command: 'mass', variant: 'large' }]],
+    columns: [
+      [{ command: 'measure', variant: 'large' }],
+      [{ command: 'mass', variant: 'large' }],
+      [{ command: 'draftAnalysis' }, { command: 'undercutAnalysis' }, { command: 'projectedArea' }],
+      [{ command: 'deviationAnalysis' }, { command: 'compareBodies' }],
+    ],
   },
   {
     label: 'Document',
@@ -230,6 +339,7 @@ export const assemblyGroups: CommandGroup[] = [
     columns: [
       [{ command: 'explodedView', variant: 'large' }],
       [{ command: 'interference' }, { command: 'clearance' }, { command: 'bom' }],
+      [{ command: 'asmDefeature' }],
       [
         {
           label: 'Reference Geometry',
@@ -395,17 +505,15 @@ export const assemblyTabOrder = [
 export const availableTabs: { id: Tab; label: string }[] = [
   { id: 'features', label: 'Features' },
   { id: 'sketch', label: 'Sketch' },
+  { id: 'surfaces', label: 'Surfaces' },
   { id: 'sheet_metal', label: 'Sheet Metal' },
   { id: 'weldments', label: 'Weldments' },
+  { id: 'direct_editing', label: 'Direct Editing' },
+  { id: 'mold_tools', label: 'Mold Tools' },
+  { id: 'mesh', label: 'Mesh' },
   { id: 'evaluate', label: 'Evaluate' },
 ]
-export const unavailableTabs = [
-  'Layout',
-  'Surfaces',
-  'Direct Editing',
-  'Annotations',
-  'Add-ins',
-] as const
+export const unavailableTabs = ['Layout', 'Annotations', 'Add-ins'] as const
 export const tabOrder = [
   'Features',
   'Sketch',
@@ -413,6 +521,8 @@ export const tabOrder = [
   'Sheet Metal',
   'Weldments',
   'Direct Editing',
+  'Mold Tools',
+  'Mesh',
   'Evaluate',
   'Annotations',
   'Add-ins',

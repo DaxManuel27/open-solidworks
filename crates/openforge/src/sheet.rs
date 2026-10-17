@@ -68,7 +68,7 @@ pub fn export_dxf(model: &Model, p: &Export) -> Result<Vec<PathBuf>, String> {
     {
         return Err(format!("body {} is not a sheet metal body", id.0));
     }
-    let flats: Vec<(String, FlatOutline)> = all
+    let mut flats: Vec<(String, FlatOutline)> = all
         .into_iter()
         .filter(|(id, _)| p.bodies.as_ref().is_none_or(|b| b.contains(id)))
         .map(|(id, flat)| {
@@ -76,8 +76,30 @@ pub fn export_dxf(model: &Model, p: &Export) -> Result<Vec<PathBuf>, String> {
             (body_name(&model.doc, state, index), flat)
         })
         .collect();
+    // Surface Flatten outlines too.
+    for fid in state.flattenings.keys() {
+        let prefix = format!("b{fid}:");
+        for (i, b) in state.surfaces.iter().enumerate() {
+            if !b.id.0.starts_with(&prefix) || p.bodies.as_ref().is_some_and(|w| !w.contains(&b.id))
+            {
+                continue;
+            }
+            let face = b.geometry.shape.face_info(0).map_err(|e| e.0)?;
+            let plane = of_model::geom::Plane::new(face.point, face.x_dir, face.normal);
+            let flat = of_model::sheet_metal::Flattened {
+                shape: b.geometry.shape.clone(),
+                names: b.geometry.names.clone(),
+                plane,
+                thickness: 0.0,
+                bend_lines: Vec::new(),
+                marks: Vec::new(),
+            };
+            let outline = of_model::flat::outline(&flat)?;
+            flats.push((crate::views::surface_name(&model.doc, state, i), outline));
+        }
+    }
     if flats.is_empty() {
-        return Err("the part has no sheet metal bodies to flatten".into());
+        return Err("the part has no sheet metal bodies or flattened surfaces to write".into());
     }
     let standard = Standard::iso();
     let version = p.dxf_version.unwrap_or_default();

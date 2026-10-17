@@ -98,6 +98,23 @@ pub fn is_assembly(path: &Path) -> bool {
     of_assembly::file::is_assembly(path)
 }
 
+/// Graphics mesh bodies, as faceted shells after the B-rep (so B-rep
+/// indices don't move), for hidden-line views. Huge meshes are left out.
+fn with_meshes(state: &of_model::State, shape: Option<Shape>) -> Option<Shape> {
+    const LIMIT: usize = 200_000;
+    let meshes: Vec<Shape> = state
+        .meshes
+        .iter()
+        .filter(|m| m.mesh.triangles.len() <= LIMIT)
+        .filter_map(|m| Shape::mesh_brep(&m.mesh.positions, &m.mesh.triangles).ok())
+        .collect();
+    match (shape, meshes.is_empty()) {
+        (s, true) => s,
+        (Some(s), false) => Some(Shape::compound(std::iter::once(&s).chain(meshes.iter()))),
+        (None, false) => Some(Shape::compound(&meshes)),
+    }
+}
+
 impl Sources {
     /// The content hash of a model file.
     pub fn hash(&mut self, path: &Path) -> Result<String, String> {
@@ -195,9 +212,7 @@ impl Sources {
         }
         if !is_assembly(path) {
             let part = self.part(path, configuration, flat)?;
-            let whole = part
-                .display_shape()
-                .cloned()
+            let whole = with_meshes(part.state(), part.display_shape().cloned())
                 .ok_or_else(|| "the part has no geometry".to_string())?;
             let (shape, edge_map) = match bodies {
                 Some(ids) => {

@@ -40,6 +40,17 @@ import {
   TabAndSlotPanel,
 } from './sheet-metal/details'
 import { WrapPanel } from './wrap'
+import { FeatureFormPanel } from './schema'
+import {
+  AsmDefeaturePanel,
+  ComparePanel,
+  DeviationPanel,
+  DraftAnalysisPanel,
+  MirrorPartPanel,
+  ProjectedAreaPanel,
+  SaveBodiesPanel,
+  UndercutPanel,
+} from './analysis'
 import { AdvancedDressupPanel, BoundaryPanel, CurvePanel, SweepLoftPanel } from './advanced'
 import { ConfigurationsPanel } from './configurations'
 import { EquationsPanel } from './equations'
@@ -270,6 +281,24 @@ export function PanelHost({ panel }: { panel: Panel }) {
       return <FormingToolPanel key={key} panel={panel} />
     case 'flat_pattern':
       return <FlatPatternPanel key={key} panel={panel} />
+    case 'feature_form':
+      return <FeatureFormPanel key={key} panel={panel} />
+    case 'draft_analysis':
+      return <DraftAnalysisPanel key={key} />
+    case 'undercut_analysis':
+      return <UndercutPanel key={key} />
+    case 'deviation_analysis':
+      return <DeviationPanel key={key} />
+    case 'compare_bodies':
+      return <ComparePanel key={key} />
+    case 'projected_area':
+      return <ProjectedAreaPanel key={key} />
+    case 'save_bodies':
+      return <SaveBodiesPanel key={key} />
+    case 'mirror_part':
+      return <MirrorPartPanel key={key} />
+    case 'asm_defeature':
+      return <AsmDefeaturePanel key={key} />
     case 'wrap':
       return <WrapPanel key={key} panel={panel} />
     case 'cosmetic_thread':

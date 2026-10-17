@@ -6,6 +6,7 @@ import { type AsmPick, type Pick, type PickKind, useStore } from '../store'
 import { formatAngle, formatLength, parseAngle, parseLength } from '../units'
 import { AssemblyView, type TriadHandle } from './assembly-view'
 import { Engine } from './engine'
+import { instantEdit } from './instant3d'
 import { useMove } from './move-state'
 import { type Label, Sketcher } from './sketcher'
 import { SpatialSketcher } from './spatial-sketcher'
@@ -98,6 +99,9 @@ export function Viewport() {
   const assemblyComponents = useStore((s) => s.assembly?.components)
   const asmRef = useRef<AssemblyView | null>(null)
   const [asmHover, setAsmHover] = useState<AsmPick | null>(null)
+  const analysis = useStore((s) => s.analysis)
+  const facets = useStore((s) => s.facets)
+  const instant3d = useStore((s) => s.instant3d)
 
   // Create the engine and sketcher once.
   useEffect(() => {
@@ -200,6 +204,26 @@ export function Viewport() {
   }, [preview])
 
   useEffect(() => {
+    engineRef.current?.setAnalysis(analysis)
+  }, [analysis, scene])
+
+  useEffect(() => {
+    engineRef.current?.setFacets(facets)
+  }, [facets, scene])
+
+  // Instant3D: an arrow on the one selected face.
+  useEffect(() => {
+    const e = engineRef.current
+    if (!e) return
+    const only = selection.length === 1 ? selection[0]! : null
+    const frame =
+      instant3d && only && only.pick.kind === 'face' && !sketch
+        ? e.faceFrame(only.pick.index)
+        : null
+    e.setHandle(frame ? { origin: frame.center, dir: frame.normal } : null)
+  }, [instant3d, selection, scene, sketch])
+
+  useEffect(() => {
     const e = engineRef.current
     if (!e) return
     e.setHighlights({ hover, selected: selection.map((s) => s.pick), aux: highlights })
@@ -257,7 +281,31 @@ export function Viewport() {
     let spatialOwns = false
     let hoverFrame = 0
     let drag: ComponentDrag | null = null
+    let painting = false
+    let handle: {
+      origin: THREE.Vector3
+      dir: THREE.Vector3
+      t0: number
+      ref: Ref
+      last: number
+    } | null = null
     const assemblyOpen = () => !!useStore.getState().asmScene
+    const paint = (x: number, y: number) => {
+      const s = useStore.getState()
+      const f = s.facets
+      if (!f) return
+      const hit = engine.pickFacet(x, y)
+      if (!hit || hit.body !== f.body) return
+      const near = engine.trianglesNear(f.body, hit.point, f.radius)
+      const set = new Set(f.triangles)
+      let grew = false
+      for (const t of [hit.triangle, ...near])
+        if (!set.has(t)) {
+          set.add(t)
+          grew = true
+        }
+      if (grew) s.setFacets({ ...f, triangles: [...set] })
+    }
 
     /** Start dragging a component (or a triad handle) at the cursor. */
     const startDrag = (e: PointerEvent): boolean => {
@@ -401,6 +449,21 @@ export function Viewport() {
       canvas.setPointerCapture(e.pointerId)
       down = { x: e.clientX, y: e.clientY, button: e.button }
       sketchOwns = false
+      const st = useStore.getState()
+      if (e.button === 0 && st.facets?.painting && engine.pickFacet(e.clientX, e.clientY)) {
+        painting = true
+        paint(e.clientX, e.clientY)
+        return
+      }
+      if (e.button === 0 && st.instant3d && engine.onHandle(e.clientX, e.clientY)) {
+        const sel = st.selection[0]
+        const frame = sel && sel.pick.kind === 'face' ? engine.faceFrame(sel.pick.index) : null
+        if (sel && frame) {
+          const t0 = engine.along(frame.center, frame.normal, e.clientX, e.clientY)
+          handle = { origin: frame.center, dir: frame.normal, t0, ref: sel.ref, last: 0 }
+          return
+        }
+      }
       if (startDrag(e)) return
       spatialOwns = spatial.onDown(e)
       if (spatialOwns) return
@@ -414,6 +477,21 @@ export function Viewport() {
     }
 
     const onMove = (e: PointerEvent) => {
+      if (painting) {
+        paint(e.clientX, e.clientY)
+        return
+      }
+      if (handle) {
+        const delta = engine.along(handle.origin, handle.dir, e.clientX, e.clientY) - handle.t0
+        const step = Math.round(delta * 10) / 10
+        if (step !== handle.last) {
+          handle.last = step
+          const edit = instantEdit(handle.ref, step)
+          void useStore.getState().preview(edit?.params ?? null, edit?.editing)
+          useStore.getState().setStatus(`${step.toFixed(1)} mm`)
+        }
+        return
+      }
       if (drag) {
         if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) < 3) return
         const s = useStore.getState()
@@ -473,6 +551,19 @@ export function Viewport() {
       const wasDown = down
       down = null
       nav = null
+      if (painting) {
+        painting = false
+        return
+      }
+      if (handle) {
+        const h = handle
+        handle = null
+        const s = useStore.getState()
+        void s.preview(null)
+        const edit = instantEdit(h.ref, h.last)
+        if (edit) void s.commit(edit.params, edit.editing)
+        return
+      }
       if (drag) {
         const d = drag
         drag = null
