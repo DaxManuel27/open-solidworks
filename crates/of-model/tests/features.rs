@@ -872,6 +872,7 @@ fn step_import_and_convert_entities() {
         format: ImportFormat::Step,
         source: "block.step".into(),
         data: base64::engine::general_purpose::STANDARD.encode(data),
+        mesh: None,
     }));
     let mut m2 = Model::new(doc);
     no_errors(&m2);

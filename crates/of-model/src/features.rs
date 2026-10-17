@@ -147,6 +147,12 @@ pub enum PlaneDef {
         #[serde(default)]
         at_end: bool,
     },
+    /// Fitted to triangles of a mesh body.
+    Facets {
+        body: crate::BodyId,
+        #[schemars(length(min = 3))]
+        facets: Vec<u32>,
+    },
 }
 
 impl PlaneDef {
@@ -160,6 +166,7 @@ impl PlaneDef {
             PlaneDef::MidPlane { a, b } => vec![a, b],
             PlaneDef::ParallelAtPoint { reference, point } => vec![reference, point],
             PlaneDef::NormalToCurve { edge, .. } => vec![edge],
+            PlaneDef::Facets { .. } => vec![],
         }
     }
 }
@@ -177,6 +184,12 @@ pub enum AxisDef {
     Edge { edge: Ref },
     /// Through a point, normal to a plane.
     PointAndFace { point: Ref, face: Ref },
+    /// Through a cylindrical run of a mesh body's triangles.
+    Facets {
+        body: crate::BodyId,
+        #[schemars(length(min = 6))]
+        facets: Vec<u32>,
+    },
 }
 
 impl AxisDef {
@@ -186,6 +199,7 @@ impl AxisDef {
             AxisDef::Cylinder { face } => vec![face],
             AxisDef::Edge { edge } => vec![edge],
             AxisDef::PointAndFace { point, face } => vec![point, face],
+            AxisDef::Facets { .. } => vec![],
         }
     }
 }
@@ -660,6 +674,15 @@ fn is_true(v: &bool) -> bool {
 pub enum ImportFormat {
     Step,
     Iges,
+    Stl,
+    Obj,
+    Off,
+    Ply,
+    #[serde(rename = "3mf")]
+    ThreeMf,
+    Amf,
+    /// A point cloud, one `x y z` per line (XYZ, TXT, ASC).
+    Points,
 }
 
 /// A body imported from a STEP or IGES file, stored inside the document.
@@ -670,6 +693,9 @@ pub struct Import {
     pub source: String,
     /// The file's contents, base64-encoded.
     pub data: String,
+    /// For meshes and point clouds: what they become.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mesh: Option<crate::meshes::MeshImport>,
 }
 
 pub mod holes {

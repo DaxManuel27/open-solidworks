@@ -627,6 +627,7 @@ fn imported_open_shells_become_surface_bodies() {
         format: ImportFormat::Step,
         source: "mixed.step".into(),
         data,
+        mesh: None,
     }));
     let m = Model::new(doc);
     ok(&m);

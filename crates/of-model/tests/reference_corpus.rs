@@ -92,6 +92,7 @@ fn imported_references_survive_reload_and_reject_a_different_file() {
         format: ImportFormat::Step,
         source: "block.step".into(),
         data: original.clone(),
+        mesh: None,
     }));
     let mut m = Model::new(doc);
     no_errors(&m);

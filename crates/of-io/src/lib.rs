@@ -72,6 +72,15 @@ pub fn export(shape: &Shape, path: &Path, format: ExportFormat) -> Result<(), St
 pub enum ImportKind {
     Step,
     Iges,
+    Stl,
+    Obj,
+    Off,
+    Ply,
+    #[serde(rename = "3mf")]
+    ThreeMf,
+    Amf,
+    /// A point cloud: XYZ, TXT or ASC.
+    Points,
 }
 
 /// A file read for import: its kind, base64 contents and file name.
@@ -90,20 +99,44 @@ pub fn read_import(path: &Path) -> Result<ImportData, String> {
     let kind = match ext.as_str() {
         "step" | "stp" => ImportKind::Step,
         "iges" | "igs" => ImportKind::Iges,
+        "stl" => ImportKind::Stl,
+        "obj" => ImportKind::Obj,
+        "off" => ImportKind::Off,
+        "ply" => ImportKind::Ply,
+        "3mf" => ImportKind::ThreeMf,
+        "amf" => ImportKind::Amf,
+        "xyz" | "txt" | "asc" => ImportKind::Points,
         _ => {
             return Err(
-                "OpenForge can import STEP (.step, .stp) and IGES (.iges, .igs) files".into(),
+                "OpenForge can import STEP, IGES, STL, OBJ, OFF, PLY, 3MF and AMF files, and point clouds (.xyz, .txt, .asc)".into(),
             );
         }
     };
     let bytes =
         std::fs::read(path).map_err(|e| format!("could not read {}: {e}", path.display()))?;
     // Check it parses before storing it in the part.
-    let check = match kind {
-        ImportKind::Step => Shape::read_step(path.to_str().unwrap_or_default()),
-        ImportKind::Iges => Shape::read_iges(path.to_str().unwrap_or_default()),
+    let mesh_format = |f| {
+        of_mesh::io::read(f, &bytes)
+            .map(|_| ())
+            .map_err(|e| e.to_string())
     };
-    check.map_err(|e| e.0)?;
+    match kind {
+        ImportKind::Step => Shape::read_step(path.to_str().unwrap_or_default())
+            .map(|_| ())
+            .map_err(|e| e.0),
+        ImportKind::Iges => Shape::read_iges(path.to_str().unwrap_or_default())
+            .map(|_| ())
+            .map_err(|e| e.0),
+        ImportKind::Stl => mesh_format(of_mesh::io::Format::Stl),
+        ImportKind::Obj => mesh_format(of_mesh::io::Format::Obj),
+        ImportKind::Off => mesh_format(of_mesh::io::Format::Off),
+        ImportKind::Ply => mesh_format(of_mesh::io::Format::Ply),
+        ImportKind::ThreeMf => mesh_format(of_mesh::io::Format::ThreeMf),
+        ImportKind::Amf => mesh_format(of_mesh::io::Format::Amf),
+        ImportKind::Points => of_mesh::io::read_points(&bytes)
+            .map(|_| ())
+            .map_err(|e| e.to_string()),
+    }?;
     Ok(ImportData {
         kind,
         data: base64::engine::general_purpose::STANDARD.encode(bytes),
@@ -130,6 +163,11 @@ mod tests {
         }
         let imported = read_import(&dir.join("of-io-test.step")).unwrap();
         assert_eq!(imported.kind, ImportKind::Step);
-        assert!(read_import(&dir.join("of-io-test.stl")).is_err());
+        // Meshes import too; unknown kinds don't.
+        let mesh = read_import(&dir.join("of-io-test.stl")).unwrap();
+        assert_eq!(mesh.kind, ImportKind::Stl);
+        let other = dir.join("of-io-test.xyzw");
+        std::fs::write(&other, b"x").unwrap();
+        assert!(read_import(&other).is_err());
     }
 }

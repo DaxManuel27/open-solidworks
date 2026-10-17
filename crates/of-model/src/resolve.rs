@@ -46,6 +46,13 @@ pub(crate) type RResult<T> = Result<T, String>;
 pub fn resolve(state: &State, r: &Ref) -> RResult<Resolved> {
     let missing = |what: &str, name: &str| format!("{what} {name} no longer exists");
     Ok(match r {
+        Ref::Body { id } if state.meshes.iter().any(|m| &m.id == id) => {
+            let mesh = &state.mesh(id)?.mesh;
+            Resolved::Body {
+                id: id.clone(),
+                center: mesh.bounds().center(),
+            }
+        }
         Ref::Body { id } => {
             let (body, surface) = state.any_body(id)?;
             let center = if surface {

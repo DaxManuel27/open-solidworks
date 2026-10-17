@@ -255,6 +255,14 @@ impl State {
         Err(format!("body {} no longer exists", id.0))
     }
 
+    /// A graphics mesh body by ID.
+    pub fn mesh(&self, id: &BodyId) -> Result<&crate::meshes::MeshBody, String> {
+        self.meshes
+            .iter()
+            .find(|b| &b.id == id)
+            .ok_or_else(|| format!("body {} isn't a mesh body", id.0))
+    }
+
     /// A surface body by ID.
     pub fn surface(&self, id: &BodyId) -> Result<&SolidBody, String> {
         if let Some(b) = self.surfaces.iter().find(|b| &b.id == id) {

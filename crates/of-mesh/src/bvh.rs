@@ -91,6 +91,45 @@ impl<'a> Bvh<'a> {
         best
     }
 
+    /// How many times a ray from `origin` along `dir` crosses the mesh, with
+    /// crossings at shared edges counted once.
+    pub fn crossings(&self, origin: DVec3, dir: DVec3) -> usize {
+        if self.nodes.is_empty() {
+            return 0;
+        }
+        let inv = DVec3::ONE / dir;
+        let mut ts = Vec::new();
+        let mut stack = vec![0u32];
+        while let Some(i) = stack.pop() {
+            let node = &self.nodes[i as usize];
+            if !slab(&node.bounds, origin, inv, f64::INFINITY) {
+                continue;
+            }
+            if node.leaf {
+                for &t in &self.order[node.left as usize..node.right as usize] {
+                    let [a, b, c] = self.mesh.corners(t as usize);
+                    if let Some(d) = intersect(origin, dir, a, b, c)
+                        && d > 0.0
+                    {
+                        ts.push(d);
+                    }
+                }
+            } else {
+                stack.push(node.left);
+                stack.push(node.right);
+            }
+        }
+        ts.sort_by(f64::total_cmp);
+        ts.dedup_by(|a, b| (*a - *b).abs() < 1e-9 * (1.0 + b.abs()));
+        ts.len()
+    }
+
+    /// Whether `p` is inside a closed mesh (by crossing parity).
+    pub fn contains(&self, p: DVec3) -> bool {
+        // An oblique direction is unlikely to graze edges.
+        self.crossings(p, DVec3::new(0.5773, 0.5774, 0.5772)) % 2 == 1
+    }
+
     /// The point on the mesh nearest `p`.
     pub fn closest(&self, p: DVec3) -> Option<Closest> {
         if self.nodes.is_empty() {
@@ -281,6 +320,8 @@ mod tests {
         let hit = bvh.ray(DVec3::new(0.5, 0.5, -5.0), DVec3::Z, 0.0).unwrap();
         assert!((hit.distance - 5.0).abs() < 1e-12);
         assert!(bvh.ray(DVec3::new(3.0, 0.5, -5.0), DVec3::Z, 0.0).is_none());
+        assert!(bvh.contains(DVec3::splat(0.5)));
+        assert!(!bvh.contains(DVec3::splat(1.5)));
         let q = bvh.closest(DVec3::new(0.5, 0.5, 3.0)).unwrap();
         assert!((q.distance - 2.0).abs() < 1e-12);
         assert!((q.point.z - 1.0).abs() < 1e-12);

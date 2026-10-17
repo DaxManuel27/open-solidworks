@@ -85,6 +85,8 @@ pub struct State {
     pub members: Vec<crate::weldment::MemberRecord>,
     /// Weld beads, for the weld folder.
     pub welds: Vec<crate::weldment::WeldRecord>,
+    /// Graphics mesh bodies.
+    pub meshes: Vec<crate::meshes::MeshBody>,
     /// Mould folders and parting lines.
     pub mold: crate::mold::MoldState,
     /// How much each Surface Flatten stretched its faces, for display.
@@ -575,6 +577,13 @@ fn build_kind(id: FeatureId, kind: &FeatureKind, prev: &State, state: &mut State
         FeatureKind::PartingSurface(p) => return ops::mold::parting_surface(id, p, prev, state),
         FeatureKind::ToolingSplit(p) => return ops::mold::tooling_split(id, p, prev, state),
         FeatureKind::MoldCore(p) => return ops::mold::mold_core(id, p, prev, state),
+        FeatureKind::ConvertToMesh(p) => return ops::mesh::convert_to_mesh(id, p, prev, state),
+        FeatureKind::DecimateMesh(p) => return ops::mesh::decimate_mesh(id, p, prev, state),
+        FeatureKind::SegmentMesh(p) => return ops::mesh::segment_mesh(id, p, prev, state),
+        FeatureKind::MeshPrep(p) => return ops::mesh::mesh_prep(id, p, prev, state),
+        FeatureKind::SurfaceFromMesh(p) => return ops::mesh::surface_from_mesh(id, p, prev, state),
+        FeatureKind::MeshToSolid(p) => return ops::mesh::mesh_to_solid(id, p, prev, state),
+        FeatureKind::MeshSections(p) => return ops::mesh::mesh_sections(id, p, prev, state),
         FeatureKind::FlatPattern(p) => return ops::sheet::flat_pattern(id, p, prev, state),
         FeatureKind::SketchedBend(p) => return ops::sheet::sketched_bend(id, p, prev, state),
         FeatureKind::Jog(p) => return ops::sheet::jog(id, p, prev, state),
@@ -785,6 +794,18 @@ fn build_plane(prev: &State, p: &PlaneDef) -> RResult<Datum> {
             let p = resolve(prev, point)?.point()?;
             Plane { origin: p, ..base }
         }
+        PlaneDef::Facets { body, facets } => {
+            let (points, _) = facet_samples(prev, body, facets)?;
+            match of_mesh::fit::plane(&points)
+                .map_err(|e| e.to_string())?
+                .primitive
+            {
+                of_mesh::fit::Primitive::Plane { origin, normal } => {
+                    Plane::new(origin, normal.any_orthonormal_vector(), normal)
+                }
+                _ => unreachable!(),
+            }
+        }
         PlaneDef::NormalToCurve { edge, at_end } => match resolve(prev, edge)? {
             Resolved::Edge { info, index } => {
                 let body = prev.body.as_ref().unwrap();
@@ -829,6 +850,16 @@ fn build_axis(prev: &State, a: &AxisDef) -> RResult<Datum> {
         }
         AxisDef::Cylinder { face } => resolve(prev, face)?.axis()?,
         AxisDef::Edge { edge } => resolve(prev, edge)?.axis()?,
+        AxisDef::Facets { body, facets } => {
+            let (points, normals) = facet_samples(prev, body, facets)?;
+            match of_mesh::fit::cylinder(&points, &normals)
+                .map_err(|e| e.to_string())?
+                .primitive
+            {
+                of_mesh::fit::Primitive::Cylinder { origin, axis, .. } => (origin, axis),
+                _ => unreachable!(),
+            }
+        }
         AxisDef::PointAndFace { point, face } => {
             let p = resolve(prev, point)?.point()?;
             (p, resolve(prev, face)?.plane()?.normal)
@@ -842,6 +873,29 @@ fn build_point(prev: &State, p: &PointDef) -> RResult<Datum> {
         PointDef::Coordinates { x, y, z } => DVec3::new(*x, *y, *z),
         PointDef::At { target } => resolve(prev, target)?.point()?,
     }))
+}
+
+/// Centroids and normals of a mesh body's chosen triangles.
+fn facet_samples(
+    prev: &State,
+    body: &crate::BodyId,
+    facets: &[u32],
+) -> RResult<(Vec<DVec3>, Vec<DVec3>)> {
+    let mesh = &prev.mesh(body)?.mesh;
+    let mut points = Vec::new();
+    let mut normals = Vec::new();
+    for f in facets {
+        let t = *f as usize;
+        if t >= mesh.triangles.len() {
+            return Err(format!("the mesh has no triangle {f}"));
+        }
+        let [a, b, c] = mesh.corners(t);
+        points.push((a + b + c) / 3.0);
+        normals.push(mesh.normal(t));
+        points.extend([a, b, c]);
+        normals.extend([mesh.normal(t); 3]);
+    }
+    Ok((points, normals))
 }
 
 fn build_coord_sys(prev: &State, c: &CoordSysDef) -> RResult<Datum> {

@@ -212,11 +212,13 @@ run `cargo run -p openforge -- generate` instead. -->
 | `plane` | `mode`, `a`, `b`, `scope?` | Halfway between two planes or faces. |
 | `plane` | `mode`, `reference`, `point`, `scope?` | Parallel to `reference`, through `point`. |
 | `plane` | `mode`, `edge`, `at_end?`, `scope?` | Normal to an edge at its start (or end). |
+| `plane` | `mode`, `body`, `facets`, `scope?` | Fitted to triangles of a mesh body. |
 | `axis` | `mode`, `a`, `b`, `scope?` | Through two points. |
 | `axis` | `mode`, `a`, `b`, `scope?` | Where two planes meet. |
 | `axis` | `mode`, `face`, `scope?` | The axis of a cylindrical or conical face, or a circular edge. |
 | `axis` | `mode`, `edge`, `scope?` | Along a straight edge or sketch line. |
 | `axis` | `mode`, `point`, `face`, `scope?` | Through a point, normal to a plane. |
+| `axis` | `mode`, `body`, `facets`, `scope?` | Through a cylindrical run of a mesh body's triangles. |
 | `point` | `mode`, `x`, `y`, `z`, `scope?` | Model coordinates, mm. |
 | `point` | `mode`, `target`, `scope?` | On a vertex or sketch point; at the center of a face or circular edge. |
 | `coord_sys` | `origin`, `scope?`, `x_axis?`, `z_axis?` | A coordinate system at a point. |
@@ -297,6 +299,14 @@ run `cargo run -p openforge -- generate` instead. -->
 | `parting_surface` | `parting_line`, `distance`, `mode?`, `reverse?`, `scope?` | The surface dividing the core block from the cavity block. |
 | `tooling_split` | `parting_line`, `sketch`, `depth1`, `depth2`, `interlock?`, `scope?` | A block split into core and cavity around the part. |
 | `mold_core` | `body`, `sketch`, `depth1`, `depth2?`, `draft?`, `reverse?`, `scope?` | A side core or lifter pulled out of a mould block. |
+| `convert_to_mesh` | `body`, `angle?`, `chord?`, `keep?`, `scope?` | Turn a solid or surface into a graphics mesh body. |
+| `decimate_mesh` | `body`, `target`, `facets?`, `preserve_boundary?`, `scope?` | Reduce a mesh body's triangle count. |
+| `segment_mesh` | `body`, `angle?`, `min_area?`, `scope?` | Group a mesh body's triangles into regions. |
+| `mesh_prep` | `body`, `steps`, `scope?` | Clean up scan data step by step. |
+| `mesh_to_brep` | `body`, `group_facets?`, `max_facets?`, `scope?`, `solid?` | Turn a graphics mesh into a surface or solid of triangle faces. |
+| `surface_from_mesh` | `body`, `extend?`, `facets?`, `fit?`, `group?`, `scope?` | A surface fitted to a region of a mesh body. |
+| `mesh_to_solid` | `body`, `angle?`, `min_area?`, `scope?` | A solid fitted to a closed mesh, region by region. |
+| `mesh_sections` | `body`, `plane`, `count`, `spacing`, `offset?`, `scope?` | Section curves through a mesh body. |
 
 <!-- /generated:features -->
 

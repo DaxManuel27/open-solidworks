@@ -16,6 +16,7 @@ pub(crate) mod body_tools;
 mod direct;
 mod face_fillet;
 mod flatten;
+pub(crate) mod mesh;
 pub(crate) mod mold;
 mod rib;
 mod shaping;
@@ -78,6 +79,7 @@ pub(crate) fn build(
         FeatureKind::MoveFace(p) => direct::move_face(fid, p, prev, state),
         FeatureKind::ReplaceFace(p) => direct::replace_face(fid, p, prev, state),
         FeatureKind::DeleteHole(p) => direct::delete_hole(fid, p, prev, state),
+        FeatureKind::MeshToBrep(p) => mesh::mesh_to_brep(fid, p, prev, state),
         FeatureKind::FilledSurface(p) => shaping::filled_surface(fid, p, prev, state),
         FeatureKind::RuledSurface(p) => shaping::ruled_surface(fid, p, prev, state),
         FeatureKind::RadiateSurface(p) => shaping::radiate_surface(fid, p, prev, state),
@@ -2320,12 +2322,15 @@ fn mirror(fid: FeatureId, m: &MirrorDef, prev: &State, state: &mut State) -> RRe
 
 fn import(fid: FeatureId, i: &Import, state: &mut State) -> RResult<()> {
     use base64::Engine;
+    if !matches!(i.format, ImportFormat::Step | ImportFormat::Iges) {
+        return mesh::import_mesh(fid, i, state);
+    }
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(&i.data)
         .map_err(|_| "the imported data is corrupt".to_string())?;
     let ext = match i.format {
         ImportFormat::Step => "step",
-        ImportFormat::Iges => "igs",
+        _ => "igs",
     };
     let path = std::env::temp_dir().join(format!(
         "openforge-import-{}-{fid}.{ext}",
@@ -2335,7 +2340,7 @@ fn import(fid: FeatureId, i: &Import, state: &mut State) -> RResult<()> {
     let p = path.to_string_lossy().to_string();
     let shape = match i.format {
         ImportFormat::Step => Shape::read_step(&p),
-        ImportFormat::Iges => Shape::read_iges(&p),
+        _ => Shape::read_iges(&p),
     };
     let _ = std::fs::remove_file(&path);
     let shape = shape.map_err(geo)?;

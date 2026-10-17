@@ -1304,6 +1304,17 @@ export type DatumRef = {
   modifier?: Modifier | null
 }
 
+/** When decimation stops. */
+export type DecimateTarget =
+  | {
+    type: 'fraction'
+    fraction: number
+  }
+  | {
+    type: 'tolerance'
+    tolerance: number
+  }
+
 /** How Deform deforms. */
 export type DeformMode =
   | {
@@ -1937,6 +1948,14 @@ export type Feature =
     scope?: string[] | null
   }
   | {
+    type: 'plane'
+    mode: 'facets'
+    body: string
+    facets: number[]
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
     type: 'axis'
     mode: 'two_points'
     a: Ref
@@ -1971,6 +1990,14 @@ export type Feature =
     mode: 'point_and_face'
     point: Ref
     face: Ref
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'axis'
+    mode: 'facets'
+    body: string
+    facets: number[]
     /** Body IDs this feature acts on; omitted acts on the whole part. */
     scope?: string[] | null
   }
@@ -3072,6 +3099,88 @@ export type Feature =
     /** Body IDs this feature acts on; omitted acts on the whole part. */
     scope?: string[] | null
   }
+  | {
+    type: 'convert_to_mesh'
+    body: string
+    /** The most neighbouring triangles may turn, radians. */
+    angle?: number
+    /** The most the triangles may stray from the surface, mm. */
+    chord?: number
+    /** Keep the original body too. */
+    keep?: boolean
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'decimate_mesh'
+    body: string
+    target: DecimateTarget
+    /** Only these triangles (a painted region); empty for all. */
+    facets?: number[]
+    preserve_boundary?: boolean
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'segment_mesh'
+    body: string
+    /** Triangles meeting at a gentler fold than this join, radians. */
+    angle?: number
+    /** Regions smaller than this join a neighbour, mm². */
+    min_area?: number
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'mesh_prep'
+    body: string
+    steps: PrepStep[]
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'mesh_to_brep'
+    body: string
+    group_facets?: boolean
+    max_facets?: number
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+    /** Make a solid; the mesh must be closed. */
+    solid?: boolean
+  }
+  | {
+    type: 'surface_from_mesh'
+    body: string
+    /** How far the surface reaches past the triangles, mm. */
+    extend?: number
+    /** The triangles to fit; empty uses `group`, or the whole mesh. */
+    facets?: number[]
+    fit?: FitKind
+    /** A region from Segment Mesh. */
+    group?: number | null
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'mesh_to_solid'
+    body: string
+    /** Segmentation fold angle, radians. */
+    angle?: number
+    /** Regions smaller than this join a neighbour, mm². */
+    min_area?: number
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'mesh_sections'
+    body: string
+    plane: Ref
+    count: number
+    spacing: number
+    offset?: number
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
 
 /** One edge around a filled surface. */
 export type FillBoundary = {
@@ -3085,6 +3194,9 @@ export type FillBoundary = {
 export type FinishProcess = 'any' | 'removal' | 'no_removal'
 
 export type FitDisplay = 'classes' | 'classes_with_tolerance' | 'tolerance_only'
+
+/** The kind of surface to fit to mesh triangles. */
+export type FitKind = 'plane' | 'cylinder' | 'cone' | 'sphere' | 'torus' | 'auto' | 'freeform'
 
 /** How long a flange is. */
 export type FlangeLength =
@@ -3856,6 +3968,37 @@ export type PointArg =
   }
   | {
     at: [number, number]
+  }
+
+/** One step of mesh preparation. */
+export type PrepStep =
+  | {
+    type: 'orient'
+  }
+  | {
+    type: 'remove_pieces'
+    fraction: number
+  }
+  | {
+    type: 'remove_noise'
+    sigma: number
+  }
+  | {
+    type: 'simplify'
+    fraction: number
+  }
+  | {
+    type: 'smooth'
+    iterations: number
+    boundary?: boolean
+  }
+  | {
+    type: 'fill_holes'
+    max_edges: number
+  }
+  | {
+    type: 'smooth_boundaries'
+    iterations: number
   }
 
 /**

@@ -156,6 +156,7 @@ pub fn import_step(step: &Path, dir: &Path) -> Result<Assembly, String> {
                     format: ImportFormat::Step,
                     source: format!("{definition}.step"),
                     data: base64::engine::general_purpose::STANDARD.encode(bytes),
+                    mesh: None,
                 }));
                 if let Some(f) = doc.feature_mut(id) {
                     f.name = definition.clone();

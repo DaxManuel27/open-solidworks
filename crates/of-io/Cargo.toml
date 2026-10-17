@@ -9,6 +9,7 @@ repository.workspace = true
 
 [dependencies]
 of-geom.workspace = true
+of-mesh.workspace = true
 base64.workspace = true
 serde.workspace = true
 

@@ -341,6 +341,22 @@ pub enum FeatureKind {
     ToolingSplit(mold::ToolingSplit),
     /// A side core or lifter pulled out of a mould block.
     MoldCore(mold::MoldCore),
+    /// Turn a solid or surface into a graphics mesh body.
+    ConvertToMesh(meshes::ConvertToMesh),
+    /// Reduce a mesh body's triangle count.
+    DecimateMesh(meshes::DecimateMesh),
+    /// Group a mesh body's triangles into regions.
+    SegmentMesh(meshes::SegmentMesh),
+    /// Clean up scan data step by step.
+    MeshPrep(meshes::MeshPrep),
+    /// Turn a graphics mesh into a surface or solid of triangle faces.
+    MeshToBrep(meshes::MeshToBrep),
+    /// A surface fitted to a region of a mesh body.
+    SurfaceFromMesh(meshes::SurfaceFromMesh),
+    /// A solid fitted to a closed mesh, region by region.
+    MeshToSolid(meshes::MeshToSolid),
+    /// Section curves through a mesh body.
+    MeshSections(meshes::MeshSections),
 }
 
 impl FeatureKind {
@@ -458,6 +474,14 @@ impl FeatureKind {
             FeatureKind::PartingSurface(_) => "Parting Surface",
             FeatureKind::ToolingSplit(_) => "Tooling Split",
             FeatureKind::MoldCore(_) => "Core",
+            FeatureKind::ConvertToMesh(_) => "Convert to Mesh Body",
+            FeatureKind::DecimateMesh(_) => "Decimate Mesh",
+            FeatureKind::SegmentMesh(_) => "Segment Mesh",
+            FeatureKind::MeshPrep(_) => "Mesh Prep",
+            FeatureKind::MeshToBrep(_) => "Mesh Body",
+            FeatureKind::SurfaceFromMesh(_) => "Surface from Mesh",
+            FeatureKind::MeshToSolid(_) => "Mesh to Solid",
+            FeatureKind::MeshSections(_) => "Mesh Sections",
         }
     }
 
@@ -762,6 +786,17 @@ impl FeatureKind {
                 out.push(c.sketch);
                 out.extend(c.body.creator());
             }
+            FeatureKind::ConvertToMesh(c) => out.extend(c.body.creator()),
+            FeatureKind::DecimateMesh(d) => out.extend(d.body.creator()),
+            FeatureKind::SegmentMesh(s) => out.extend(s.body.creator()),
+            FeatureKind::MeshPrep(m) => out.extend(m.body.creator()),
+            FeatureKind::MeshToBrep(m) => out.extend(m.body.creator()),
+            FeatureKind::SurfaceFromMesh(s) => out.extend(s.body.creator()),
+            FeatureKind::MeshToSolid(m) => out.extend(m.body.creator()),
+            FeatureKind::MeshSections(m) => {
+                out.extend(m.body.creator());
+                refs.push(&m.plane);
+            }
             FeatureKind::Fillet(f) => refs.extend(f.edges.iter().chain(&f.faces)),
             FeatureKind::Chamfer(c) => refs.extend(c.edges.iter().chain(&c.faces)),
             FeatureKind::Shell(s) => refs.extend(&s.faces),
@@ -780,8 +815,18 @@ impl FeatureKind {
                 out.extend(&m.features);
                 refs.push(&m.plane);
             }
-            FeatureKind::Plane(p) => refs.extend(p.refs()),
-            FeatureKind::Axis(a) => refs.extend(a.refs()),
+            FeatureKind::Plane(p) => {
+                refs.extend(p.refs());
+                if let PlaneDef::Facets { body, .. } = p {
+                    out.extend(body.creator());
+                }
+            }
+            FeatureKind::Axis(a) => {
+                refs.extend(a.refs());
+                if let AxisDef::Facets { body, .. } = a {
+                    out.extend(body.creator());
+                }
+            }
             FeatureKind::Point(p) => refs.extend(p.refs()),
             FeatureKind::CoordSys(c) => {
                 refs.push(&c.origin);

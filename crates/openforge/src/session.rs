@@ -1281,12 +1281,20 @@ impl Session {
                 let format = match data.kind {
                     of_io::ImportKind::Step => ImportFormat::Step,
                     of_io::ImportKind::Iges => ImportFormat::Iges,
+                    of_io::ImportKind::Stl => ImportFormat::Stl,
+                    of_io::ImportKind::Obj => ImportFormat::Obj,
+                    of_io::ImportKind::Off => ImportFormat::Off,
+                    of_io::ImportKind::Ply => ImportFormat::Ply,
+                    of_io::ImportKind::ThreeMf => ImportFormat::ThreeMf,
+                    of_io::ImportKind::Amf => ImportFormat::Amf,
+                    of_io::ImportKind::Points => ImportFormat::Points,
                 };
                 self.checkpoint();
                 let id = self.model.doc.add(FeatureKind::Import(Import {
                     format,
                     source: data.source.clone(),
                     data: data.data,
+                    mesh: None,
                 }));
                 self.model.doc.feature_mut(id).unwrap().name = data.source;
                 self.model.invalidate(id);

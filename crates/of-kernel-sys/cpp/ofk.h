@@ -226,6 +226,10 @@ std::unique_ptr<Shape> freeform_face(const Shape &s, uint32_t face_index, uint32
                                      rust::Slice<const double> moves, uint32_t fixed,
                                      rust::Vec<HistoryEntry> &hist);
 std::unique_ptr<Shape> make_vertex(const Vec3 &p);
+std::unique_ptr<Shape> mesh_brep(rust::Slice<const double> points, rust::Slice<const uint32_t> triangles);
+std::unique_ptr<Shape> primitive_face(uint8_t kind, const Frame &frame, double r1, double r2,
+                                      rust::Slice<const double> bounds);
+std::unique_ptr<Shape> bspline_face(rust::Slice<const double> points, uint32_t nu, uint32_t nv);
 std::unique_ptr<Shape> scale_shape(const Shape &s, const Vec3 &center, const Vec3 &factors,
                                    rust::Vec<HistoryEntry> &hist);
 std::unique_ptr<Shape> cap_loops(const Shape &s);
