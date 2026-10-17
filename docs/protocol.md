@@ -254,6 +254,7 @@ run `cargo run -p openforge -- generate` instead. -->
 | `sheet_metal_gusset` | `bend`, `depth`, `width`, `angle?`, `depth2?`, `position?`, `punch_id?`, `rounded_back?`, `scope?` | A stiffening rib pressed across a bend. |
 | `form_tool` | `shape`, `face`, `flip?`, `punch_id?`, `rotation?`, `scope?`, `sketch?` | Forming tools pressed into a sheet metal face. |
 | `forming_tool` | `stopping_face`, `insertion_point?`, `remove_faces?`, `scope?` | Marks this part as a forming tool for other parts to use. |
+| `weldment` | `scope?` | Marks the part as a weldment (one per part, before its members). |
 
 <!-- /generated:features -->
 
@@ -361,6 +362,7 @@ run `cargo run -p openforge -- generate` instead. -->
 | `open_part` | `doc.open` | file/session (not in drafts) | `path`, `detail?` |
 | `save_part` | `doc.save` | file/session (not in drafts) | `detail?`, `path?` |
 | `export` | `export` | file/session (not in drafts) | `path`, `bend_notes?`, `bodies?`, `configuration?`, `detail?`, `dxf_version?`, `per_body?` |
+| `weldment_profiles` | `weldment.profiles` | read | `detail?`, `family?`, `size?` |
 | `sheet_metal_gauges` | `sheet_metal.gauges` | read | `detail?`, `table?` |
 | `sheet_metal_info` | `doc.sheet_metal` | read | `detail?`, `outline?` |
 | `set_part_properties` | `doc.properties.set` | edit (draft) | `properties`, `additionalProperties?`, `detail?` |

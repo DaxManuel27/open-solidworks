@@ -138,6 +138,15 @@ fn yes() -> bool {
 }
 
 #[derive(Deserialize, JsonSchema)]
+pub struct WeldmentProfiles {
+    /// With `size`: that profile's outline and section properties.
+    #[serde(default)]
+    pub family: Option<of_model::weldment::Family>,
+    #[serde(default)]
+    pub size: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
 pub struct SheetMetalGauges {
     /// A built-in table (`steel`, `stainless`, `aluminum`) or a CSV path;
     /// omitted lists the built-in tables only.

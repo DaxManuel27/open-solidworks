@@ -71,6 +71,8 @@ pub struct State {
     /// Files features read (forming tools), with their content hash when
     /// built, so edits to them can rebuild the features.
     pub files: Vec<(FeatureId, std::path::PathBuf, u64)>,
+    /// The Weldment feature, once the part is a weldment.
+    pub weldment: Option<FeatureId>,
 }
 
 /// A content hash for change detection.
@@ -551,6 +553,13 @@ fn build_kind(id: FeatureId, kind: &FeatureKind, prev: &State, state: &mut State
         FeatureKind::SheetMetalGusset(p) => return ops::sheet::gusset(id, p, prev, state),
         FeatureKind::FormTool(p) => return ops::sheet::form_tool(id, p, prev, state),
         FeatureKind::FormingTool(_) => return Ok(()),
+        FeatureKind::Weldment(_) => {
+            if prev.weldment.is_some() {
+                return Err("a part has one Weldment feature".into());
+            }
+            state.weldment = Some(id);
+            return Ok(());
+        }
         _ => {
             ops::build(id, kind, prev, state)?;
             return state.refresh_bodies(id, prev);

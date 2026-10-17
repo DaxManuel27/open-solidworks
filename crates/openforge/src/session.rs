@@ -1151,6 +1151,34 @@ impl Session {
                         .map_err(|e| RpcError::coded(ErrorCode::UnknownRef, e))?
                 ))
             }
+            "weldment.profiles" => {
+                use of_model::weldment::{Family, profiles};
+                let p: WeldmentProfiles = args(params)?;
+                match (p.family, p.size) {
+                    (Some(family), Some(size)) => {
+                        let s = profiles::section(family, &size).map_err(fail)?;
+                        let (area, centroid, ixx, iyy) = profiles::properties(&s);
+                        let outline: Vec<[f64; 2]> = profiles::outline_points(&s)
+                            .into_iter()
+                            .map(|q| q.to_array())
+                            .collect();
+                        Ok(json!({
+                            "family": family, "size": size, "width": s.size.x, "height": s.size.y,
+                            "wall": s.wall, "area": area, "centroid": centroid.to_array(),
+                            "ixx": ixx, "iyy": iyy, "outline": outline,
+                        }))
+                    }
+                    (Some(_), None) | (None, Some(_)) => {
+                        Err(RpcError::params("give both family and size, or neither"))
+                    }
+                    (None, None) => Ok(json!({
+                        "families": Family::ALL.iter().map(|f| json!({
+                            "family": f, "label": f.label(), "standard": f.standard(),
+                            "sizes": profiles::sizes(*f),
+                        })).collect::<Vec<_>>(),
+                    })),
+                }
+            }
             "sheet_metal.gauges" => {
                 let p: SheetMetalGauges = args(params)?;
                 let gauges = match &p.table {

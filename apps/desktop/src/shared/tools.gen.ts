@@ -1245,6 +1245,21 @@ export type ExplodeMotion =
 
 export type FaceKind = 'face'
 
+/** A profile family. */
+export type Family =
+  | 'ipe'
+  | 'hea'
+  | 'upn'
+  | 'angle'
+  | 'rhs'
+  | 'chs'
+  | 'w'
+  | 'c'
+  | 'l'
+  | 'hss_rect'
+  | 'hss_round'
+  | 'pipe'
+
 export type Feature =
   | {
     type: 'dome'
@@ -2254,6 +2269,11 @@ export type Feature =
     /** The point placed on the sheet; the stopping face's centroid otherwise. */
     insertion_point?: Ref | null
     remove_faces?: Ref[]
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'weldment'
     /** Body IDs this feature acts on; omitted acts on the whole part. */
     scope?: string[] | null
   }
@@ -3823,6 +3843,14 @@ export interface ToolArgs {
      */
     per_body?: boolean
   }
+  /** Structural member profiles: families (ISO IPE, HEA, UPN, angles, SHS/RHS, CHS; ANSI W, C, L, HSS, pipe) with their sizes; with family and size, that section's outline (mm, centered on its bounding box), area, centroid and second moments. */
+  weldment_profiles: {
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+    /** With `size`: that profile's outline and section properties. */
+    family?: Family | null
+    size?: string | null
+  }
   /** Gauge tables for sheet metal parameters' `gauge`: the built-in table names, and with `table` its gauges (name, thickness mm, allowed inside radii mm, K-factor). */
   sheet_metal_gauges: {
     /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
@@ -4376,6 +4404,7 @@ export const TOOL_METHODS = {
   open_part: 'doc.open',
   save_part: 'doc.save',
   export: 'export',
+  weldment_profiles: 'weldment.profiles',
   sheet_metal_gauges: 'sheet_metal.gauges',
   sheet_metal_info: 'doc.sheet_metal',
   set_part_properties: 'doc.properties.set',
@@ -4456,6 +4485,7 @@ export const TOOL_EXAMPLES: { [K in ToolName]: ToolArgs[K][] } = {
   open_part: [{"path":"part.ofp"}],
   save_part: [{"path":"part.ofp"}],
   export: [{"path":"part.step"}, {"configuration":2,"path":"part.stl"}],
+  weldment_profiles: [{}, {"family":"rhs","size":"SHS 40x40x3"}],
   sheet_metal_gauges: [{}, {"table":"steel"}],
   sheet_metal_info: [{}, {"outline":true}],
   set_part_properties: [{"properties":{"PartNo":{"value":"BRK-1"},"Weight":{"value":"{mass}"}}}],

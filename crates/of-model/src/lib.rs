@@ -34,6 +34,7 @@ mod resolve;
 pub mod sheet_metal;
 pub mod sheet_tables;
 pub mod units;
+pub mod weldment;
 
 pub use bodies::{BodyDisplay, BodyId, Combine, KeepSide, MoveBody, SolidBody, SplitBody};
 pub use build::{Body, Datum, FeatureStatus, Model, State};
@@ -248,6 +249,8 @@ pub enum FeatureKind {
     FormTool(sheet_metal::FormTool),
     /// Marks this part as a forming tool for other parts to use.
     FormingTool(sheet_metal::FormingToolDef),
+    /// Marks the part as a weldment (one per part, before its members).
+    Weldment(weldment::WeldmentDef),
 }
 
 impl FeatureKind {
@@ -319,6 +322,7 @@ impl FeatureKind {
             FeatureKind::SheetMetalGusset(_) => "Sheet Metal Gusset",
             FeatureKind::FormTool(_) => "Form Tool",
             FeatureKind::FormingTool(_) => "Forming Tool",
+            FeatureKind::Weldment(_) => "Weldment",
         }
     }
 
@@ -460,6 +464,7 @@ impl FeatureKind {
                 refs.push(&f.face);
                 out.extend(f.sketch);
             }
+            FeatureKind::Weldment(_) => {}
             FeatureKind::FormingTool(f) => {
                 refs.push(&f.stopping_face);
                 refs.extend(&f.remove_faces);
