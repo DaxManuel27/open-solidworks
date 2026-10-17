@@ -66,6 +66,70 @@ pub fn export(shape: &Shape, path: &Path, format: ExportFormat) -> Result<(), St
     .map_err(|e| e.0)
 }
 
+/// Export the B-rep bodies and graphics mesh bodies together. STEP and IGES
+/// hold only the B-rep; STL gets the mesh bodies' triangles too.
+pub fn export_all(
+    shape: Option<&Shape>,
+    meshes: &[&of_mesh::TriMesh],
+    path: &Path,
+    format: ExportFormat,
+) -> Result<(), String> {
+    let ExportFormat::Stl {
+        ascii,
+        deviation,
+        angle,
+    } = format
+    else {
+        return export(shape.ok_or("there's nothing to export")?, path, format);
+    };
+    if meshes.is_empty() {
+        return export(shape.ok_or("there's nothing to export")?, path, format);
+    }
+    let mut all = of_mesh::TriMesh::default();
+    if let Some(shape) = shape.filter(|s| !s.is_null()) {
+        let m = shape.mesh(deviation, angle).map_err(|e| e.0)?;
+        let positions = m
+            .positions
+            .chunks_exact(3)
+            .map(|p| of_mesh::DVec3::new(p[0] as f64, p[1] as f64, p[2] as f64))
+            .collect();
+        let triangles = m
+            .indices
+            .chunks_exact(3)
+            .map(|t| [t[0], t[1], t[2]])
+            .collect();
+        all.append(&of_mesh::TriMesh::new(positions, triangles));
+    }
+    for m in meshes {
+        all.append(m);
+    }
+    let bytes = if ascii {
+        ascii_stl(&all).into_bytes()
+    } else {
+        of_mesh::io::write_stl(&all)
+    };
+    std::fs::write(path, bytes).map_err(|e| format!("can't write {}: {e}", path.display()))
+}
+
+fn ascii_stl(mesh: &of_mesh::TriMesh) -> String {
+    use std::fmt::Write;
+    let mut out = String::from("solid OpenForge\n");
+    for t in 0..mesh.triangles.len() {
+        let n = mesh.normal(t);
+        let _ = writeln!(
+            out,
+            "  facet normal {} {} {}\n    outer loop",
+            n.x, n.y, n.z
+        );
+        for v in mesh.corners(t) {
+            let _ = writeln!(out, "      vertex {} {} {}", v.x, v.y, v.z);
+        }
+        let _ = writeln!(out, "    endloop\n  endfacet");
+    }
+    out.push_str("endsolid OpenForge\n");
+    out
+}
+
 /// Formats that can be imported as a body.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

@@ -1268,11 +1268,15 @@ impl Session {
                     let files = crate::sheet::export_dxf(model, &p).map_err(fail)?;
                     return Ok(json!({ "path": p.path, "files": files }));
                 };
-                let body = model
-                    .state()
-                    .everything()
-                    .ok_or_else(|| fail("there's nothing to export"))?;
-                of_io::export(&body.shape, &p.path, format).map_err(fail)?;
+                let state = model.state();
+                let meshes: Vec<&of_model::mesh::TriMesh> =
+                    state.meshes.iter().map(|m| &*m.mesh).collect();
+                let body = state.everything();
+                if body.is_none() && meshes.is_empty() {
+                    return Err(fail("there's nothing to export"));
+                }
+                of_io::export_all(body.map(|b| &b.shape), &meshes, &p.path, format)
+                    .map_err(fail)?;
                 Ok(json!({ "path": p.path }))
             }
             "doc.analysis" => {

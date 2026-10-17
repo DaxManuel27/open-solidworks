@@ -16,6 +16,34 @@ pub mod segment;
 pub mod solve;
 
 use std::collections::HashMap;
+use std::hash::{BuildHasherDefault, Hasher};
+
+/// A fast hash for integer keys (FxHash's multiply-rotate); not for keys an
+/// attacker chooses.
+#[derive(Default)]
+struct FastHasher(u64);
+
+impl Hasher for FastHasher {
+    fn write(&mut self, bytes: &[u8]) {
+        for b in bytes {
+            self.write_u64(*b as u64);
+        }
+    }
+    fn write_u32(&mut self, v: u32) {
+        self.write_u64(v as u64);
+    }
+    fn write_u64(&mut self, v: u64) {
+        self.0 = (self.0.rotate_left(5) ^ v).wrapping_mul(0x51_7c_c1_b7_27_22_0a_95);
+    }
+    fn write_usize(&mut self, v: usize) {
+        self.write_u64(v as u64);
+    }
+    fn finish(&self) -> u64 {
+        self.0
+    }
+}
+
+type Fast = BuildHasherDefault<FastHasher>;
 
 pub use glam::{DVec2, DVec3};
 
@@ -181,6 +209,55 @@ impl TriMesh {
     /// [`TriMesh::weld`], merging only vertices with the same tag: tagging
     /// the two sides of a cut differently keeps them apart.
     pub fn weld_tagged(&mut self, tolerance: f64, tags: &[u32]) -> Vec<u32> {
+        let mut map = vec![0u32; self.positions.len()];
+        let mut positions: Vec<DVec3> = Vec::new();
+        let mut colors = self.colors.as_ref().map(|_| Vec::new());
+        if tolerance <= 0.0 {
+            // Exact: one lookup per vertex, as file readers need for
+            // millions of corners.
+            let mut seen: HashMap<([u64; 3], u32), u32, Fast> = HashMap::default();
+            for (i, p) in self.positions.iter().enumerate() {
+                // +0.0 and -0.0 are the same point.
+                let key = ([p.x + 0.0, p.y + 0.0, p.z + 0.0].map(f64::to_bits), tags[i]);
+                map[i] = *seen.entry(key).or_insert_with(|| {
+                    positions.push(*p);
+                    if let (Some(out), Some(src)) = (&mut colors, &self.colors) {
+                        out.push(src[i]);
+                    }
+                    positions.len() as u32 - 1
+                });
+            }
+        } else {
+            self.weld_near(tolerance, tags, &mut map, &mut positions, &mut colors);
+        }
+        let mut triangles = Vec::new();
+        let mut groups = Vec::new();
+        for (t, tri) in self.triangles.iter().enumerate() {
+            let m = tri.map(|i| map[i as usize]);
+            if m[0] != m[1] && m[1] != m[2] && m[0] != m[2] {
+                triangles.push(m);
+                if !self.groups.is_empty() {
+                    groups.push(self.groups[t]);
+                }
+            }
+        }
+        self.positions = positions;
+        self.triangles = triangles;
+        self.groups = groups;
+        self.colors = colors;
+        map
+    }
+
+    /// The tolerant half of [`TriMesh::weld_tagged`]: a grid of cells
+    /// `tolerance` wide, searching the neighbouring cells.
+    fn weld_near(
+        &self,
+        tolerance: f64,
+        tags: &[u32],
+        map: &mut [u32],
+        positions: &mut Vec<DVec3>,
+        colors: &mut Option<Vec<[u8; 3]>>,
+    ) {
         let cell = tolerance.max(1e-12);
         let key = |p: DVec3| {
             (
@@ -189,11 +266,8 @@ impl TriMesh {
                 (p.z / cell).round() as i64,
             )
         };
-        let mut grid: HashMap<(i64, i64, i64), Vec<u32>> = HashMap::new();
-        let mut map = vec![0u32; self.positions.len()];
+        let mut grid: HashMap<(i64, i64, i64), Vec<u32>, Fast> = HashMap::default();
         let mut new_tags: Vec<u32> = Vec::new();
-        let mut positions: Vec<DVec3> = Vec::new();
-        let mut colors = self.colors.as_ref().map(|_| Vec::new());
         for (i, p) in self.positions.iter().enumerate() {
             let (kx, ky, kz) = key(*p);
             let mut found = None;
@@ -216,7 +290,7 @@ impl TriMesh {
             let j = found.unwrap_or_else(|| {
                 positions.push(*p);
                 new_tags.push(tags[i]);
-                if let (Some(out), Some(src)) = (&mut colors, &self.colors) {
+                if let (Some(out), Some(src)) = (colors.as_mut(), &self.colors) {
                     out.push(src[i]);
                 }
                 let j = positions.len() as u32 - 1;
@@ -225,22 +299,6 @@ impl TriMesh {
             });
             map[i] = j;
         }
-        let mut triangles = Vec::new();
-        let mut groups = Vec::new();
-        for (t, tri) in self.triangles.iter().enumerate() {
-            let m = tri.map(|i| map[i as usize]);
-            if m[0] != m[1] && m[1] != m[2] && m[0] != m[2] {
-                triangles.push(m);
-                if !self.groups.is_empty() {
-                    groups.push(self.groups[t]);
-                }
-            }
-        }
-        self.positions = positions;
-        self.triangles = triangles;
-        self.groups = groups;
-        self.colors = colors;
-        map
     }
 
     /// For each undirected edge (smaller vertex first), the triangles using it.
@@ -308,6 +366,20 @@ impl TriMesh {
     /// Whether every edge is used by exactly two triangles.
     pub fn is_closed(&self) -> bool {
         self.edge_triangles().values().all(|t| t.len() == 2)
+    }
+
+    /// Closed, and every edge runs once each way: the triangles all face
+    /// the same side.
+    pub fn is_oriented(&self) -> bool {
+        let mut directed: HashMap<(u32, u32), u32, Fast> = HashMap::default();
+        for t in &self.triangles {
+            for k in 0..3 {
+                *directed.entry((t[k], t[(k + 1) % 3])).or_default() += 1;
+            }
+        }
+        directed
+            .iter()
+            .all(|(&(a, b), &n)| n == 1 && directed.get(&(b, a)) == Some(&1))
     }
 
     /// Connected sets of triangles (by shared edges).
@@ -478,6 +550,25 @@ pub fn projected_area(mesh: &TriMesh, normal: DVec3, resolution: usize) -> (f64,
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn exact_weld_joins_equal_corners_and_keeps_tags_apart() {
+        // Two triangles sharing an edge, one corner written as -0.0.
+        let p = vec![
+            DVec3::new(0.0, 0.0, 0.0),
+            DVec3::new(1.0, 0.0, 0.0),
+            DVec3::new(0.0, 1.0, 0.0),
+            DVec3::new(1.0, 0.0, 0.0),
+            DVec3::new(1.0, 1.0, 0.0),
+            DVec3::new(-0.0, 1.0, 0.0),
+        ];
+        let mut m = TriMesh::new(p.clone(), vec![[0, 1, 2], [3, 4, 5]]);
+        m.weld(0.0);
+        assert_eq!(m.positions.len(), 4);
+        let mut apart = TriMesh::new(p, vec![[0, 1, 2], [3, 4, 5]]);
+        apart.weld_tagged(0.0, &[0, 0, 0, 1, 1, 1]);
+        assert_eq!(apart.positions.len(), 6);
+    }
 
     /// A unit cube, outward triangles.
     pub(crate) fn cube() -> TriMesh {

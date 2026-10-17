@@ -128,6 +128,30 @@ fn an_stl_imports_as_graphics_surface_or_solid() {
         solid.state().body.as_ref().unwrap().shape.count(Kind::Face),
         6
     );
+    // Facets kept as they are; an inside-out mesh still makes the solid.
+    let mut inverted = cube(10.0);
+    for t in &mut inverted.triangles {
+        t.swap(1, 2);
+    }
+    for m in [cube(10.0), inverted] {
+        let mut doc = Document::new();
+        doc.add(FeatureKind::Import(Import {
+            format: ImportFormat::Stl,
+            source: "scan".into(),
+            data: base64::engine::general_purpose::STANDARD.encode(of_mesh::io::write_stl(&m)),
+            mesh: Some(MeshImport {
+                mode: MeshImportMode::Solid,
+                group_facets: false,
+                ..Default::default()
+            }),
+        }));
+        let facets = Model::new(doc);
+        ok(&facets);
+        close(volume(&facets), 1000.0, 1e-6);
+        let body = facets.state().body.as_ref().unwrap();
+        assert_eq!(body.shape.count(Kind::Face), 12);
+        assert!(body.shape.is_valid());
+    }
 }
 
 #[test]

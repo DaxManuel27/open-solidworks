@@ -1,0 +1,53 @@
+{
+  "recorded_at_utc": "2026-10-17T05:00:12.256Z",
+  "machine": "Apple M3 Max, darwin arm64",
+  "build_profile": "debug",
+  "fixture": "Knit of a capped 48-sided extruded surface (50 faces) into a solid; filled surface closing the open top of a 40 x 20 x 10 block; move face on a 60 x 40 x 8 plate with six holes; tooling split of a drafted 40 x 30 x 20 part in a 70 x 60 x 40 box; import of a 1M-triangle UV sphere STL as a graphics body; mesh to solid B-rep (99,224 facets) and undercut analysis of that solid, decimation to a quarter and a sphere fit on the same mesh",
+  "rule": "Each budget is three times the slowest of three runs (at least 50 ms). Scale with OPENFORGE_BUDGET_SCALE on slower machines.",
+  "budgets": {
+    "knit_50_faces_ms": 73,
+    "filled_surface_ms": 1007,
+    "move_face_ms": 108,
+    "tooling_split_ms": 236,
+    "import_1m_ms": 16748,
+    "mesh_brep_100k_ms": 38197,
+    "undercut_100k_ms": 15832,
+    "decimate_ms": 20525,
+    "surface_fit_ms": 3985
+  },
+  "observed": [
+    {
+      "knit_50_faces_ms": 24.100250000000017,
+      "filled_surface_ms": 332.16041599999994,
+      "move_face_ms": 35.44349999999997,
+      "tooling_split_ms": 78.08604099999991,
+      "import_1m_ms": 5582.462083,
+      "mesh_brep_100k_ms": 12732.204083,
+      "undercut_100k_ms": 5239.875957999997,
+      "decimate_ms": 6616.928792000006,
+      "surface_fit_ms": 1316.31725
+    },
+    {
+      "knit_50_faces_ms": 22.7312080000047,
+      "filled_surface_ms": 325.96574999999575,
+      "move_face_ms": 35.758958000005805,
+      "tooling_split_ms": 76.32016699999804,
+      "import_1m_ms": 5421.394708,
+      "mesh_brep_100k_ms": 12420.250374999996,
+      "undercut_100k_ms": 5242.184625000009,
+      "decimate_ms": 6841.629249999998,
+      "surface_fit_ms": 1328.166624999998
+    },
+    {
+      "knit_50_faces_ms": 23.346541999999317,
+      "filled_surface_ms": 335.42087499999616,
+      "move_face_ms": 34.02416699999594,
+      "tooling_split_ms": 78.419332999998,
+      "import_1m_ms": 5507.5692500000005,
+      "mesh_brep_100k_ms": 12081.893083000003,
+      "undercut_100k_ms": 5277.244208999997,
+      "decimate_ms": 6766.684042000008,
+      "surface_fit_ms": 1311.5193750000035
+    }
+  ]
+}

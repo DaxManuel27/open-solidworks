@@ -19,7 +19,9 @@
     "perf:draw": "node scripts/phase-4-performance.mjs",
     "perf:draw:check": "node scripts/phase-4-performance.mjs --check",
     "perf:phase5": "node scripts/phase-5-performance.mjs",
-    "perf:phase5:check": "node scripts/phase-5-performance.mjs --check"
+    "perf:phase5:check": "node scripts/phase-5-performance.mjs --check",
+    "perf:phase6": "node scripts/phase-6-performance.mjs",
+    "perf:phase6:check": "node scripts/phase-6-performance.mjs --check"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

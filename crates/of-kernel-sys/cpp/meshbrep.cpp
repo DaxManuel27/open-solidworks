@@ -9,7 +9,12 @@
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepBuilderAPI_MakeVertex.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
+#include <BRepGProp.hxx>
 #include <BRep_Builder.hxx>
+#include <GProp_GProps.hxx>
+#include <TopExp.hxx>
+#include <TopTools_IndexedMapOfShape.hxx>
+#include <TopoDS_Solid.hxx>
 #include <BRep_Tool.hxx>
 #include <GeomAPI_PointsToBSplineSurface.hxx>
 #include <Geom_BSplineSurface.hxx>
@@ -75,6 +80,31 @@ std::unique_ptr<Shape> mesh_brep(rust::Slice<const double> points, rust::Slice<c
     b.Add(shell, face.Face());
   }
   return std::make_unique<Shape>(shell);
+}
+
+std::unique_ptr<Shape> oriented_solid(const Shape &shell, rust::Vec<HistoryEntry> &hist) {
+  if (shell.shape.ShapeType() != TopAbs_SHELL) throw std::invalid_argument("expected a shell");
+  if (!BRep_Tool::IsClosed(shell.shape))
+    throw std::runtime_error("the mesh has gaps (degenerate triangles?), so it can't be a solid");
+  BRep_Builder b;
+  TopoDS_Solid solid;
+  b.MakeSolid(solid);
+  b.Add(solid, shell.shape);
+  GProp_GProps props;
+  BRepGProp::VolumeProperties(solid, props);
+  if (props.Mass() < 0) solid.Reverse();
+  // The same faces, edges and vertices, in the same order.
+  const TopAbs_ShapeEnum kinds[3] = {TopAbs_FACE, TopAbs_EDGE, TopAbs_VERTEX};
+  for (uint8_t k = 0; k < 3; ++k) {
+    TopTools_IndexedMapOfShape in, out;
+    TopExp::MapShapes(shell.shape, kinds[k], in);
+    TopExp::MapShapes(solid, kinds[k], out);
+    for (int i = 1; i <= in.Extent(); ++i) {
+      int j = out.FindIndex(in(i));
+      if (j > 0) hist.push_back(HistoryEntry{0, k, static_cast<uint32_t>(i - 1), 0, k, static_cast<uint32_t>(j - 1)});
+    }
+  }
+  return std::make_unique<Shape>(solid);
 }
 
 // Kinds: 1 plane, 2 cylinder, 3 cone (r1 radius at the origin, r2 half

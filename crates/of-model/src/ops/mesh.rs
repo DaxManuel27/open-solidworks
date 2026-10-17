@@ -104,7 +104,13 @@ fn place_mesh(
                 return Err("the mesh has holes, so it can't be a solid; fill them or import it as a surface".into());
             }
             let body = brep(fid, &mesh, group, limit)?;
-            let solid = body.shape.solidify().map_err(geo)?;
+            // Facets that all face one way make a valid shell as they are.
+            let solid = if !group && mesh.is_oriented() {
+                body.shape.oriented_solid()
+            } else {
+                body.shape.solidify()
+            }
+            .map_err(geo)?;
             let names = Naming::from_history(
                 &solid.shape,
                 &solid.history,

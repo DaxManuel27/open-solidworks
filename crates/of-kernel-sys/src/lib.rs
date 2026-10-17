@@ -620,6 +620,9 @@ pub mod ffi {
         /// A shell of planar triangles sharing their edges: `points` are xyz
         /// triples, `triangles` index them three at a time.
         fn mesh_brep(points: &[f64], triangles: &[u32]) -> Result<UniquePtr<Shape>>;
+        /// A solid of a closed, consistently oriented shell (a mesh B-rep),
+        /// turned outward; no repair, so it's quick for many faces.
+        fn oriented_solid(shell: &Shape, hist: &mut Vec<HistoryEntry>) -> Result<UniquePtr<Shape>>;
         /// An analytic face over a parameter box `[u0 u1 v0 v1]`. Kinds: 1
         /// plane, 2 cylinder (r1), 3 cone (r1 at the origin, r2 half angle),
         /// 4 sphere (r1), 5 torus (r1 major, r2 minor).

@@ -291,17 +291,33 @@ std::unique_ptr<Shape> clone_shape(const Shape &s) { return wrap(s.shape); }
 bool is_null(const Shape &s) { return s.shape.IsNull(); }
 bool is_valid(const Shape &s) { return !s.shape.IsNull() && BRepCheck_Analyzer(s.shape).IsValid(); }
 
-uint32_t count(const Shape &s, uint8_t kind) {
-  TopTools_IndexedMapOfShape m;
-  TopExp::MapShapes(s.shape, kind_of(kind), m);
-  return static_cast<uint32_t>(m.Extent());
+std::shared_ptr<const TopTools_IndexedMapOfShape> Shape::map(TopAbs_ShapeEnum kind) const {
+  std::lock_guard<std::mutex> guard(lock);
+  if (!keyed.IsEqual(shape)) {
+    for (auto &m : maps) m.reset();
+    keyed = shape;
+  }
+  auto &m = maps[kind];
+  if (!m) {
+    auto built = std::make_shared<TopTools_IndexedMapOfShape>();
+    TopExp::MapShapes(shape, kind, *built);
+    m = built;
+  }
+  return m;
 }
 
+void Shape::forget() const {
+  std::lock_guard<std::mutex> guard(lock);
+  for (auto &m : maps) m.reset();
+  keyed.Nullify();
+}
+
+uint32_t count(const Shape &s, uint8_t kind) { return static_cast<uint32_t>(s.map(kind_of(kind))->Extent()); }
+
 std::unique_ptr<Shape> sub_shape(const Shape &s, uint8_t kind, uint32_t index) {
-  TopTools_IndexedMapOfShape m;
-  TopExp::MapShapes(s.shape, kind_of(kind), m);
-  if (index >= static_cast<uint32_t>(m.Extent())) throw std::out_of_range("sub-shape index out of range");
-  return wrap(m(static_cast<int>(index) + 1));
+  auto m = s.map(kind_of(kind));
+  if (index >= static_cast<uint32_t>(m->Extent())) throw std::out_of_range("sub-shape index out of range");
+  return wrap((*m)(static_cast<int>(index) + 1));
 }
 
 std::unique_ptr<Shape> compound_new() {
@@ -310,7 +326,10 @@ std::unique_ptr<Shape> compound_new() {
   return wrap(c);
 }
 
-void compound_add(Shape &compound, const Shape &s) { BRep_Builder().Add(compound.shape, s.shape); }
+void compound_add(Shape &compound, const Shape &s) {
+  BRep_Builder().Add(compound.shape, s.shape);
+  compound.forget();
+}
 
 std::unique_ptr<Shape> make_box(double dx, double dy, double dz) {
   return wrap(BRepPrimAPI_MakeBox(dx, dy, dz).Shape());

@@ -176,6 +176,14 @@ fn analysis_surfaces_meshes_and_saved_bodies() {
         scene["scene"]["meshes"]
     );
     let mesh = scene["scene"]["meshes"][0]["id"].clone();
+    // STL export holds the mesh body beside the B-rep it came from.
+    let count = |path: &std::path::Path| {
+        let b = std::fs::read(path).unwrap();
+        u32::from_le_bytes([b[80], b[81], b[82], b[83]])
+    };
+    let both = dir.path("both.stl");
+    core.ok("export", json!({ "path": both }));
+    assert_eq!(count(&both), 2 * count(&stl));
     let solid = info["bodies"][0]["id"].clone();
     // The export held the block and the offset surface: measured against
     // everything it matches; against the block alone, the surface's

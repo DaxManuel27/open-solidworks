@@ -51,6 +51,7 @@ pub use resolve::{Resolved, resolve};
 pub use units::Units;
 
 pub use of_geom as geom;
+pub use of_mesh as mesh;
 pub use of_sketch as sketch;
 
 use of_geom::DVec3;

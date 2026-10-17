@@ -5,10 +5,13 @@
 #include "rust/cxx.h"
 
 #include <Standard_Failure.hxx>
+#include <TopAbs_ShapeEnum.hxx>
+#include <TopTools_IndexedMapOfShape.hxx>
 #include <TopoDS_Shape.hxx>
 
 #include <exception>
 #include <memory>
+#include <mutex>
 
 // Turn kernel exceptions into Rust `Err` values instead of aborting.
 namespace rust {
@@ -47,7 +50,25 @@ class Shape {
 public:
   Shape() = default;
   explicit Shape(TopoDS_Shape s) : shape(std::move(s)) {}
+  Shape(const Shape &o) : shape(o.shape) {}
+  Shape &operator=(const Shape &o) {
+    shape = o.shape;
+    forget();
+    return *this;
+  }
   TopoDS_Shape shape;
+
+  // Sub-shapes of one kind in `TopExp::MapShapes` order, built once and
+  // kept while `shape` stays the same. Per-index queries (face_info,
+  // sub_shape, ...) use this, so walking every face is linear, not
+  // quadratic. Call `forget` after changing the shape in place.
+  std::shared_ptr<const TopTools_IndexedMapOfShape> map(TopAbs_ShapeEnum kind) const;
+  void forget() const;
+
+private:
+  mutable std::mutex lock;
+  mutable TopoDS_Shape keyed;
+  mutable std::shared_ptr<const TopTools_IndexedMapOfShape> maps[TopAbs_SHAPE];
 };
 
 // Assembly STEP writer and reader; their XCAF state lives in assembly.cpp.
@@ -227,6 +248,7 @@ std::unique_ptr<Shape> freeform_face(const Shape &s, uint32_t face_index, uint32
                                      rust::Vec<HistoryEntry> &hist);
 std::unique_ptr<Shape> make_vertex(const Vec3 &p);
 std::unique_ptr<Shape> mesh_brep(rust::Slice<const double> points, rust::Slice<const uint32_t> triangles);
+std::unique_ptr<Shape> oriented_solid(const Shape &shell, rust::Vec<HistoryEntry> &hist);
 std::unique_ptr<Shape> primitive_face(uint8_t kind, const Frame &frame, double r1, double r2,
                                       rust::Slice<const double> bounds);
 std::unique_ptr<Shape> bspline_face(rust::Slice<const double> points, uint32_t nu, uint32_t nv);

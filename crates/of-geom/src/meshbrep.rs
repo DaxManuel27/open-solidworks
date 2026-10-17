@@ -34,6 +34,18 @@ impl Shape {
         Ok(Shape(ffi::mesh_brep(&p, &t)?))
     }
 
+    /// A solid of a closed mesh B-rep shell whose triangles all face the
+    /// same way, turned outward. Unlike [`Shape::solidify`] it doesn't
+    /// repair the shell, which takes minutes at 100k faces.
+    pub fn oriented_solid(&self) -> Result<crate::OpResult> {
+        let mut h = Vec::new();
+        let s = ffi::oriented_solid(&self.0, &mut h)?;
+        Ok(crate::OpResult {
+            shape: Shape(s),
+            history: crate::convert_history(h),
+        })
+    }
+
     /// An analytic face in `frame` (origin, axis as normal, x direction)
     /// over the parameter box `[u0, u1, v0, v1]`.
     pub fn analytic_face(surface: Analytic, frame: &Plane, bounds: [f64; 4]) -> Result<Shape> {
