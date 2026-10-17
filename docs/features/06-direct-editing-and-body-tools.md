@@ -18,13 +18,13 @@ Edits faces directly, without going back to the feature that made them. Stored a
 
 **Rules:** neighbouring faces extend or trim to stay connected. A move that would change the topology too much, for example moving a face past a neighbour, fails.
 
-**OpenForge today:** not available.
+**OpenForge today:** offset, translate (by distance along a direction or up to a reference) and rotate about an axis, on solids, as history features that keep face names.
 
 ## Delete/keep body
 
 Removes bodies from the part from this point in the tree on, or keeps only the chosen ones. API: `IDeleteBodyFeatureData` (`Bodies`, `KeepBodies`).
 
-**OpenForge today:** not as a feature. Bodies can be hidden, and split can drop pieces.
+**OpenForge today:** a feature that deletes the chosen solid, surface or mesh bodies, or keeps only them.
 
 ## Move/copy body
 
@@ -38,7 +38,7 @@ Moves, rotates or copies bodies, either by numbers or with mates as in an assemb
 | Rotate | About an origin with angles about X, Y and Z; about an edge by an angle | `RotationOriginX/Y/Z`. |
 | Constraints mode | Coincident, parallel, perpendicular, tangent, concentric, distance and angle mates between the body and other geometry | `AddMate`. |
 
-**OpenForge today:** rigid move and copy by translation and XYZ rotation about an origin.
+**OpenForge today:** translation and XYZ rotation, several copies, along an edge, to a point, about an axis, and positioning by coincident, parallel, perpendicular, tangent, concentric, distance and angle mates.
 **Missing:** copy count, move along an edge, move to a vertex, rotate about an edge, mate-based positioning.
 
 ## Combine
@@ -70,7 +70,7 @@ Builds solids from the regions where solids, surfaces and planes overlap or encl
 
 Common use: model a bottle's outside, then intersect with a plane to get the inner volume.
 
-**OpenForge today:** not available (combine's common operation covers the solid–solid case).
+**OpenForge today:** intersection, internal or both regions of bodies, surfaces and planes, with excluded regions, merge, consumed surfaces and capped planar openings.
 
 ## Split
 
@@ -92,7 +92,7 @@ Splits a body into several bodies using planes, faces, surfaces or sketches, opt
 
 Saves bodies as separate part files, optionally with an assembly that places them. API: `ISaveBodyFeatureData` (`AddSaveBodies`, `AssemblyPath`, `ConsumeBody`, `CopyCustomProperties`). The new parts are derived parts linked to the original.
 
-**OpenForge today:** not available; needs assemblies first.
+**OpenForge today:** `bodies.save` and the Save Bodies panel write chosen bodies to part files named after them, with an assembly of them.
 
 ## Insert part and derived part
 
@@ -104,14 +104,14 @@ Inserts another part as a body that stays linked to its source. API: `IDerivedPa
 | What to transfer | Solid bodies, surface bodies, axes, planes, cosmetic threads, absorbed and unabsorbed sketches, custom properties, cut list properties, coordinate systems, model dimensions, Hole Wizard data, material, sheet metal information |
 | Link | Break or lock the external reference; locate the part with Move/Copy (`MoveFeature`) |
 
-**OpenForge today:** STEP and IGES import stores a body in the document, which isn't linked.
+**OpenForge today:** a part file's solids, surfaces, reference geometry, properties and material, by configuration and body, mirrored and moved, rebuilt when the file changes. Lock and break link are not offered.
 **Missing:** linked insert of `.ofp` parts.
 
 ## Mirror part
 
 Creates a new, opposite-hand part linked to the original. API: `IMirrorPartFeatureData`. Transfer options are the same as derived parts plus DimXpert annotations and unlocked sheet metal properties. Also available: break link to original part.
 
-**OpenForge today:** not available. Mirror of the whole body inside a part works.
+**OpenForge today:** `part.mirror` writes the opposite-hand part linked to the saved part.
 
 ## Defeature
 
@@ -121,28 +121,28 @@ Simplifies a part or assembly for sharing or simulation.
 - **Silhouette (assembly):** replaces components with simple shapes, such as a bounding box, polygon extrusion or cylinder.
 - Options: remove internal components, holes, fillets, small features below a size; keep moving parts; save as a new file with or without a link.
 
-**OpenForge today:** not available.
+**OpenForge today:** faces picked, holes and fillets below a size removed with the gaps healed; in assemblies, `asm.defeature` saves a silhouette part.
 
 ## Dependency editing and dynamic feature editing
 
 Drag features in the tree to reorder them, with a check that references allow it. Dynamic Reference Visualization shows parent and child arrows when hovering in the tree. Instant3D drags feature handles in the graphics area.
 
-**OpenForge today:** feature reordering is not exposed. Viewport handles exist for spatial sketches.
+**OpenForge today:** features reorder by dragging in the tree with reference checks; hovering a feature marks its parents and children.
 
 ## Instant3D
 
 Drag arrows on a selected face or feature to change its size, with an on-screen ruler for exact values; drag sketch contours of a feature to edit its sketch; alt-drag to copy. Toggle on or off in the Features toolbar.
 
-**OpenForge today:** not available.
+**OpenForge today:** an arrow on a picked face drags an extrude's depth, or any other face as Move Face. There is no on-screen ruler.
 
 ## Body compare
 
 Compares two bodies, or a body with another file, and colours the differences: matching faces, modified faces, unique faces, and volume differences.
 
-**OpenForge today:** not available.
+**OpenForge today:** `doc.analysis` compare: shared and changed faces and the volume difference of two bodies.
 
 ## Slicing tool
 
 Creates a series of section sketches through bodies at evenly spaced planes. Options: reference plane, number of slices, offset and spacing, slice bounding plane size. Results can be converted to sketches for lofting.
 
-**OpenForge today:** not available.
+**OpenForge today:** section curves through chosen bodies on planes evenly spaced from a reference plane.

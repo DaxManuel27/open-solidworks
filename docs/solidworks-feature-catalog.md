@@ -220,11 +220,11 @@ A complete inventory of SOLIDWORKS functionality, grouped by area, to scope Open
 | Rib | Thin web from an open sketch | |
 | Dome | Dome on a face | |
 | Wrap | Wraps a sketch onto a face (emboss, deboss, scribe) | |
-| Indent | Indents one body into another | |
-| Flex (bend, twist, taper, stretch) | Global deformation of bodies | |
-| Deform (point, curve to curve, surface push) | Freeform deformation | |
-| Freeform | Push/pull control points on a face | |
-| Scale | Scales a part about a point | |
+| Indent | Indents one body into another |  ✅ |
+| Flex (bend, twist, taper, stretch) | Global deformation of bodies |  ✅ |
+| Deform (point, curve to curve, surface push) | Freeform deformation |  ✅ |
+| Freeform | Push/pull control points on a face |  ✅ |
+| Scale | Scales a part about a point |  ✅ |
 | Fastening features: mounting boss, snap hook, snap hook groove, vent, lip/groove | Plastic part features | |
 | 3D Texture | Turns an appearance texture into geometry | |
 | Library features / Design Library | Reusable saved features | |
@@ -252,47 +252,47 @@ A complete inventory of SOLIDWORKS functionality, grouped by area, to scope Open
 
 | Feature | What it does | OpenForge |
 | --- | --- | --- |
-| Extruded surface | Surface from an extruded sketch | |
-| Revolved surface | Surface from a revolved sketch | |
-| Swept surface | Surface along a path | |
-| Lofted surface | Surface between profiles | |
-| Boundary surface | Surface from curves in two directions | |
-| Filled surface | Patches a boundary with set continuity | |
-| Freeform surface | Push/pull face shaping | |
-| Planar surface | Flat surface from a closed boundary | |
-| Offset surface | Copies faces at an offset | |
-| Ruled surface | Surface perpendicular or tapered to edges | |
-| Radiate surface | Surface radiating from edges along a plane | |
-| Surface from mesh | Fits surfaces to mesh data | |
-| Knit surface | Joins surfaces, optionally into a solid | |
-| Trim / untrim surface | Cuts surfaces with other geometry | |
-| Extend surface | Extends surface edges | |
-| Delete face / delete hole | Removes faces or patches holes | |
-| Replace face | Swaps faces for surfaces | |
-| Mid-surface | Surface midway between offset faces | |
-| Thicken | Turns surfaces into a solid | |
-| Cut with surface | Splits or cuts a solid with a surface | |
-| Surface flatten | Flattens a doubly curved face into 2D | |
-| Projected surface area | Measures area projected on a plane | |
+| Extruded surface | Surface from an extruded sketch |  ✅ |
+| Revolved surface | Surface from a revolved sketch |  ✅ |
+| Swept surface | Surface along a path |  ✅ |
+| Lofted surface | Surface between profiles |  ✅ |
+| Boundary surface | Surface from curves in two directions |  ✅ |
+| Filled surface | Patches a boundary with set continuity |  ✅ |
+| Freeform surface | Push/pull face shaping |  ✅ |
+| Planar surface | Flat surface from a closed boundary |  ✅ |
+| Offset surface | Copies faces at an offset |  ✅ |
+| Ruled surface | Surface perpendicular or tapered to edges |  ✅ |
+| Radiate surface | Surface radiating from edges along a plane |  ✅ |
+| Surface from mesh | Fits surfaces to mesh data |  ✅ |
+| Knit surface | Joins surfaces, optionally into a solid |  ◐ No merge entities option |
+| Trim / untrim surface | Cuts surfaces with other geometry |  ✅ |
+| Extend surface | Extends surface edges |  ✅ |
+| Delete face / delete hole | Removes faces or patches holes |  ✅ |
+| Replace face | Swaps faces for surfaces |  ✅ |
+| Mid-surface | Surface midway between offset faces |  ✅ |
+| Thicken | Turns surfaces into a solid |  ✅ |
+| Cut with surface | Splits or cuts a solid with a surface |  ✅ |
+| Surface flatten | Flattens a doubly curved face into 2D |  ◐ No guide or map edges; outline to DXF, not drawing views |
+| Projected surface area | Measures area projected on a plane |  ✅ |
 
 ## 6. Direct editing and body tools
 
 | Feature | What it does | OpenForge |
 | --- | --- | --- |
-| Move face (offset, translate, rotate) | Edits geometry directly without history | |
-| Delete / keep body | Removes bodies from a part | |
-| Move / copy body | Positions bodies with mates or transforms | |
+| Move face (offset, translate, rotate) | Edits geometry directly without history |  ✅ |
+| Delete / keep body | Removes bodies from a part |  ✅ |
+| Move / copy body | Positions bodies with mates or transforms |  ✅ |
 | Combine (add, subtract, common) | Boolean operations between bodies | |
-| Intersect | Builds solids from intersecting regions | |
+| Intersect | Builds solids from intersecting regions |  ✅ |
 | Split | Splits a part into bodies, optionally saved as files | |
-| Save bodies / create assembly | Writes bodies out as parts and an assembly | |
-| Insert part / derived part | Brings another part in as a linked body | |
-| Mirror part (opposite hand) | Creates a mirrored part file | |
-| Defeature | Simplifies a model for sharing | |
-| Dependency editing / dynamic feature editing | Drag-edit features in the tree or graphics | |
-| Instant3D | Drag handles to change feature sizes | |
-| Body compare | Highlights differences between bodies | |
-| Slicing tool | Creates section sketches through bodies | |
+| Save bodies / create assembly | Writes bodies out as parts and an assembly |  ✅ |
+| Insert part / derived part | Brings another part in as a linked body |  ◐ Linked by file; no lock or break link |
+| Mirror part (opposite hand) | Creates a mirrored part file |  ✅ |
+| Defeature | Simplifies a model for sharing |  ✅ |
+| Dependency editing / dynamic feature editing | Drag-edit features in the tree or graphics |  ✅ |
+| Instant3D | Drag handles to change feature sizes |  ◐ Drag arrow for extrude depth and faces; no ruler |
+| Body compare | Highlights differences between bodies |  ✅ |
+| Slicing tool | Creates section sketches through bodies |  ✅ |
 
 ## 7. Reference geometry
 
@@ -325,13 +325,13 @@ A complete inventory of SOLIDWORKS functionality, grouped by area, to scope Open
 
 | Feature | What it does | OpenForge |
 | --- | --- | --- |
-| Import mesh as graphics body, solid or surface | STL, OBJ, 3MF, PLY, VRML import | |
-| Mesh BREP and hybrid bodies | Using mesh bodies in features | |
-| Convert to mesh body | Solid or surface to mesh | |
-| Decimate mesh | Reduce triangle count | |
-| Segment imported mesh | Group facets into faces | |
-| Paint select facets | Select mesh regions | |
-| ScanTo3D (mesh prep and surface wizards) | Scan data to solid model | |
+| Import mesh as graphics body, solid or surface | STL, OBJ, 3MF, PLY, VRML import |  ◐ STL, OBJ, OFF, PLY, 3MF, AMF; no VRML |
+| Mesh BREP and hybrid bodies | Using mesh bodies in features |  ✅ |
+| Convert to mesh body | Solid or surface to mesh |  ✅ |
+| Decimate mesh | Reduce triangle count |  ✅ |
+| Segment imported mesh | Group facets into faces |  ✅ |
+| Paint select facets | Select mesh regions |  ✅ |
+| ScanTo3D (mesh prep and surface wizards) | Scan data to solid model |  ◐ Guided region fits; no automatic NURBS network |
 
 ## 10. Sheet metal
 
@@ -385,17 +385,17 @@ A complete inventory of SOLIDWORKS functionality, grouped by area, to scope Open
 
 | Feature | What it does | OpenForge |
 | --- | --- | --- |
-| Draft analysis | Checks faces for draft | |
-| Undercut analysis | Finds trapped areas | |
-| Parting line analysis and parting line | Where the mold splits | |
-| Shut-off surfaces | Closes through holes | |
-| Parting surface | Surface that splits core and cavity | |
-| Interlock surface | Tapered interlock around the parting line | |
-| Tooling split | Creates core and cavity bodies | |
-| Core | Side cores and lifters | |
-| Cavity | Mold cavity from a part in a block | |
-| Scale (shrinkage factor) | Accounts for material shrink | |
-| Mold folders | Organizes mold surfaces | |
+| Draft analysis | Checks faces for draft |  ◐ Per face; no gradual transition colouring |
+| Undercut analysis | Finds trapped areas |  ✅ |
+| Parting line analysis and parting line | Where the mold splits |  ◐ Splits cylindrical and spherical straddle faces only |
+| Shut-off surfaces | Closes through holes |  ✅ |
+| Parting surface | Surface that splits core and cavity |  ◐ No smoothing |
+| Interlock surface | Tapered interlock around the parting line |  ✅ |
+| Tooling split | Creates core and cavity bodies |  ✅ |
+| Core | Side cores and lifters |  ✅ |
+| Cavity | Mold cavity from a part in a block |  ◐ Through insert part, scale and combine |
+| Scale (shrinkage factor) | Accounts for material shrink |  ✅ |
+| Mold folders | Organizes mold surfaces |  ✅ |
 
 ## 13. Assemblies
 

@@ -1,3 +1,47 @@
+# Handoff: Phase 6 complete locally (2026-10-17)
+
+Read this first. The Phase 5 notes below are history.
+
+## State
+
+- Branch `phase-6` (local, not pushed), in the worktree `of-phase-6`, rebased onto
+  `phase-5` (3ad6bf4). Plan: `docs/phase-6-plan.md`; what was built, decisions, limits and
+  the verification run: `docs/phase-6-status.md`; P6.0 findings: `docs/phase-6-feasibility.md`.
+  Feature docs 03 (shape features), 05, 06, 09 and 12 and the catalog say what is supported.
+- Left for the owner: Phase 5's release first, then push `phase-6`, hosted CI on three
+  platforms, rebase onto `main` once Phases 4 and 5 merge, merge.
+- Never commit `docs/soliworks-ui.jpeg` (clean-room rule).
+
+## Where things are
+
+- Kernel: `of-kernel-sys/cpp/{surface,faceedit,shaping,bodytools,meshbrep}.cpp`; `of-geom`
+  `surface.rs`, `faceedit.rs`, `deform.rs`, `meshbrep.rs`.
+- Model: surface bodies in `State.surfaces`, graphics meshes in `State.meshes`, mould
+  records in `State.mold`, flattenings in `State.flattenings`; `everything()` is solids then
+  surfaces. Features in `of-model/src/{surfaces,direct,body_tools,mold,meshes}.rs`, ops in
+  `ops/{surface,direct,shaping,flatten,body_tools,mold,mesh}.rs`. Part file v7, protocol 5.
+- `of-mesh`: pure Rust meshes (readers, BVH, decimation, segmentation, fits, prep,
+  reconstruction, flattening).
+- Core: `openforge/src/surfacing.rs` (`doc.analysis`, `bodies.save`, `part.mirror`).
+- Desktop: one schema-driven panel (`panels/schema.tsx`) for every feature in
+  `toolbars/phase6.ts`; analysis and file panels in `panels/analysis.tsx`; Instant3D in
+  `viewport/instant3d.ts`.
+- Checks: `scripts/surfacing-smoke.mjs` (alone: `OPENFORGE_SMOKE_ONLY=surfacing`), conformance
+  areas 05, 06, 09, 12, `scripts/phase-6-performance.mjs` (`pnpm perf:phase6:check`).
+
+## Gotchas
+
+- Shapes cache their sub-shape maps (`Shape::map` in `ofk.h`). Code that changes a
+  shape's topology in place must call `forget()`; `compound_add` does.
+- Shapes the core has displayed carry triangulations. Operations that stretch geometry
+  (`GTransform`, NURBS conversion) must work on `BRepBuilderAPI_Copy(s, true, false)`.
+- schemars groups undocumented enum variants into one `enum` entry beside documented
+  `const`s; the generic panel reads both (`choices` in `schema.tsx`).
+- Body pickers list mesh bodies from `scene.meshes`, not `scene.bodies`.
+- With no draft, upright walls go with the core; the parting line is then the top outline.
+
+---
+
 # Handoff: Phase 5 complete locally (2026-10-17, session 11)
 
 Read this first. Earlier sections below are history.

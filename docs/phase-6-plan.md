@@ -1,9 +1,8 @@
 # Phase 6 implementation plan
 
-Status: proposed 2026-10-16, awaiting the owner's [decisions](#decisions-needed). To be built
-on `phase-6`, branched from `phase-5`. It is rebased onto `main` once Phases 4 and 5 merge
-(see [Phase 5 status](phase-5-status.md)). Work starts after Phase 5's release gate (P5.9)
-passes, apart from P6.0 prototypes, which touch only `of-kernel-sys` and new test files.
+Status: implemented on `phase-6`, built on `phase-5`; decisions taken as recommended.
+What was built, the limits and the verification run are in [the status](phase-6-status.md).
+It is rebased onto `main` once Phases 4 and 5 merge.
 
 ## Goal and starting point
 

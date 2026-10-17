@@ -434,6 +434,8 @@ Uses a tool body to press a shaped pocket into a target body with clearance and 
 | Clearance | Gap between tool and target, with direction | `Clearance`, `ClearanceDirection`. |
 | Cut | Removes the intersection instead of indenting | `Cut`, `CutDirection`. |
 
+**OpenForge today:** a tool body pressed into a target with a wall thickness and clearance, or only cut out.
+
 ## Flex
 
 Deforms bodies with one of four global shapes, controlled by two trim planes and a triad. The API exposes it through generic feature parameters and has no dedicated data interface.
@@ -444,6 +446,8 @@ Deforms bodies with one of four global shapes, controlled by two trim planes and
 - **Stretching:** stretch distance along an axis.
 - Shared options: bodies to flex, trim plane 1 and 2 positions (limit the affected region), triad position and rotation, hard edges (keep faces analytic where possible), accuracy slider.
 
+**OpenForge today:** bend, twist, taper and stretch about an origin and axis between trim planes, with an accuracy setting.
+
 ## Deform
 
 Freeform deformation of whole bodies.
@@ -452,9 +456,13 @@ Freeform deformation of whole bodies.
 - **Curve to curve:** maps a set of initial curves to target curves, with fixed curves and edges, and shape stiffness, accuracy and match options.
 - **Surface push:** pushes one body into another using a tool body (sphere, ellipsoid, polygon, rectangle or a user body), with deform deviation and accuracy.
 
+**OpenForge today:** point, curve to curve and surface push, with an accuracy setting.
+
 ## Freeform
 
 Reshapes a single face by moving control points on a mesh of curves laid over it. Options are the face, continuity at each boundary (contact, tangent or curvature), direction 1 and 2 curves, control points with triads, and a direction 1/2 symmetry option.
+
+**OpenForge today:** on solids and surfaces; see [Freeform surface](05-surfaces.md#freeform-surface).
 
 ## Scale
 
@@ -467,6 +475,8 @@ Scales a part or selected bodies. API: `IScaleFeatureData`.
 | Bodies | Which bodies to scale | `Bodies`. |
 
 Scale changes geometry only. Dimensions on earlier features keep their values, which is why SOLIDWORKS puts Scale late in the tree.
+
+**OpenForge today:** uniform or per axis, about the centroid, origin or a coordinate system, or by the material's mould shrinkage.
 
 ## Fastening features (plastic parts)
 
