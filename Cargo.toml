@@ -18,6 +18,7 @@ of-assembly = { path = "crates/of-assembly" }
 of-drawing = { path = "crates/of-drawing" }
 of-model = { path = "crates/of-model" }
 of-io = { path = "crates/of-io" }
+of-mesh = { path = "crates/of-mesh" }
 of-protocol = { path = "crates/of-protocol" }
 anyhow = "1"
 base64 = "0.23"

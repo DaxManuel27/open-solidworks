@@ -1,0 +1,18 @@
+[package]
+name = "of-mesh"
+description = "Triangle meshes: readers, spatial queries, decimation, segmentation, fitting, reconstruction and flattening"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+glam.workspace = true
+miniz_oxide = "0.9"
+nalgebra.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true
