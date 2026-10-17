@@ -175,6 +175,7 @@ fn flat_pattern_view_with_bend_lines_notes_and_tables() {
                 hash: None,
                 configuration: None,
                 flat: Some(FlatView::default()),
+                bodies: None,
             },
             orientation: Orientation::Front,
             exploded: false,

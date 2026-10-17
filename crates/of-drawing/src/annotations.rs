@@ -169,6 +169,10 @@ pub enum AnnotationKind {
         /// Tail text (process, specification).
         #[serde(default, skip_serializing_if = "String::is_empty")]
         tail: String,
+        /// A weld bead feature of the model whose size, symbol text and
+        /// process fill the arrow side and tail.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        bead: Option<of_model::FeatureId>,
     },
     /// A hatched or filled closed region (sheet or view coordinates).
     AreaHatch {
@@ -243,6 +247,14 @@ pub enum BalloonText {
     },
     Text {
         text: String,
+    },
+    /// The weldment cut list item number of the item holding a body.
+    CutListItem {
+        body: of_model::BodyId,
+    },
+    /// That item's quantity.
+    CutListQuantity {
+        body: of_model::BodyId,
     },
 }
 
@@ -360,7 +372,9 @@ impl AnnotationKind {
                     out.push(origin.target.view);
                     out.extend(holes.iter().map(|h| h.view));
                 }
-                crate::tables::TableKind::Bend { view, .. } => out.push(*view),
+                crate::tables::TableKind::Bend { view, .. }
+                | crate::tables::TableKind::CutList { view, .. }
+                | crate::tables::TableKind::Weld { view } => out.push(*view),
                 crate::tables::TableKind::Punch { view, origin } => {
                     out.push(*view);
                     out.extend(origin.iter().map(|o| o.target.view));

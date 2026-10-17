@@ -10,6 +10,7 @@ import { phase2Smoke } from './phase-2-smoke.mjs'
 import { assemblySmoke } from './assembly-smoke.mjs'
 import { drawingSmoke } from './drawing-smoke.mjs'
 import { sheetMetalSmoke } from './sheet-metal-smoke.mjs'
+import { weldmentSmoke } from './weldment-smoke.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 process.env.OPENFORGE_CORE = join(
@@ -231,6 +232,10 @@ async function run(win) {
   )
   if (process.env.OPENFORGE_SMOKE_ASSISTANT_ONLY) {
     await assistantSmoke({ js, call, click, wait })
+    return
+  }
+  if (process.env.OPENFORGE_SMOKE_ONLY === 'weldment') {
+    await weldmentSmoke({ js, call, click, wait, temp })
     return
   }
   if (process.env.OPENFORGE_SMOKE_ONLY === 'sheet_metal') {
@@ -702,11 +707,12 @@ async function run(win) {
       },
     },
   })
+  await weldmentSmoke({ js, call, click, wait, temp })
   const screenshot = await win.capturePage()
   const artifact = process.env.OPENFORGE_SMOKE_SCREENSHOT
   if (artifact) writeFileSync(artifact, screenshot.toPNG())
   console.log(
-    'Desktop smoke passed: toolbar layout/themes, keyboard/menu isolation, sketch tools, dropdown panels, views, draw/extrude/revolve, body visibility/copy/split retention, scoped formulas, configurations, spatial sketches, hollow sweeps, domes, cosmetic threads, ribs with formula entry, modeled threads, boundaries, tangent lofts, undo/redo, save/reopen/import/export, assemblies (insert, mates, collision drag, patterns, interference, explode, BOM, save/reopen), drawings (make drawing, model items, driving dimensions, smart dimensions, notes, section/detail views, revision table, BOM with auto balloons, PDF/DXF export, undo/redo, save/reopen), sheet metal (base and edge flanges, flatten, gauge, flat DXF, flat pattern view, bend and punch tables)',
+    'Desktop smoke passed: toolbar layout/themes, keyboard/menu isolation, sketch tools, dropdown panels, views, draw/extrude/revolve, body visibility/copy/split retention, scoped formulas, configurations, spatial sketches, hollow sweeps, domes, cosmetic threads, ribs with formula entry, modeled threads, boundaries, tangent lofts, undo/redo, save/reopen/import/export, assemblies (insert, mates, collision drag, patterns, interference, explode, BOM, save/reopen), drawings (make drawing, model items, driving dimensions, smart dimensions, notes, section/detail views, revision table, BOM with auto balloons, PDF/DXF export, undo/redo, save/reopen), sheet metal (base and edge flanges, flatten, gauge, flat DXF, flat pattern view, bend and punch tables), weldments (members from a sketch, trim, cut list, cut list table)',
   )
 }
 

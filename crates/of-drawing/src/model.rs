@@ -20,6 +20,9 @@ pub struct Piece {
     /// Range of this piece's edges in the combined shape.
     pub first_edge: u32,
     pub edges: u32,
+    /// When only some of the part's bodies are shown: each local edge's
+    /// index in the part's whole shape.
+    pub edge_map: Option<Vec<u32>>,
 }
 
 /// A model ready to project.
@@ -40,7 +43,12 @@ impl Scene {
             .pieces
             .iter()
             .find(|p| index >= p.first_edge && index < p.first_edge + p.edges)?;
-        let r = p.part.state().ref_for(Kind::Edge, index - p.first_edge)?;
+        let local = index - p.first_edge;
+        let global = match &p.edge_map {
+            Some(map) => *map.get(local as usize)?,
+            None => local,
+        };
+        let r = p.part.state().ref_for(Kind::Edge, global)?;
         Some(CompRef {
             component: p.component.clone(),
             entity: r,
@@ -56,7 +64,14 @@ impl Scene {
     pub fn edge_index(&self, r: &CompRef) -> Option<u32> {
         let p = self.piece(&r.component)?;
         let (kind, i) = p.part.state().index_of(&r.entity).ok()?;
-        (kind == Kind::Edge).then_some(p.first_edge + i)
+        if kind != Kind::Edge {
+            return None;
+        }
+        let local = match &p.edge_map {
+            Some(map) => map.iter().position(|g| *g == i)? as u32,
+            None => i,
+        };
+        Some(p.first_edge + local)
     }
 }
 
@@ -173,23 +188,45 @@ impl Sources {
         flat: bool,
         exploded: bool,
         hidden: &[Vec<String>],
+        bodies: Option<&[of_model::BodyId]>,
     ) -> Result<Scene, String> {
-        if flat && is_assembly(path) {
-            return Err("only a sheet metal part has a flat pattern".into());
+        if (flat || bodies.is_some()) && is_assembly(path) {
+            return Err("flat patterns and body views show parts".into());
         }
         if !is_assembly(path) {
             let part = self.part(path, configuration, flat)?;
-            let shape = part
+            let whole = part
                 .shape()
                 .cloned()
                 .ok_or_else(|| "the part has no solid geometry".to_string())?;
+            let (shape, edge_map) = match bodies {
+                Some(ids) => {
+                    let chosen: Vec<&Shape> = ids
+                        .iter()
+                        .map(|id| {
+                            part.state()
+                                .solid(id)
+                                .map(|b| &b.geometry.shape)
+                                .map_err(|_| format!("the part has no body {}", id.0))
+                        })
+                        .collect::<Result<_, _>>()?;
+                    if chosen.is_empty() {
+                        return Err("choose at least one body to show".into());
+                    }
+                    let shape = Shape::compound(chosen);
+                    let map = shape.indices_in(&whole, Kind::Edge).map_err(|e| e.0)?;
+                    (shape, Some(map))
+                }
+                None => (whole, None),
+            };
             let edges = shape.count(Kind::Edge);
             let key = format!(
-                "{}#{}#{:?}#{}",
+                "{}#{}#{:?}#{}#{:?}",
                 part.path.display(),
                 part.hash,
                 configuration,
-                if flat { "flat" } else { "formed" }
+                if flat { "flat" } else { "formed" },
+                bodies
             );
             return Ok(Scene {
                 shape,
@@ -199,6 +236,7 @@ impl Sources {
                     pose: Pose::IDENTITY,
                     first_edge: 0,
                     edges,
+                    edge_map,
                 }],
                 key,
                 is_assembly: false,
@@ -246,6 +284,7 @@ impl Sources {
                 pose,
                 first_edge: first,
                 edges,
+                edge_map: None,
             });
             first += edges;
         }
@@ -376,7 +415,7 @@ impl Sources {
         path: &Path,
         configuration: Option<u32>,
     ) -> Result<Vec<PlanarFace>, String> {
-        let scene = self.scene(path, configuration, false, false, &[])?;
+        let scene = self.scene(path, configuration, false, false, &[], None)?;
         let mut out = Vec::new();
         for p in &scene.pieces {
             let state = p.part.state();

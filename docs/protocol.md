@@ -397,6 +397,7 @@ run `cargo run -p openforge -- generate` instead. -->
 | `import_step_assembly` | `asm.import_step` | file/session (not in drafts) | `path`, `detail?`, `folder?` |
 | `new_drawing` | `drawing.new` | file/session (not in drafts) | `configuration?`, `detail?`, `model?`, `projection?`, `size?`, `standard?` |
 | `standard_views` | `drawing.views.standard` | file/session (not in drafts) | `sheet`, `model`, `configuration?`, `detail?`, `isometric?`, `scale?` |
+| `model_bodies` | `drawing.model.bodies` | read | `model`, `configuration?`, `detail?` |
 | `model_planar_faces` | `drawing.model.faces` | read | `model`, `configuration?`, `detail?` |
 | `update_drawing` | `drawing.update` | file/session (not in drafts) | `detail?` |
 | `drawing_info` | `drawing.info` | read | `detail?` |

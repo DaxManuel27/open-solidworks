@@ -62,6 +62,8 @@ export function annotationLabel(a: Annotation): string {
           general: 'General table',
           bend: 'Bend table',
           punch: 'Punch table',
+          cut_list: 'Cut list table',
+          weld: 'Weld table',
           general_tolerance: 'General tolerances',
         }[a.table]
       }`

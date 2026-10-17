@@ -196,6 +196,16 @@ pub enum TableKind {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         origin: Option<Pick>,
     },
+    /// The weldment cut list of the part shown in `view`.
+    CutList {
+        view: u32,
+        /// Property columns after ITEM NO. and QTY.; DESCRIPTION, LENGTH,
+        /// ANGLE1 and ANGLE2 when empty.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        columns: Vec<String>,
+    },
+    /// The weld beads of the part shown in `view`.
+    Weld { view: u32 },
 }
 
 fn yes() -> bool {

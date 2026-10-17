@@ -349,6 +349,8 @@ export const annotationGroups: CommandGroup[] = [
             'toleranceTable',
             'bendTable',
             'punchTable',
+            'cutListTable',
+            'weldTable',
           ],
         },
       ],

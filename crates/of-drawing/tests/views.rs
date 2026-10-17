@@ -34,6 +34,7 @@ fn model_view(id: u32, path: &std::path::Path, o: Orientation, at: [f64; 2]) -> 
                 hash: None,
                 configuration: None,
                 flat: None,
+                bodies: None,
             },
             orientation: o,
             exploded: false,
@@ -593,6 +594,7 @@ fn standard_views_fit_the_sheet_in_either_projection() {
             hash: None,
             configuration: None,
             flat: None,
+            bodies: None,
         };
         let added = d.add_standard_views(SHEET, source, true, None).unwrap();
         assert_eq!(added.scale, Scale { num: 1.0, den: 2.0 });

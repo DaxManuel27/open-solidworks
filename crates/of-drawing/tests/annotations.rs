@@ -148,6 +148,7 @@ fn model_view(id: u32, path: &std::path::Path, o: Orientation, at: [f64; 2]) -> 
                 hash: None,
                 configuration: None,
                 flat: None,
+                bodies: None,
             },
             orientation: o,
             exploded: false,
@@ -291,6 +292,7 @@ fn model_items_import_once_into_the_truest_view_and_drive_the_part() {
         hash: None,
         configuration: None,
         flat: None,
+        bodies: None,
     };
     let views = d.add_standard_views(SHEET, source, false, None).unwrap();
     let ids: Vec<u32> = d.doc.sheets[0].views.iter().map(|v| v.id).collect();
@@ -1204,6 +1206,7 @@ fn every_dimension_scheme_and_symbol_draws() {
             all_around: true,
             field: true,
             tail: "111".into(),
+            bead: None,
         },
     );
     let target = add(

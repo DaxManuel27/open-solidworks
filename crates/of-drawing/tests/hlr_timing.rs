@@ -90,7 +90,7 @@ fn time<T>(f: impl FnOnce() -> T) -> (T, f64) {
 }
 
 fn measure(name: &str, sources: &mut Sources, path: &std::path::Path) {
-    let scene = sources.scene(path, None, false, false, &[]).unwrap();
+    let scene = sources.scene(path, None, false, false, &[], None).unwrap();
     let edges = scene.shape.count(Kind::Edge);
     let faces = scene.shape.count(Kind::Face);
     println!(

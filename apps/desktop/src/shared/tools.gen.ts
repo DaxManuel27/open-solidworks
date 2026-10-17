@@ -501,6 +501,11 @@ export type AnnotationKind =
     leader: Anchor
     all_around?: boolean
     arrow?: WeldSide | null
+    /**
+     * A weld bead feature of the model whose size, symbol text and
+     * process fill the arrow side and tail.
+     */
+    bead?: number | null
     field?: boolean
     other?: WeldSide | null
     /** Tail text (process, specification). */
@@ -636,6 +641,37 @@ export type AnnotationKind =
     /** Capital height of cell text; the standard's when unset. */
     text_height?: number | null
   }
+  | {
+    type: 'table'
+    table: 'cut_list'
+    /** Sheet position of the `anchor` corner, mm. */
+    at: [number, number]
+    view: number
+    anchor?: Corner
+    /**
+     * Property columns after ITEM NO. and QTY.; DESCRIPTION, LENGTH,
+     * ANGLE1 and ANGLE2 when empty.
+     */
+    columns?: string[]
+    continued?: Piece[]
+    /** Rows per piece; the rest continue at `continued`. */
+    max_rows?: number | null
+    /** Capital height of cell text; the standard's when unset. */
+    text_height?: number | null
+  }
+  | {
+    type: 'table'
+    table: 'weld'
+    /** Sheet position of the `anchor` corner, mm. */
+    at: [number, number]
+    view: number
+    anchor?: Corner
+    continued?: Piece[]
+    /** Rows per piece; the rest continue at `continued`. */
+    max_rows?: number | null
+    /** Capital height of cell text; the standard's when unset. */
+    text_height?: number | null
+  }
 
 export type Arrows = 'auto' | 'inside' | 'outside'
 
@@ -666,6 +702,14 @@ export type BalloonText =
   | {
     type: 'text'
     text: string
+  }
+  | {
+    type: 'cut_list_item'
+    body: string
+  }
+  | {
+    type: 'cut_list_quantity'
+    body: string
   }
 
 export type BeadKind = 'cosmetic' | 'fillet'
@@ -2894,6 +2938,11 @@ export type ModelSource = {
    * absolute while the drawing is unsaved.
    */
   path: string
+  /**
+   * Show only these bodies of a part (a member, a sub-weldment, a sheet
+   * metal body); every body when unset.
+   */
+  bodies?: string[] | null
   /** Part or assembly configuration ID; `None` uses the file's active one. */
   configuration?: number | null
   /** Show a sheet metal part's flat pattern, looking at the flat's front. */
@@ -4360,6 +4409,14 @@ export interface ToolArgs {
      */
     scale?: Scale | null
   }
+  /** The bodies of a part file (ID, name, and for weldment members their profile and length), for views of chosen bodies (`model.bodies`). */
+  model_bodies: {
+    /** `.ofp` or `.ofa` file. */
+    model: string
+    configuration?: number | null
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+  }
   /** Planar faces of a saved part or assembly (component path, stable face ref, outward normal, area; largest first), for relative-to-model view orientations. */
   model_planar_faces: {
     /** `.ofp` or `.ofa` file. */
@@ -4672,6 +4729,7 @@ export const TOOL_METHODS = {
   import_step_assembly: 'asm.import_step',
   new_drawing: 'drawing.new',
   standard_views: 'drawing.views.standard',
+  model_bodies: 'drawing.model.bodies',
   model_planar_faces: 'drawing.model.faces',
   update_drawing: 'drawing.update',
   drawing_info: 'drawing.info',
@@ -4755,6 +4813,7 @@ export const TOOL_EXAMPLES: { [K in ToolName]: ToolArgs[K][] } = {
   import_step_assembly: [{"path":"assembly.step"}],
   new_drawing: [{}, {"standard":"ansi"}, {"model":"part.ofp"}],
   standard_views: [{"model":"part.ofp","sheet":4}, {"isometric":false,"model":"part.ofp","scale":{"den":2,"num":1},"sheet":4}],
+  model_bodies: [{"model":"part.ofp"}],
   model_planar_faces: [{"model":"part.ofp"}],
   update_drawing: [{}],
   drawing_info: [{}],

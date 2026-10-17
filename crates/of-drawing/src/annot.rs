@@ -374,7 +374,23 @@ impl Drawing {
             } => {
                 let at = self.ann_pos(sheet, a, *at)?;
                 let items = self.bom_items(sheet, *table);
-                let resolve = |c: &BalloonText| balloon_text(c, &items);
+                // Weldment balloons number the leader's part's cut list.
+                let weldment = std::iter::once(content)
+                    .chain(lower)
+                    .chain(stacked)
+                    .any(|c| {
+                        matches!(
+                            c,
+                            BalloonText::CutListItem { .. } | BalloonText::CutListQuantity { .. }
+                        )
+                    });
+                let cut = match (weldment, leader) {
+                    (true, crate::document::Anchor::Model { target, .. }) => {
+                        self.view_cut_list(sheet, target.view).ok()
+                    }
+                    _ => None,
+                };
+                let resolve = |c: &BalloonText| balloon_text(c, &items, cut.as_ref());
                 let size = size.unwrap_or(std.text_height() * 3.0);
                 let upper = resolve(content);
                 let low = match (shape, lower) {
@@ -383,6 +399,11 @@ impl Drawing {
                         BalloonText::Item { component } => Some(resolve(&BalloonText::Quantity {
                             component: component.clone(),
                         })),
+                        BalloonText::CutListItem { body } => {
+                            Some(resolve(&BalloonText::CutListQuantity {
+                                body: body.clone(),
+                            }))
+                        }
                         _ => None,
                     },
                     _ => None,
@@ -662,11 +683,36 @@ impl Drawing {
                 all_around,
                 field,
                 tail,
+                bead,
             } => {
                 let at = self.ann_pos(sheet, a, *at)?;
                 let on = self
                     .anchor_point(sheet, leader)
                     .ok_or("the weld's view is gone")?;
+                // A linked bead fills the arrow side and tail from the model.
+                let (arrow, tail) = match (bead, leader) {
+                    (Some(bead), crate::document::Anchor::Model { target, .. }) => {
+                        let part = self.view_part(sheet, target.view)?;
+                        let w = part
+                            .state()
+                            .welds
+                            .iter()
+                            .find(|w| w.feature == *bead)
+                            .ok_or("the weld symbol's bead is gone")?;
+                        let side = crate::symbols::WeldSide {
+                            symbol: arrow
+                                .as_ref()
+                                .map_or(crate::symbols::WeldSymbol::Fillet, |s| s.symbol),
+                            size: std.number(w.size, std.precision()),
+                            length: arrow.as_ref().map(|s| s.length.clone()).unwrap_or_default(),
+                            contour: arrow.as_ref().map(|s| s.contour).unwrap_or_default(),
+                        };
+                        let tail = w.process.clone().unwrap_or_else(|| tail.clone());
+                        (Some(side), tail)
+                    }
+                    _ => (arrow.clone(), tail.clone()),
+                };
+                let (arrow, tail) = (&arrow, &tail);
                 Ink {
                     g,
                     std,
@@ -1376,6 +1422,84 @@ impl Drawing {
                 c
             }
             TableKind::GeneralTolerance { class } => tables::tolerance_cells(*class),
+            TableKind::CutList { view, columns } => {
+                let list = self.view_cut_list(sheet, *view)?;
+                let columns: Vec<String> = if columns.is_empty() {
+                    ["DESCRIPTION", "LENGTH", "ANGLE1", "ANGLE2"]
+                        .map(String::from)
+                        .to_vec()
+                } else {
+                    columns.iter().map(|c| c.to_uppercase()).collect()
+                };
+                let rows = list
+                    .items
+                    .iter()
+                    .filter(|i| !i.excluded)
+                    .map(|i| {
+                        let mut row = vec![
+                            i.number.map_or_else(String::new, |n| n.to_string()),
+                            i.quantity.to_string(),
+                        ];
+                        row.extend(
+                            columns
+                                .iter()
+                                .map(|c| i.properties.get(c).cloned().unwrap_or_default()),
+                        );
+                        row
+                    })
+                    .collect();
+                let mut header = vec!["ITEM NO.".to_string(), "QTY.".to_string()];
+                header.extend(columns.iter().cloned());
+                let mut align = vec![HAlign::Center, HAlign::Center];
+                align.extend(columns.iter().map(|c| {
+                    if c == "DESCRIPTION" || c == "MATERIAL" {
+                        HAlign::Left
+                    } else {
+                        HAlign::Right
+                    }
+                }));
+                tables::Cells {
+                    header,
+                    rows,
+                    align,
+                    title: None,
+                }
+            }
+            TableKind::Weld { view } => {
+                let std = self.doc.standard;
+                let list = self.view_cut_list(sheet, *view)?;
+                let rows = list
+                    .welds
+                    .beads
+                    .iter()
+                    .enumerate()
+                    .map(|(i, w)| {
+                        vec![
+                            (i + 1).to_string(),
+                            w.symbol.clone().unwrap_or_default(),
+                            std.number(w.size, std.precision()),
+                            std.number(w.length, std.precision()),
+                            w.material.clone().unwrap_or_default(),
+                            w.process.clone().unwrap_or_default(),
+                        ]
+                    })
+                    .collect();
+                tables::Cells {
+                    header: ["ITEM", "SYMBOL", "SIZE", "LENGTH", "MATERIAL", "PROCESS"]
+                        .map(String::from)
+                        .to_vec(),
+                    rows,
+                    align: vec![
+                        HAlign::Center,
+                        HAlign::Left,
+                        HAlign::Right,
+                        HAlign::Right,
+                        HAlign::Left,
+                        HAlign::Left,
+                    ],
+                    title: None,
+                }
+            }
             TableKind::Bend { view, .. } => {
                 let std = self.doc.standard;
                 let (_, flat) = self.flat_items(sheet, *view)?;
@@ -2048,8 +2172,43 @@ impl Drawing {
             .and_then(|v| v.bbox)
             .ok_or("the view has nothing drawn")?;
         let r = self.resolve(&sheet, view)?;
-        // One edge per top-level component, from what the view drew.
+        // A weldment part's view is ballooned by cut list item instead.
+        let path = self.model_path(&r.model);
+        let weldment = if crate::model::is_assembly(&path) {
+            None
+        } else {
+            let part = self.sources.part(&path, r.model.configuration, false)?;
+            if part.state().weldment.is_some() {
+                let list = of_model::weldment::cutlist::cut_list(part.doc(), part.state())?;
+                Some((part, list))
+            } else {
+                None
+            }
+        };
+        // Which cut list item, by one of its bodies, an edge belongs to.
+        let item_of = |e: &CompRef| -> Option<(Vec<String>, of_model::BodyId)> {
+            let (part, list) = weldment.as_ref()?;
+            let state = part.state();
+            let (of_model::geom::Kind::Edge, global) = state.index_of(&e.entity).ok()? else {
+                return None;
+            };
+            let whole = &state.body.as_ref()?.shape;
+            let body = state.bodies.iter().find(|b| {
+                b.geometry
+                    .shape
+                    .indices_in(whole, of_model::geom::Kind::Edge)
+                    .is_ok_and(|ix| ix.contains(&global))
+            })?;
+            let item = list
+                .items
+                .iter()
+                .find(|i| !i.excluded && i.bodies.contains(&body.id))?;
+            Some((vec![format!("item{}", item.number?)], body.id.clone()))
+        };
+        // One edge per top-level component (or cut list item), from what the
+        // view drew.
         let mut picks: Vec<(Vec<String>, CompRef, P2)> = Vec::new();
+        let mut bodies: Vec<Option<of_model::BodyId>> = Vec::new();
         for item in &render.graphics.items {
             let Owner::View {
                 view: v,
@@ -2058,10 +2217,17 @@ impl Drawing {
             else {
                 continue;
             };
-            if *v != view || e.component.is_empty() {
+            if *v != view {
                 continue;
             }
-            let top = vec![e.component[0].clone()];
+            let (top, body) = match &weldment {
+                Some(_) => match item_of(e) {
+                    Some((key, body)) => (key, Some(body)),
+                    None => continue,
+                },
+                None if e.component.is_empty() => continue,
+                None => (vec![e.component[0].clone()], None),
+            };
             if picks.iter().any(|p| p.0 == top) {
                 continue;
             }
@@ -2080,8 +2246,9 @@ impl Drawing {
                 _ => continue,
             };
             picks.push((top, e.clone(), at));
+            bodies.push(body);
         }
-        if ignore_multiple {
+        if ignore_multiple && weldment.is_none() {
             // One balloon per BOM row.
             let rows = self
                 .bom_rows(&sheet, view, of_assembly::bom::BomType::TopLevel)
@@ -2106,8 +2273,8 @@ impl Drawing {
         let n = picks.len().max(1);
         let mut out = Vec::new();
         let mut places: Vec<P2> = Vec::new();
-        for (next, (i, (key, entity, on))) in
-            (self.doc.next_id..).zip(picks.into_iter().enumerate())
+        for (next, (i, ((key, entity, on), body))) in
+            (self.doc.next_id..).zip(picks.into_iter().zip(bodies).enumerate())
         {
             let at = match layout {
                 BalloonLayout::Circular => {
@@ -2170,7 +2337,10 @@ impl Drawing {
                         target: ViewRef { view, entity },
                         at: [local.x, local.y],
                     },
-                    content: BalloonText::Item { component: key },
+                    content: match body {
+                        Some(body) => BalloonText::CutListItem { body },
+                        None => BalloonText::Item { component: key },
+                    },
                     lower: None,
                     shape: crate::annotations::BalloonShape::Circle,
                     size: None,
@@ -2344,6 +2514,30 @@ fn allowance_text(a: &of_model::sheet_metal::Allowance, std: &crate::standard::S
 }
 
 impl Drawing {
+    /// The part a view shows (not flattened, every body).
+    fn view_part(
+        &mut self,
+        sheet: &Sheet,
+        view: u32,
+    ) -> Result<std::rc::Rc<of_assembly::cache::Part>, String> {
+        let r = self.resolve(sheet, view)?;
+        let path = self.model_path(&r.model);
+        if crate::model::is_assembly(&path) {
+            return Err("cut lists and weld tables come from a part view".into());
+        }
+        self.sources.part(&path, r.model.configuration, false)
+    }
+
+    /// The weldment cut list of the part a view shows.
+    pub fn view_cut_list(
+        &mut self,
+        sheet: &Sheet,
+        view: u32,
+    ) -> Result<of_model::weldment::cutlist::CutList, String> {
+        let part = self.view_part(sheet, view)?;
+        of_model::weldment::cutlist::cut_list(part.doc(), part.state())
+    }
+
     /// Bends and forms of flat pattern view `view` of `sheet`.
     fn flat_items(&mut self, sheet: &Sheet, view: u32) -> Result<(Resolved, FlatItems), String> {
         let r = self.resolve(sheet, view)?;
@@ -2404,7 +2598,14 @@ impl Drawing {
     }
 }
 
-fn balloon_text(c: &BalloonText, items: &[BomItem]) -> String {
+fn balloon_text(
+    c: &BalloonText,
+    items: &[BomItem],
+    cut: Option<&of_model::weldment::cutlist::CutList>,
+) -> String {
+    let item_of = |body: &of_model::BodyId| {
+        cut.and_then(|l| l.items.iter().find(|i| i.bodies.contains(body)))
+    };
     let find = |component: &Vec<String>| {
         items.iter().find(|r| {
             r.components
@@ -2423,6 +2624,12 @@ fn balloon_text(c: &BalloonText, items: &[BomItem]) -> String {
         BalloonText::Property { component, name } => find(component)
             .and_then(|r| r.properties.get(name).cloned())
             .unwrap_or_default(),
+        BalloonText::CutListItem { body } => item_of(body)
+            .and_then(|i| i.number)
+            .map_or_else(|| "?".into(), |n| n.to_string()),
+        BalloonText::CutListQuantity { body } => {
+            item_of(body).map_or_else(|| "?".into(), |i| i.quantity.to_string())
+        }
     }
 }
 

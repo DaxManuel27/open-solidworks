@@ -298,6 +298,7 @@ fn enclosure_flat_dxf_and_drawing() {
                 hash: None,
                 configuration: None,
                 flat: Some(FlatView::default()),
+                bodies: None,
             },
             orientation: Orientation::Front,
             exploded: false,

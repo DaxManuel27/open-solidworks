@@ -353,6 +353,8 @@ export const commands = {
   toleranceTable: draw('table', 'General Tolerance Table', 'table', false, 'general_tolerance'),
   bendTable: draw('table', 'Bend Table', 'table', true, 'bend'),
   punchTable: draw('table', 'Punch Table', 'table', true, 'punch'),
+  cutListTable: draw('table', 'Weldment Cut List', 'table', true, 'cut_list'),
+  weldTable: draw('table', 'Weld Table', 'table', true, 'weld'),
   equations: panel('equations', 'Equations', 'dimension'),
   configurations: panel('configurations', 'Configurations', 'properties'),
   options: {

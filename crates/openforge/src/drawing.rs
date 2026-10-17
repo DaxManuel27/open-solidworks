@@ -89,6 +89,7 @@ impl DrawSession {
                     hash: None,
                     configuration: p.configuration,
                     flat: None,
+                    bodies: None,
                 },
                 &s.drawing.base_dir(),
                 false,
@@ -243,6 +244,51 @@ impl DrawSession {
                     Ok(v)
                 }
             }
+            "drawing.model.bodies" => {
+                let p: ModelFaces = args(params)?;
+                let source = model_source(
+                    &ModelSource {
+                        path: p.model.to_string_lossy().into_owned(),
+                        hash: None,
+                        configuration: p.configuration,
+                        flat: None,
+                        bodies: None,
+                    },
+                    &self.drawing.base_dir(),
+                    false,
+                )?;
+                let path = self.drawing.model_path(&source);
+                if of_drawing::model::is_assembly(&path) {
+                    return Err(RpcError::params("bodies are listed for parts"));
+                }
+                let part = self
+                    .drawing
+                    .sources
+                    .part(&path, p.configuration, false)
+                    .map_err(fail)?;
+                let state = part.state();
+                let bodies: Vec<Value> = state
+                    .bodies
+                    .iter()
+                    .enumerate()
+                    .map(|(i, b)| {
+                        let name = part
+                            .doc()
+                            .body_display
+                            .get(&b.id)
+                            .and_then(|d| d.name.clone())
+                            .unwrap_or_else(|| format!("Body {}", i + 1));
+                        let member = state.members.iter().find(|m| m.body == b.id);
+                        json!({
+                            "id": b.id,
+                            "name": name,
+                            "profile": member.map(|m| m.profile.description()),
+                            "length": member.map(|m| m.length),
+                        })
+                    })
+                    .collect();
+                Ok(json!({ "bodies": bodies, "weldment": state.weldment.is_some() }))
+            }
             "drawing.model.faces" => {
                 let p: ModelFaces = args(params)?;
                 let source = model_source(
@@ -251,6 +297,7 @@ impl DrawSession {
                         hash: None,
                         configuration: p.configuration,
                         flat: None,
+                        bodies: None,
                     },
                     &self.drawing.base_dir(),
                     false,
@@ -283,6 +330,7 @@ impl DrawSession {
                             hash: None,
                             configuration: p.configuration,
                             flat: None,
+                            bodies: None,
                         },
                         &d.base_dir(),
                         saved,
@@ -672,7 +720,9 @@ impl DrawSession {
                         .auto_balloons(p.sheet, p.view, p.layout, p.ignore_multiple)
                         .map_err(fail)?;
                     if new.is_empty() {
-                        return Err(fail("the view shows no assembly components to balloon"));
+                        return Err(fail(
+                            "the view shows no assembly components or weldment cut list items to balloon",
+                        ));
                     }
                     d.doc.next_id = d
                         .doc
@@ -974,6 +1024,7 @@ fn model_source(m: &ModelSource, base: &Path, saved: bool) -> Result<ModelSource
         hash: None,
         configuration: m.configuration,
         flat: m.flat,
+        bodies: m.bodies.clone(),
     })
 }
 

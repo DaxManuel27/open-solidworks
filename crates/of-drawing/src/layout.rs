@@ -70,9 +70,14 @@ impl Drawing {
             .cloned()
             .ok_or_else(|| format!("no sheet {sheet_id}"))?;
         let path = self.model_path(&model);
-        let scene =
-            self.sources
-                .scene(&path, model.configuration, model.flat.is_some(), false, &[])?;
+        let scene = self.sources.scene(
+            &path,
+            model.configuration,
+            model.flat.is_some(),
+            false,
+            &[],
+            model.bodies.as_deref(),
+        )?;
         let bb = scene
             .shape
             .bbox()

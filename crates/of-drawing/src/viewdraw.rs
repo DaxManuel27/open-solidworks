@@ -475,6 +475,7 @@ impl Drawing {
             r.model.flat.is_some(),
             r.exploded,
             &v.hidden_components,
+            r.model.bodies.as_deref(),
         )?;
         let vs = self.view_shape(sheet, v, &r, &scene)?;
         let std = self.doc.standard;

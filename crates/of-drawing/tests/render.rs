@@ -42,6 +42,7 @@ fn model_view(id: u32, path: &std::path::Path, orientation: Orientation, at: [f6
                 hash: None,
                 configuration: None,
                 flat: None,
+                bodies: None,
             },
             orientation,
             exploded: false,

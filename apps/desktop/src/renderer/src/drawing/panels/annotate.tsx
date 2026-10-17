@@ -1040,7 +1040,11 @@ export function TablePanel({ variant = 'bom' }: { variant?: string }) {
   const [combine, setCombine] = useState(false)
   const [placing, setPlacing] = useState(variant !== 'hole')
   const flatViews = (sheet?.views ?? []).filter(
-    (v) => v.kind.type === 'model' && !!v.kind.model.flat,
+    (v) =>
+      v.kind.type === 'model' &&
+      (variant === 'cut_list' || variant === 'weld'
+        ? !v.kind.model.path.toLowerCase().endsWith('.ofa')
+        : !!v.kind.model.flat),
   )
   const [flatView, setFlatView] = useState<number | null>(flatViews[0]?.id ?? null)
   const [showTags, setShowTags] = useState(true)
@@ -1089,6 +1093,15 @@ export function TablePanel({ variant = 'bom' }: { variant?: string }) {
         case 'general_tolerance':
           kind = { table: 'general_tolerance', class: cls }
           break
+        case 'cut_list':
+        case 'weld':
+          if (flatView === null)
+            return useStore.getState().toast('Add a view of a weldment part first', 'info')
+          kind =
+            variant === 'cut_list'
+              ? { table: 'cut_list', view: flatView }
+              : { table: 'weld', view: flatView }
+          break
         case 'bend':
         case 'punch':
           if (flatView === null)
@@ -1134,6 +1147,8 @@ export function TablePanel({ variant = 'bom' }: { variant?: string }) {
     general_tolerance: 'General Tolerance Table',
     bend: 'Bend Table',
     punch: 'Punch Table',
+    cut_list: 'Weldment Cut List',
+    weld: 'Weld Table',
   }
   return (
     <PanelShell title={titles[variant] ?? 'Table'} onCancel={() => void closeDrawingPanel()}>
@@ -1233,6 +1248,18 @@ export function TablePanel({ variant = 'bom' }: { variant?: string }) {
           <GridEditor cells={cells} onChange={setCells} />
           <Check label="First row is a header" value={header} onChange={setHeader} />
         </>
+      )}
+      {(variant === 'cut_list' || variant === 'weld') && (
+        <Choice
+          label="Part view"
+          value={flatView ?? 0}
+          options={
+            flatViews.length
+              ? flatViews.map((v) => ({ value: v.id, label: v.name }))
+              : [{ value: 0, label: 'Add a view of a weldment part first' }]
+          }
+          onChange={(v) => setFlatView(v || null)}
+        />
       )}
       {(variant === 'bend' || variant === 'punch') && (
         <>

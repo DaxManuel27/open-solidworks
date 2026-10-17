@@ -183,6 +183,10 @@ pub struct ModelSource {
     /// Show a sheet metal part's flat pattern, looking at the flat's front.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub flat: Option<FlatView>,
+    /// Show only these bodies of a part (a member, a sub-weldment, a sheet
+    /// metal body); every body when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bodies: Option<Vec<of_model::BodyId>>,
 }
 
 /// What a flat pattern view draws beside the outline.

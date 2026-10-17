@@ -161,6 +161,7 @@ export function ModelViewPanel() {
   const [display, setDisplay] = useState<DisplayStyle>('hidden_removed')
   const [exploded, setExploded] = useState(false)
   const [flat, setFlat] = useState<FlatView | null>(null)
+  const [bodies, setBodies] = useState<string[] | null>(null)
   const assembly = !!model?.toLowerCase().endsWith('.ofa')
 
   useEffect(() => {
@@ -188,7 +189,11 @@ export function ModelViewPanel() {
       const ok = await addView(
         {
           type: 'model',
-          model: { path: model, ...(flat && !assembly ? { flat } : {}) },
+          model: {
+            path: model,
+            ...(flat && !assembly ? { flat } : {}),
+            ...(bodies && !assembly ? { bodies } : {}),
+          },
           orientation: o,
           ...(assembly ? { exploded } : {}),
         },
@@ -235,6 +240,7 @@ export function ModelViewPanel() {
       <Choice label="Display" value={display} options={DISPLAY} onChange={setDisplay} />
       {assembly && <Check label="Exploded" value={exploded} onChange={setExploded} />}
       {!assembly && model && <FlatOptions value={flat} onChange={setFlat} />}
+      {!assembly && model && <BodyChoice model={model} value={bodies} onChange={setBodies} />}
       <Prompt>
         {model ? 'Click on the sheet to place the view.' : 'Choose a part or assembly.'}
       </Prompt>
@@ -740,6 +746,9 @@ export function ViewPropertiesPanel({ editing }: { editing?: number }) {
   const [flat, setFlat] = useState<FlatView | null>(
     view?.kind.type === 'model' ? (view.kind.model.flat ?? null) : null,
   )
+  const [bodies, setBodies] = useState<string[] | null>(
+    view?.kind.type === 'model' ? (view.kind.model.bodies ?? null) : null,
+  )
   const [hatchScale, setHatchScale] = useState(view?.hatch?.scale ?? 1)
   const [hatchAngle, setHatchAngle] = useState(((view?.hatch?.angle ?? 0) * 180) / Math.PI)
   const [hatchPattern, setHatchPattern] = useState<string>(view?.hatch?.pattern ?? 'material')
@@ -778,7 +787,7 @@ export function ViewPropertiesPanel({ editing }: { editing?: number }) {
     if (isModel && view.kind.type === 'model' && orient && orient !== 'relative')
       params['view'] = {
         ...view.kind,
-        model: { ...view.kind.model, flat },
+        model: { ...view.kind.model, flat, bodies },
         orientation:
           orient === view.kind.orientation.type ? view.kind.orientation : { type: orient },
         exploded,
@@ -815,6 +824,9 @@ export function ViewPropertiesPanel({ editing }: { editing?: number }) {
       )}
       {isAssembly && <Check label="Exploded" value={exploded} onChange={setExploded} />}
       {isModel && !isAssembly && <FlatOptions value={flat} onChange={setFlat} />}
+      {isModel && !isAssembly && view.kind.type === 'model' && (
+        <BodyChoice model={view.kind.model.path} value={bodies} onChange={setBodies} />
+      )}
       <ScaleField
         label="Scale"
         value={scale}
@@ -933,6 +945,56 @@ function FlatOptions(props: { value: FlatView | null; onChange: (f: FlatView | n
           />
         </>
       )}
+    </>
+  )
+}
+
+interface ModelBody {
+  id: string
+  name: string
+  profile: string | null
+  length: number | null
+}
+
+/** Show every body of a part, or only some (a member, a sub-weldment). */
+function BodyChoice(props: {
+  model: string
+  value: string[] | null
+  onChange: (b: string[] | null) => void
+}) {
+  const [bodies, setBodies] = useState<ModelBody[]>([])
+  useEffect(() => {
+    let live = true
+    void call<{ bodies: ModelBody[] }>('drawing.model.bodies', { model: props.model })
+      .then((r) => live && setBodies(r.bodies))
+      .catch(() => live && setBodies([]))
+    return () => {
+      live = false
+    }
+  }, [props.model])
+  if (bodies.length < 2) return null
+  const v = props.value
+  return (
+    <>
+      <Check
+        label="All bodies"
+        value={v === null}
+        onChange={(all) => props.onChange(all ? null : [bodies[0]!.id])}
+      />
+      {v !== null &&
+        bodies.map((b) => (
+          <Check
+            key={b.id}
+            label={
+              b.profile ? `${b.name} · ${b.profile} · ${b.length?.toFixed(1) ?? ''} mm` : b.name
+            }
+            value={v.includes(b.id)}
+            onChange={(on) => {
+              const next = on ? [...v, b.id] : v.filter((x) => x !== b.id)
+              if (next.length) props.onChange(next)
+            }}
+          />
+        ))}
     </>
   )
 }
