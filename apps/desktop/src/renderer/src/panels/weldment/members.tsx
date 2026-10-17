@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type {
+  ConnectedSegments,
   CornerTreatment,
   Family,
   MemberGroup,
@@ -11,7 +12,13 @@ import { call } from '../../core'
 import type { SketchView } from '../../protocol'
 import { type Panel, useStore } from '../../store'
 import { AngleField, Check, Choice, IntField, LengthField, PanelShell, Section } from '../fields'
-import { TextField, useSheetFeature, type SheetFeature } from '../sheet-metal/common'
+import {
+  OneRef,
+  TextField,
+  useActiveBox,
+  useSheetFeature,
+  type SheetFeature,
+} from '../sheet-metal/common'
 
 type Member = SheetFeature<'structural_member'>
 
@@ -282,6 +289,7 @@ const PIERCE: { value: PiercePoint; label: string }[] = [
 ]
 
 export function StructuralMemberPanel({ panel }: { panel: Panel }) {
+  const [box, setBox] = useActiveBox<'align'>('align')
   const { p, set, f } = useSheetFeature<Member>(
     panel,
     () => ({
@@ -355,10 +363,35 @@ export function StructuralMemberPanel({ panel }: { panel: Panel }) {
           min={-1e6}
           onChange={(y) => set({ offset: [p.offset?.[0] ?? 0, y] })}
         />
+        <OneRef
+          label="Align to (edge, axis or plane)"
+          value={p.align}
+          onChange={(align) => set({ align })}
+          kinds={['edge', 'datum', 'std_plane']}
+          active={box === 'align'}
+          onActivate={() => setBox('align')}
+        />
+      </Section>
+      <Section title="Settings">
         <Check
           label="Merge miter trimmed bodies"
           value={!!p.merge_miter_trimmed}
           onChange={(merge_miter_trimmed) => set({ merge_miter_trimmed })}
+        />
+        <Check
+          label="Allow protrusion at butted corners"
+          value={p.allow_protrusion ?? true}
+          onChange={(allow_protrusion) => set({ allow_protrusion })}
+        />
+        <Choice<ConnectedSegments>
+          label="Connected segments"
+          value={p.connected ?? 'overlap'}
+          options={[
+            { value: 'overlap', label: 'Leave overlapping' },
+            { value: 'simple', label: 'Simple cut' },
+            { value: 'coped', label: 'Coped cut' },
+          ]}
+          onChange={(connected) => set({ connected })}
         />
       </Section>
       <p className="hint">

@@ -103,6 +103,9 @@ fn member(segments: Vec<Ref>, corner: CornerTreatment) -> StructuralMember {
         mirror: ProfileMirror::None,
         offset: [0.0, 0.0],
         merge_miter_trimmed: false,
+        align: None,
+        allow_protrusion: true,
+        connected: Default::default(),
     }
 }
 
@@ -827,4 +830,168 @@ fn weld_folder_totals_beads() {
     // 0.15 kg/m over 112 mm, plus 350 mm³ at the default 1000 kg/m³.
     close(list.welds.total_mass, 0.15 * 0.112 + 350.0 * 1e-6, 1e-9);
     assert_eq!(list.welds.beads[0].symbol.as_deref(), Some("5 ⊿"));
+}
+
+fn extent(m: &Model, id: &BodyId) -> of_model::geom::DVec3 {
+    let b = m.state().solid(id).unwrap().geometry.shape.bbox().unwrap();
+    b.max - b.min
+}
+
+#[test]
+fn members_align_to_a_direction() {
+    for (align, across) in [(None, [60.0, 40.0]), (Some(Ref::FrontPlane), [40.0, 60.0])] {
+        let mut doc = Document::new();
+        doc.add(FeatureKind::Weldment(WeldmentDef::default()));
+        let segs = lines(&mut doc, &[([0.0, 0.0], [300.0, 0.0])]);
+        let FeatureKind::StructuralMember(mut p) = along(rhs(), segs) else {
+            unreachable!()
+        };
+        p.align = align;
+        let f = doc.add(FeatureKind::StructuralMember(p));
+        let m = Model::new(doc);
+        ok(&m);
+        // The 60 side across in the sketch plane, or along its normal.
+        let e = extent(&m, &BodyId(format!("b{f}:g0.0")));
+        close(e.y, across[0], 1e-6);
+        close(e.z, across[1], 1e-6);
+    }
+}
+
+#[test]
+fn butted_corners_without_protrusion_stop_at_the_corner() {
+    let (mut doc, _, lines) = rectangle_frame(1200.0, 600.0);
+    let mut p = member(lines, CornerTreatment::EndButt1);
+    p.allow_protrusion = false;
+    doc.add(FeatureKind::StructuralMember(p));
+    let m = Model::new(doc);
+    ok(&m);
+    let length = |i: usize| {
+        m.state()
+            .members
+            .iter()
+            .find(|r| r.segment == i)
+            .unwrap()
+            .length
+    };
+    // Running members end at the sketch corners; stopping ones at faces.
+    close(length(0), 1200.0, 1e-6);
+    close(length(1), 580.0, 1e-6);
+    close(length(2), 1180.0, 1e-6);
+    close(length(3), 560.0, 1e-6);
+}
+
+#[test]
+fn connected_segments_cut_simple_or_coped() {
+    let mut volumes = Vec::new();
+    for connected in [
+        ConnectedSegments::Overlap,
+        ConnectedSegments::Simple,
+        ConnectedSegments::Coped,
+    ] {
+        let mut doc = Document::new();
+        doc.add(FeatureKind::Weldment(WeldmentDef::default()));
+        // A T: the stem starts part way along the bar.
+        let segs = lines(
+            &mut doc,
+            &[([0.0, 0.0], [600.0, 0.0]), ([300.0, 0.0], [300.0, 400.0])],
+        );
+        let mut p = member(segs, CornerTreatment::EndMiter);
+        p.connected = connected;
+        let f = doc.add(FeatureKind::StructuralMember(p));
+        let m = Model::new(doc);
+        ok(&m);
+        let stem = BodyId(format!("b{f}:g0.1"));
+        assert_eq!(
+            m.state()
+                .solid(&stem)
+                .unwrap()
+                .geometry
+                .shape
+                .solids()
+                .len(),
+            1
+        );
+        volumes.push(body_volume(&m, &stem));
+    }
+    let a = shs_area();
+    close_rel(volumes[0], a * 400.0);
+    // Flush with the bar's top face at y = 20.
+    close_rel(volumes[1], a * 380.0);
+    // Coped: as far as the face, and down into the bar's rounded corners.
+    assert!(
+        volumes[2] > volumes[1] + 1.0 && volumes[2] < volumes[1] + a * 6.0,
+        "{volumes:?}"
+    );
+}
+
+#[test]
+fn gusset_from_a_leg_and_an_angle() {
+    use of_model::geom::DVec3;
+    for (angle, area) in [
+        (std::f64::consts::FRAC_PI_4, 5000.0),
+        (0.5f64.atan(), 2500.0),
+    ] {
+        let mut doc = Document::new();
+        doc.add(FeatureKind::Weldment(WeldmentDef::default()));
+        let post = lines(&mut doc, &[([0.0, 0.0], [0.0, 500.0])]);
+        doc.add(along(shs(), post));
+        let beam = lines(&mut doc, &[([0.0, 500.0], [500.0, 500.0])]);
+        doc.add(along(shs(), beam));
+        let mut m = Model::new(doc);
+        let before = volume(&m);
+        let side = face(&m, DVec3::X, |c| (c.x - 20.0).abs() < 1e-6 && c.y < 400.0);
+        let under = face(&m, -DVec3::Y, |c| (c.y - 480.0).abs() < 1e-6 && c.x > 100.0);
+        m.doc.add(FeatureKind::WeldGusset(WeldGusset {
+            faces: [side, under],
+            shape: GussetShape::LegAngle { d1: 100.0, angle },
+            chamfer: 0.0,
+            thickness: 10.0,
+            side: GussetSide::Both,
+            location: GussetLocation::Middle,
+            offset: 0.0,
+        }));
+        m.rebuild();
+        ok(&m);
+        close(volume(&m) - before, area * 10.0, 1e-6);
+    }
+}
+
+#[test]
+fn smart_weld_selection_finds_the_seams_between_bodies() {
+    let mut m = post_and_beam();
+    let (mut faces, post) = seam_faces(&m);
+    // Faces of one body only meet each other: nothing to weld.
+    m.doc.add(FeatureKind::WeldBead(bead(BeadPath::Smart {
+        faces: faces.clone(),
+    })));
+    m.rebuild();
+    assert!(m.statuses().last().unwrap().error.is_some());
+    m.doc.features.pop();
+    faces.push(post);
+    m.doc
+        .add(FeatureKind::WeldBead(bead(BeadPath::Smart { faces })));
+    m.rebuild();
+    ok(&m);
+    let w = &m.state().welds[0];
+    assert_eq!(w.pieces.len(), 4);
+    close(w.length, 4.0 * 28.0, 1e-6);
+}
+
+#[test]
+fn cut_list_item_names_from_properties() {
+    let (mut m, _, _) = frame_with_bracket();
+    let names = |m: &Model| -> Vec<String> {
+        cutlist::cut_list(&m.doc, m.state())
+            .unwrap()
+            .items
+            .into_iter()
+            .map(|i| i.name)
+            .collect()
+    };
+    assert_eq!(names(&m)[0], "Item 1");
+    m.doc.cut_list.name = Some("{Description} x {LENGTH}".into());
+    let n = names(&m);
+    assert_eq!(n[0], "SHS 40x40x3 x 1240");
+    // Sheet metal has no length: the field is left empty.
+    assert!(n.iter().any(|x| x == "Sheet 3 mm x"), "{n:?}");
 }

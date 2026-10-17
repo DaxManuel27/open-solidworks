@@ -67,6 +67,9 @@ pub enum GussetShape {
     /// Legs `d1` and `d2`, then straight ends `d3` (at the end of `d1`, away
     /// from the first face) and `d4` (at the end of `d2`).
     Polygon { d1: f64, d2: f64, d3: f64, d4: f64 },
+    /// Leg `d1` along the first face, and the angle (radians) between that
+    /// leg and the gusset's sloped edge.
+    LegAngle { d1: f64, angle: f64 },
 }
 
 /// Where a gusset's thickness lies from its location.
@@ -365,6 +368,17 @@ pub(crate) fn gusset(
     let a2 = (n1 - n2 * k).normalize();
     let mut pts: Vec<DVec3> = match p.shape {
         GussetShape::Triangle { d1, d2 } => vec![corner, corner + a1 * d1, corner + a2 * d2],
+        GussetShape::LegAngle { d1, angle } => {
+            // The second leg from the triangle's angles: the faces' corner
+            // angle, the given one, and what is left (law of sines).
+            let corner_angle = a1.dot(a2).clamp(-1.0, 1.0).acos();
+            let left = std::f64::consts::PI - corner_angle - angle;
+            if angle <= 0.0 || left <= 1e-9 {
+                return Err("the gusset's angle leaves no triangle in this corner".into());
+            }
+            let d2 = d1 * angle.sin() / left.sin();
+            vec![corner, corner + a1 * d1, corner + a2 * d2]
+        }
         GussetShape::Polygon { d1, d2, d3, d4 } => vec![
             corner,
             corner + a1 * d1,

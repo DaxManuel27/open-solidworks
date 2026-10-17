@@ -472,6 +472,7 @@ fn pair(fid: FeatureId, p: &TrimExtend, prev: &State, state: &mut State) -> Resu
         kind,
         corner,
         p.gap,
+        true,
         Side {
             points: &p1,
             x: x1,

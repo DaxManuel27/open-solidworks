@@ -725,6 +725,10 @@ export type BeadPath =
     from: Ref[]
     to: Ref[]
   }
+  | {
+    type: 'smart'
+    faces: Ref[]
+  }
 
 export type BeadSides = 'one' | 'both'
 
@@ -919,6 +923,12 @@ export type Configuration = {
   /** Variable name to formula, overriding base variables. */
   variables?: Record<string, string>
 }
+
+/**
+ * How a member ending on another member of the same feature (a T, not a
+ * shared corner) is cut.
+ */
+export type ConnectedSegments = 'overlap' | 'simple' | 'coped'
 
 export type Constraint3 =
   | {
@@ -1216,6 +1226,11 @@ export type CutListSettings = {
   excluded?: string[]
   /** Bodies listed together as one item whatever their shape. */
   groups?: string[][]
+  /**
+   * Item names from their properties, e.g. `{DESCRIPTION} x {LENGTH}`;
+   * `Item <number>` when unset.
+   */
+  name?: string | null
   /** Item properties set by hand, keyed by the item's first body. */
   overrides?: Record<string, Record<string, string>>
   /** List each body as its own item instead of collecting identical ones. */
@@ -2385,6 +2400,18 @@ export type Feature =
     type: 'structural_member'
     profile: ProfileSource
     groups: MemberGroup[]
+    /**
+     * Turn the profile so its x axis follows this edge, axis or line (as
+     * seen along each member); `rotation` then turns it further.
+     */
+    align?: Ref | null
+    /**
+     * Butted members run past the corner to cover the other member; off,
+     * they stop at the sketch's corner point.
+     */
+    allow_protrusion?: boolean
+    /** Members ending part way along another member of this feature. */
+    connected?: ConnectedSegments
     /** Join each mitered group's members into one body. */
     merge_miter_trimmed?: boolean
     mirror?: ProfileMirror
@@ -2590,6 +2617,11 @@ export type GussetShape =
     d2: number
     d3: number
     d4: number
+  }
+  | {
+    type: 'leg_angle'
+    d1: number
+    angle: number
   }
 
 /** Where a gusset's thickness lies from its location. */

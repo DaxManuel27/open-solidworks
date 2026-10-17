@@ -418,9 +418,15 @@ export function FeatureTree() {
               <span className="name">
                 {item.folder ? `${item.folder} / ` : ''}
                 {item.number ? `${item.number}. ` : ''}
-                {item.properties['DESCRIPTION']}
-                {item.properties['LENGTH'] ? ` · ${item.properties['LENGTH']} mm` : ''} ×{' '}
-                {item.quantity}
+                {cutList.settings.name ? (
+                  item.name
+                ) : (
+                  <>
+                    {item.properties['DESCRIPTION']}
+                    {item.properties['LENGTH'] ? ` · ${item.properties['LENGTH']} mm` : ''}
+                  </>
+                )}{' '}
+                × {item.quantity}
               </span>
             </div>
           ))}

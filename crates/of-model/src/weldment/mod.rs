@@ -18,7 +18,8 @@ pub use details::{
     CapDirection, CapOffset, EndCap, GussetLocation, GussetShape, GussetSide, WeldGusset,
 };
 pub use members::{
-    CornerTreatment, MemberGroup, MemberRecord, PiercePoint, ProfileMirror, StructuralMember,
+    ConnectedSegments, CornerTreatment, MemberGroup, MemberRecord, PiercePoint, ProfileMirror,
+    StructuralMember,
 };
 pub use profiles::{Family, Section};
 pub use trim::{TrimBoundary, TrimExtend, TrimKind};

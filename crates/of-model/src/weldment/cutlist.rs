@@ -32,6 +32,10 @@ pub struct CutListSettings {
     pub separate: bool,
     #[serde(default)]
     pub sort: CutListSort,
+    /// Item names from their properties, e.g. `{DESCRIPTION} x {LENGTH}`;
+    /// `Item <number>` when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
 }
 
 impl CutListSettings {
@@ -70,6 +74,9 @@ pub enum ItemKind {
 pub struct CutListItem {
     /// 1-based, in list order (excluded items have none).
     pub number: Option<u32>,
+    /// From the settings' name template, else `Item <number>` (`Excluded`
+    /// for excluded items).
+    pub name: String,
     pub kind: ItemKind,
     pub bodies: Vec<BodyId>,
     pub quantity: u32,
@@ -256,6 +263,7 @@ pub fn cut_list(doc: &Document, state: &State) -> Result<CutList, String> {
         items.push((
             CutListItem {
                 number: None,
+                name: String::new(),
                 kind: first.kind,
                 bodies: members
                     .iter()
@@ -297,6 +305,7 @@ pub fn cut_list(doc: &Document, state: &State) -> Result<CutList, String> {
                 items.push((
                     CutListItem {
                         number: None,
+                        name: String::new(),
                         kind: f.kind,
                         bodies: vec![id],
                         quantity: 1,
@@ -336,10 +345,34 @@ pub fn cut_list(doc: &Document, state: &State) -> Result<CutList, String> {
                 item.properties.insert(k.to_uppercase(), v.clone());
             }
         }
+        item.name = match (&settings.name, item.number) {
+            (Some(t), _) if !t.trim().is_empty() => fill(t, &item.properties),
+            (_, Some(n)) => format!("Item {n}"),
+            (_, None) => "Excluded".into(),
+        };
         out.push(item);
     }
     let welds = weld_folder(state, density);
     Ok(CutList { items: out, welds })
+}
+
+/// A name template with `{PROPERTY}` fields filled (case-insensitive;
+/// unknown fields are left empty).
+fn fill(template: &str, props: &BTreeMap<String, String>) -> String {
+    let mut out = String::new();
+    let mut rest = template;
+    while let Some(open) = rest.find('{') {
+        out.push_str(&rest[..open]);
+        let Some(close) = rest[open..].find('}') else {
+            out.push_str(&rest[open..]);
+            return out.trim().to_string();
+        };
+        let key = rest[open + 1..open + close].trim().to_uppercase();
+        out.push_str(props.get(&key).map_or("", String::as_str));
+        rest = &rest[open + close + 1..];
+    }
+    out.push_str(rest);
+    out.trim().to_string()
 }
 
 fn weld_folder(state: &State, density: f64) -> WeldFolder {

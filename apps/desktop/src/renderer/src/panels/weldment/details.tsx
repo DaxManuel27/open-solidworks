@@ -9,7 +9,7 @@ import type {
   TrimKind,
 } from '../../../../shared/tools.gen'
 import { type Panel, useStore } from '../../store'
-import { Check, Choice, LengthField, NumberField, PanelShell, Section } from '../fields'
+import { AngleField, Check, Choice, LengthField, NumberField, PanelShell, Section } from '../fields'
 import {
   EDGE,
   FACE,
@@ -281,26 +281,38 @@ export function WeldGussetPanel({ panel }: { panel: Panel }) {
           options={[
             { value: 'triangle', label: 'Triangular' },
             { value: 'polygon', label: 'Polygonal' },
+            { value: 'leg_angle', label: 'Triangular, leg and angle' },
           ]}
-          onChange={(type) =>
+          onChange={(type) => {
+            const d2 = s.type === 'leg_angle' ? s.d1 : s.d2
             set({
               shape:
                 type === 'triangle'
-                  ? { type, d1: s.d1, d2: s.d2 }
-                  : { type, d1: s.d1, d2: s.d2, d3: 20, d4: 20 },
+                  ? { type, d1: s.d1, d2 }
+                  : type === 'polygon'
+                    ? { type, d1: s.d1, d2, d3: 20, d4: 20 }
+                    : { type, d1: s.d1, angle: Math.PI / 4 },
             })
-          }
+          }}
         />
         <LengthField
           label="d1 (along the first face)"
           value={s.d1}
           onChange={(d1) => set({ shape: { ...s, d1 } })}
         />
-        <LengthField
-          label="d2 (along the second face)"
-          value={s.d2}
-          onChange={(d2) => set({ shape: { ...s, d2 } })}
-        />
+        {s.type === 'leg_angle' ? (
+          <AngleField
+            label="Angle from the first face"
+            value={s.angle}
+            onChange={(angle) => set({ shape: { ...s, angle } })}
+          />
+        ) : (
+          <LengthField
+            label="d2 (along the second face)"
+            value={s.d2}
+            onChange={(d2) => set({ shape: { ...s, d2 } })}
+          />
+        )}
         {s.type === 'polygon' && (
           <>
             <LengthField label="d3" value={s.d3} onChange={(d3) => set({ shape: { ...s, d3 } })} />
@@ -373,7 +385,9 @@ export function WeldBeadPanel({ panel }: { panel: Panel }) {
       p.size > 0 &&
       (p.path.type === 'edges'
         ? p.path.edges.length > 0
-        : p.path.from.length > 0 && p.path.to.length > 0),
+        : p.path.type === 'smart'
+          ? p.path.faces.length > 1
+          : p.path.from.length > 0 && p.path.to.length > 0),
   )
   const path = p.path
   const i = p.intermittent
@@ -393,14 +407,34 @@ export function WeldBeadPanel({ panel }: { panel: Panel }) {
           label="Select by"
           value={path.type}
           options={[
-            { value: 'faces', label: 'Weld from / to faces (smart weld)' },
+            { value: 'faces', label: 'Weld from / to faces' },
+            { value: 'smart', label: 'Smart weld selection' },
             { value: 'edges', label: 'Weld path edges' },
           ]}
           onChange={(type) =>
-            set({ path: type === 'edges' ? { type, edges: [] } : { type, from: [], to: [] } })
+            set({
+              path:
+                type === 'edges'
+                  ? { type, edges: [] }
+                  : type === 'smart'
+                    ? { type, faces: [] }
+                    : { type, from: [], to: [] },
+            })
           }
         />
-        {path.type === 'edges' ? (
+        {path.type === 'smart' ? (
+          <>
+            <Refs
+              label="Faces across the joint"
+              value={path.faces}
+              onChange={(faces) => set({ path: { type: 'smart', faces } })}
+              kinds={FACE}
+              active={box === 'from'}
+              onActivate={() => setBox('from')}
+            />
+            <p className="hint">Every seam where two of these faces, on different bodies, meet.</p>
+          </>
+        ) : path.type === 'edges' ? (
           <>
             <Refs
               label="Edges"

@@ -54,6 +54,20 @@ pub enum CornerTreatment {
     EndButt2,
 }
 
+/// How a member ending on another member of the same feature (a T, not a
+/// shared corner) is cut.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ConnectedSegments {
+    /// Left square at the segment's end, overlapping the other member.
+    #[default]
+    Overlap,
+    /// Cut flush with the other member's face.
+    Simple,
+    /// Cut to the other member's shape.
+    Coped,
+}
+
 /// Segments that share a profile placement and corner treatment.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct MemberGroup {
@@ -87,6 +101,29 @@ pub struct StructuralMember {
     /// Join each mitered group's members into one body.
     #[serde(default, skip_serializing_if = "crate::sheet_metal::is_false")]
     pub merge_miter_trimmed: bool,
+    /// Turn the profile so its x axis follows this edge, axis or line (as
+    /// seen along each member); `rotation` then turns it further.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub align: Option<Ref>,
+    /// Butted members run past the corner to cover the other member; off,
+    /// they stop at the sketch's corner point.
+    #[serde(default = "yes", skip_serializing_if = "is_true")]
+    pub allow_protrusion: bool,
+    /// Members ending part way along another member of this feature.
+    #[serde(default, skip_serializing_if = "is_overlap")]
+    pub connected: ConnectedSegments,
+}
+
+fn yes() -> bool {
+    true
+}
+
+fn is_true(b: &bool) -> bool {
+    *b
+}
+
+fn is_overlap(c: &ConnectedSegments) -> bool {
+    *c == ConnectedSegments::Overlap
 }
 
 /// What the cut list needs to know about a member body.
@@ -153,11 +190,20 @@ fn segment(state: &State, r: &Ref) -> Result<Segment, String> {
     })
 }
 
-/// A segment's profile frame: x across, y up, z along it.
-fn frame(s: &Segment) -> Result<(DVec3, DVec3, DVec3), String> {
+/// A segment's profile frame: x across, y up, z along it. With `align`,
+/// x follows that direction across the member.
+fn frame(s: &Segment, align: Option<DVec3>) -> Result<(DVec3, DVec3, DVec3), String> {
     let z = (s.b - s.a).normalize_or_zero();
     if z == DVec3::ZERO {
         return Err("a member segment has no length".into());
+    }
+    if let Some(d) = align {
+        let x = d - z * d.dot(z);
+        if x.length() < 1e-9 {
+            return Err("the alignment direction runs along a member".into());
+        }
+        let x = x.normalize();
+        return Ok((x, z.cross(x), z));
     }
     let mut y = s.up - z * s.up.dot(z);
     if y.length() < 1e-9 {
@@ -251,6 +297,7 @@ pub(crate) fn corner_cuts(
     kind: CornerTreatment,
     corner: DVec3,
     gap: f64,
+    protrude: bool,
     i: Side,
     j: Side,
 ) -> Result<(Cut, Cut), String> {
@@ -278,7 +325,7 @@ pub(crate) fn corner_cuts(
             let face_at = reach(through.points, through.x, through.y, side);
             let cover = reach(stops.points, stops.x, stops.y, -ut);
             let stop = (corner + side * (face_at + gap), side);
-            let run = (corner - ut * cover, ut);
+            let run = (corner - ut * if protrude { cover } else { 0.0 }, ut);
             if first { (run, stop) } else { (stop, run) }
         }
     })
@@ -314,6 +361,10 @@ pub(crate) fn structural_member(
         return Err("add a Weldment feature before structural members".into());
     }
     let section = placed(&super::section(&p.profile)?, p);
+    let align = match &p.align {
+        Some(r) => Some(crate::resolve(prev, r)?.direction()?),
+        None => None,
+    };
     let points = profiles::outline_points(&section);
     let hole = profiles::largest_hole_points(&section);
     let reach_out = section.size.length() * 2.0 + 1.0;
@@ -321,7 +372,7 @@ pub(crate) fn structural_member(
     for (g, group) in p.groups.iter().enumerate() {
         for (i, r) in group.segments.iter().enumerate() {
             let seg = segment(prev, r)?;
-            let (x, y, z) = frame(&seg)?;
+            let (x, y, z) = frame(&seg, align)?;
             let len = (seg.b - seg.a).length();
             let plane = Plane::new(seg.a - z * reach_out, x, z);
             let face = Profile {
@@ -391,6 +442,7 @@ pub(crate) fn structural_member(
                     group.corner,
                     corner,
                     group.gap,
+                    p.allow_protrusion,
                     Side {
                         points: &raws[i].points,
                         x: raws[i].axes.0,
@@ -406,6 +458,42 @@ pub(crate) fn structural_member(
                 )?;
                 raws[i].ends[ei] = Some(cut_i);
                 raws[j].ends[ej] = Some(cut_j);
+            }
+        }
+    }
+    // Ends part way along another member: flush with its face, or noted
+    // for coping once every body is cut.
+    let mut copes: Vec<(usize, usize, usize)> = Vec::new();
+    if p.connected != ConnectedSegments::Overlap {
+        for i in 0..raws.len() {
+            for e in 0..2 {
+                if raws[i].ends[e].is_some() {
+                    continue;
+                }
+                let end = if e == 0 { raws[i].seg.a } else { raws[i].seg.b };
+                let Some(j) = (0..raws.len()).find(|&j| j != i && on_interior(&raws[j].seg, end))
+                else {
+                    continue;
+                };
+                match p.connected {
+                    ConnectedSegments::Simple => {
+                        // This member's direction into itself from the end.
+                        let u = if e == 0 {
+                            raws[i].axes.2
+                        } else {
+                            -raws[i].axes.2
+                        };
+                        let zj = raws[j].axes.2;
+                        let side = (u - zj * zj.dot(u)).normalize_or_zero();
+                        if side == DVec3::ZERO {
+                            continue;
+                        }
+                        let face_at = reach(&raws[j].points, raws[j].axes.0, raws[j].axes.1, side);
+                        raws[i].ends[e] = Some((end + side * face_at, side));
+                    }
+                    ConnectedSegments::Coped => copes.push((i, e, j)),
+                    ConnectedSegments::Overlap => {}
+                }
             }
         }
     }
@@ -463,6 +551,64 @@ pub(crate) fn structural_member(
             ),
         ));
     }
+    // Coped ends: the other member's finished shape taken out, keeping the
+    // piece toward this member's other end.
+    if !copes.is_empty() {
+        let shapes: Vec<Shape> = bodies.iter().map(|b| b.2.shape.clone()).collect();
+        for (i, e, j) in copes {
+            let toward = if e == 0 {
+                raws[i].axes.2
+            } else {
+                -raws[i].axes.2
+            };
+            let name = format!("{fid}.g{}.{}.cope{e}", raws[i].group, raws[i].index);
+            let body = &bodies[i].2;
+            let cut = body
+                .shape
+                .boolean(BoolOp::Cut, &shapes[j])
+                .map_err(|e| e.0)?;
+            let mut named = Body {
+                names: Naming::from_history(
+                    &cut.shape,
+                    &cut.history,
+                    Inputs {
+                        named: [Some(&body.names), None],
+                    },
+                    &mut |_| Some(name.clone()),
+                    &fid.to_string(),
+                ),
+                shape: cut.shape,
+            };
+            let pieces = named.shape.solids();
+            if pieces.len() > 1 {
+                let far = |s: &Shape| {
+                    (0..s.count(Kind::Vertex))
+                        .filter_map(|v| s.vertex_point(v).ok())
+                        .map(|q| q.dot(toward))
+                        .fold(f64::MIN, f64::max)
+                };
+                let keep = pieces
+                    .iter()
+                    .max_by(|x, y| far(x).total_cmp(&far(y)))
+                    .unwrap();
+                let tool = Shape::compound(pieces.iter().filter(|s| !std::ptr::eq(*s, keep)));
+                let r = named.shape.boolean(BoolOp::Cut, &tool).map_err(|e| e.0)?;
+                named = Body {
+                    names: Naming::from_history(
+                        &r.shape,
+                        &r.history,
+                        Inputs {
+                            named: [Some(&named.names), None],
+                        },
+                        &mut |_| Some(name.clone()),
+                        &fid.to_string(),
+                    ),
+                    shape: r.shape,
+                };
+            }
+            bodies[i].2 = named;
+        }
+    }
     // Mitered groups may become one body each.
     let mut merged: Vec<(String, Body, Vec<Part>)> = Vec::new();
     for (g, i, body, part) in bodies {
@@ -516,4 +662,13 @@ pub(crate) fn structural_member(
         state.bodies.push(SolidBody { id, geometry: body });
     }
     state.aggregate_bodies()
+}
+
+/// Whether `q` lies on a segment strictly between its ends.
+fn on_interior(s: &Segment, q: DVec3) -> bool {
+    let d = s.b - s.a;
+    let len = d.length();
+    let t = (q - s.a).dot(d) / (len * len);
+    let off = (s.a + d * t - q).length();
+    off < 1e-6 && t * len > 1e-6 && (1.0 - t) * len > 1e-6
 }

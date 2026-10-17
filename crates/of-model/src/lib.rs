@@ -482,12 +482,14 @@ impl FeatureKind {
             FeatureKind::Weldment(_) => {}
             FeatureKind::StructuralMember(m) => {
                 refs.extend(m.groups.iter().flat_map(|g| &g.segments));
+                refs.extend(&m.align);
             }
             FeatureKind::EndCap(c) => refs.extend(&c.faces),
             FeatureKind::WeldGusset(g) => refs.extend(&g.faces),
             FeatureKind::WeldBead(b) => match &b.path {
                 weldment::BeadPath::Edges { edges } => refs.extend(edges),
                 weldment::BeadPath::Faces { from, to } => refs.extend(from.iter().chain(to)),
+                weldment::BeadPath::Smart { faces } => refs.extend(faces),
             },
             FeatureKind::TrimExtend(t) => {
                 out.extend(t.bodies.iter().filter_map(BodyId::creator));

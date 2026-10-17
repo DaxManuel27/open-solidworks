@@ -3,9 +3,11 @@ import type { CutListSettings } from '../../../../shared/tools.gen'
 import { call } from '../../core'
 import { useStore } from '../../store'
 import { Check, Choice, PanelShell, Section } from '../fields'
+import { TextField } from '../sheet-metal/common'
 
 export interface CutListItem {
   number: number | null
+  name: string
   kind: 'member' | 'sheet_metal' | 'body'
   bodies: string[]
   quantity: number
@@ -105,11 +107,17 @@ export function CutListPanel() {
           ]}
           onChange={(sort) => setSettings({ ...settings, sort })}
         />
+        <TextField
+          label="Item names"
+          value={settings.name ?? ''}
+          placeholder="{DESCRIPTION} x {LENGTH}"
+          onChange={(name) => setSettings({ ...settings, name: name || null })}
+        />
       </Section>
       {list.items.map((item, i) => (
         <Section
           key={key(item)}
-          title={`${item.number ? `Item ${item.number}` : 'Excluded'} · ${item.properties['DESCRIPTION']} × ${item.quantity}`}
+          title={`${item.name} · ${item.properties['DESCRIPTION']} × ${item.quantity}`}
           open={i < 3}
         >
           <table className="prop-table">

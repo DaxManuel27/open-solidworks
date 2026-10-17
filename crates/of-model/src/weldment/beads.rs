@@ -16,9 +16,11 @@ use crate::{BodyId, FeatureId, Ref, SolidBody};
 pub enum BeadPath {
     /// Model edges.
     Edges { edges: Vec<Ref> },
-    /// Where faces in `from` meet faces in `to` (smart weld selection: the
-    /// seams between two sets of faces, on different bodies or one).
+    /// Where faces in `from` meet faces in `to`, on different bodies or one.
     Faces { from: Vec<Ref>, to: Vec<Ref> },
+    /// Smart weld selection: every seam where two of these faces, on
+    /// different bodies, meet (the faces a stroke across the joint crosses).
+    Smart { faces: Vec<Ref> },
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -134,9 +136,54 @@ fn seams_between(state: &State, from: &[Ref], to: &[Ref]) -> Result<Vec<Seam>, S
         .iter()
         .map(|r| global_face(state, r))
         .collect::<Result<_, _>>()?;
-    let face_edges = whole.face_edges();
     let mut seams: Vec<Seam> = Vec::new();
-    for (a_set, b_set) in [(&from, &to), (&to, &from)] {
+    seams_into(whole, &from, &to, &mut seams)?;
+    if seams.is_empty() {
+        return Err("the from and to faces don't meet".into());
+    }
+    Ok(seams)
+}
+
+/// Seams between each pair of faces on different bodies.
+fn smart_seams(state: &State, faces: &[Ref]) -> Result<Vec<Seam>, String> {
+    let whole = &state.body.as_ref().ok_or("there's no body")?.shape;
+    let faces: Vec<u32> = faces
+        .iter()
+        .map(|r| global_face(state, r))
+        .collect::<Result<_, _>>()?;
+    let owners: Vec<Vec<u32>> = state
+        .bodies
+        .iter()
+        .map(|b| {
+            b.geometry
+                .shape
+                .indices_in(whole, Kind::Face)
+                .unwrap_or_default()
+        })
+        .collect();
+    let body_of = |f: u32| owners.iter().position(|o| o.contains(&f));
+    let mut seams: Vec<Seam> = Vec::new();
+    for (n, &a) in faces.iter().enumerate() {
+        for &b in &faces[n + 1..] {
+            if body_of(a) != body_of(b) {
+                seams_into(whole, &[a], &[b], &mut seams)?;
+            }
+        }
+    }
+    if seams.is_empty() {
+        return Err("none of the faces meet a face of another body".into());
+    }
+    Ok(seams)
+}
+
+fn seams_into(
+    whole: &Shape,
+    from: &[u32],
+    to: &[u32],
+    seams: &mut Vec<Seam>,
+) -> Result<(), String> {
+    let face_edges = whole.face_edges();
+    for (a_set, b_set) in [(from, to), (to, from)] {
         for &a in a_set {
             let ai = whole.face_info(a).map_err(|e| e.0)?;
             for &b in b_set {
@@ -176,10 +223,7 @@ fn seams_between(state: &State, from: &[Ref], to: &[Ref]) -> Result<Vec<Seam>, S
             }
         }
     }
-    if seams.is_empty() {
-        return Err("the from and to faces don't meet".into());
-    }
-    Ok(seams)
+    Ok(())
 }
 
 /// The selected edges, with edges tangent to them when asked.
@@ -360,6 +404,7 @@ pub(crate) fn weld_bead(
             seams_on_edges(prev, edges, p.tangent)?
         }
         BeadPath::Faces { from, to } => seams_between(prev, from, to)?,
+        BeadPath::Smart { faces } => smart_seams(prev, faces)?,
     };
     let sides: &[bool] = match p.sides {
         BeadSides::One => &[false],

@@ -41,6 +41,9 @@ fn members(profile: ProfileSource, segments: Vec<Ref>, corner: CornerTreatment) 
         mirror: ProfileMirror::None,
         offset: [0.0, 0.0],
         merge_miter_trimmed: false,
+        align: None,
+        allow_protrusion: true,
+        connected: Default::default(),
     })
 }
 

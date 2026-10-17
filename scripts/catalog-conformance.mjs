@@ -3236,6 +3236,73 @@ check('11 Sub-weldments and groups', 'a sub-weldment folder lists its own items'
   expect(sub.length === 1 && sub[0].quantity === 2, `sub ${JSON.stringify(sub)}`)
 })
 
+check(
+  '11 Structural member',
+  'connected segments cut flush; alignment and protrusion',
+  async () => {
+    await fresh()
+    await ok({ type: 'weldment' })
+    const t = await sketch(front, [line([0, 0], [600, 0]), line([300, 0], [300, 400])])
+    const segs = t.created.map((x) => seg(t.id, lineId(x)))
+    const { id } = await ok({ ...memberOf(tube('SHS 40x40x3'), segs), connected: 'simple' })
+    const stem = (await cutList()).items.find((i) => i.bodies.includes(`b${id}:g0.1`))
+    expect(stem.properties.LENGTH === '380', `stem ${stem.properties.LENGTH}`)
+    // Aligned to the front plane's normal, the 60 side stands up.
+    await fresh()
+    await ok({ type: 'weldment' })
+    const l = await sketch(front, [line([0, 0], [300, 0])])
+    await ok({ ...memberOf(tube('RHS 60x40x3'), [seg(l.id, lineId(l.created[0]))]), align: front })
+    const it = (await cutList()).items[0].properties
+    expect(it['BOUNDING WIDTH'] === '60' && it['BOUNDING THICKNESS'] === '40', JSON.stringify(it))
+    // Butted without protrusion: the running member stops at the corner.
+    const lines4 = await frameSketch()
+    await ok({ ...memberOf(tube('SHS 40x40x3'), lines4, 'end_butt1'), allow_protrusion: false })
+    const lengths = (await rowsOf()).map((r) => r[1]).sort()
+    expect(
+      JSON.stringify(lengths) === JSON.stringify(['1180', '1200', '560', '580']),
+      `lengths ${lengths}`,
+    )
+  },
+)
+
+check('11 Gusset', 'a leg and an angle give the second leg', async () => {
+  await fresh()
+  await ok({ type: 'weldment' })
+  const p = await sketch(front, [line([0, 0], [0, 500])])
+  await ok(memberOf(tube('SHS 40x40x3'), [seg(p.id, lineId(p.created[0]))]))
+  const b = await sketch(front, [line([0, 500], [500, 500])])
+  await ok(memberOf(tube('SHS 40x40x3'), [seg(b.id, lineId(b.created[0]))]))
+  const before = await volume()
+  const side = await face(
+    (f) => facing([1, 0, 0])(f) && at([20, null, null])(f.centroid) && f.centroid[1] < 400,
+  )
+  const under = await face(
+    (f) => facing([0, -1, 0])(f) && at([null, 480, null])(f.centroid) && f.centroid[0] > 100,
+  )
+  await ok({
+    type: 'weld_gusset',
+    faces: [side, under],
+    shape: { type: 'leg_angle', d1: 100, angle: Math.atan(0.5) },
+    thickness: 10,
+  })
+  near((await volume()) - before, 2500 * 10, 1e-6, 'gusset volume')
+})
+
+check('11 Smart weld selection', 'faces across a joint give its seams', async () => {
+  const { sides, post: p } = await postAndBeam()
+  await ok({ type: 'weld_bead', path: { type: 'smart', faces: [...sides, p] }, size: 5 })
+  near((await cutList()).welds.total_length, 4 * 28, 1e-6, 'four seams')
+  await bad({ type: 'weld_bead', path: { type: 'smart', faces: sides }, size: 5 }, /meet/)
+})
+
+check('11 Cut lists, cut list properties and folders', 'item names from properties', async () => {
+  await trimmedFrame()
+  expect((await cutList()).items[0].name === 'Item 1', 'default name')
+  await call('doc.cut_list.set', { settings: { name: '{DESCRIPTION} x {LENGTH}' } })
+  const names = (await cutList()).items.map((i) => i.name)
+  expect(names[0] === 'SHS 40x40x3 x 1240', `names ${names}`)
+})
+
 failure(
   '11 Trim/extend',
   'a body that is not a member',
