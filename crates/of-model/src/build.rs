@@ -55,8 +55,16 @@ pub struct State {
     pub sketches3d: HashMap<FeatureId, (of_sketch::spatial::Sketch3D, SolveReport)>,
     pub curves: HashMap<FeatureId, crate::curves::CurveBody>,
     pub bodies: Vec<crate::SolidBody>,
-    /// Derived aggregate cache for legacy feature operations and whole-part I/O.
+    /// Surface (zero-thickness) bodies. They are kept apart from `bodies`, so
+    /// solid features and the `body` aggregate never see them.
+    pub surfaces: Vec<crate::SolidBody>,
+    /// Derived aggregate cache of the solids, for legacy feature operations
+    /// and whole-part measurement.
     pub body: Option<Body>,
+    /// The solids then the surfaces in one compound, for references, display
+    /// and export. `None` while there are no surfaces, when `body` serves.
+    /// Solid sub-shapes have the same indices here as in `body`.
+    pub(crate) all: Option<Body>,
     pub datums: HashMap<FeatureId, Datum>,
     /// Each sketch's plane and solved geometry.
     pub sketches: HashMap<FeatureId, (Plane, Sketch)>,
@@ -455,6 +463,17 @@ fn build_scoped(
     prev: &State,
     state: &mut State,
 ) -> RResult<()> {
+    build_scoped_bodies(id, kind, scope, prev, state)?;
+    state.aggregate_all()
+}
+
+fn build_scoped_bodies(
+    id: FeatureId,
+    kind: &FeatureKind,
+    scope: Option<&[crate::BodyId]>,
+    prev: &State,
+    state: &mut State,
+) -> RResult<()> {
     let Some(scope) = scope else {
         return build_kind(id, kind, prev, state);
     };
@@ -831,14 +850,26 @@ fn build_coord_sys(prev: &State, c: &CoordSysDef) -> RResult<Datum> {
 }
 
 impl State {
-    /// Kernel index of a face, edge or vertex reference.
+    /// Kernel index of a face, edge or vertex of a solid body, in
+    /// [`State::body`].
     pub fn index_of(&self, r: &Ref) -> RResult<(Kind, u32)> {
+        let (kind, index) = crate::resolve::index_of(self, r)?;
+        let solids = self.body.as_ref().map_or(0, |b| b.shape.count(kind));
+        if index >= solids {
+            return Err("that belongs to a surface body; select solid geometry".into());
+        }
+        Ok((kind, index))
+    }
+
+    /// Kernel index of a face, edge or vertex of any body, in
+    /// [`State::everything`].
+    pub fn any_index_of(&self, r: &Ref) -> RResult<(Kind, u32)> {
         crate::resolve::index_of(self, r)
     }
 
     /// The stable reference for a face, edge or vertex picked by index.
     pub fn ref_for(&self, kind: Kind, index: u32) -> Option<Ref> {
-        let names = &self.body.as_ref()?.names;
+        let names = &self.everything()?.names;
         Some(match kind {
             Kind::Face => Ref::Face {
                 name: names.face_name(index)?.to_string(),

@@ -184,5 +184,30 @@ std::unique_ptr<Shape> flatten(const Shape &s, rust::Slice<const uint32_t> faces
                                rust::Slice<const double> maps, const Frame &frame,
                                const Vec3 &thickness, rust::Vec<int64_t> &sources, bool simplify);
 rust::Vec<uint32_t> seam_edges(const Shape &s, const Vec3 &view);
+std::unique_ptr<Shape> sew(const Shape &faces, double tolerance, rust::Vec<HistoryEntry> &hist,
+                           uint32_t &free_edges);
+std::unique_ptr<Shape> solidify(const Shape &shells, rust::Vec<HistoryEntry> &hist);
+std::unique_ptr<Shape> offset_shape(const Shape &s, double distance, rust::Vec<HistoryEntry> &hist);
+std::unique_ptr<Shape> thicken(const Shape &s, double thickness, rust::Vec<HistoryEntry> &hist);
+std::unique_ptr<Shape> defeature(const Shape &s, rust::Slice<const uint32_t> faces,
+                                 rust::Vec<HistoryEntry> &hist);
+std::unique_ptr<Shape> remove_faces(const Shape &s, rust::Slice<const uint32_t> faces,
+                                    rust::Vec<HistoryEntry> &hist);
+std::unique_ptr<Shape> fill(const Shape &edges, const Shape &supports,
+                            rust::Slice<const int32_t> support_of, rust::Slice<const uint8_t> orders,
+                            const Shape &constraints, double &max_error);
+std::unique_ptr<Shape> sweep_surface(const Shape &profile, const Shape &path, const Frame &frame,
+                                     uint8_t orientation, rust::Vec<HistoryEntry> &hist);
+std::unique_ptr<Shape> loft_surface(const Shape &profiles, bool ruled, bool preserve,
+                                    rust::Vec<HistoryEntry> &hist);
+std::unique_ptr<Shape> shells_of(const Shape &s);
+std::unique_ptr<Shape> free_edges(const Shape &s);
+uint32_t child_count(const Shape &s);
+std::unique_ptr<Shape> cut_with_surface(const Shape &body, const Shape &surface, bool flip,
+                                        rust::Vec<HistoryEntry> &hist);
+std::unique_ptr<Shape> planar_face(const Shape &edges);
+std::unique_ptr<Shape> boundary_surface(const Shape &sections_in, const Shape &guides_in,
+                                        rust::Vec<HistoryEntry> &hist);
+std::unique_ptr<Shape> child(const Shape &s, uint32_t index);
 
 } // namespace ofk

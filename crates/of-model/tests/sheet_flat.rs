@@ -167,7 +167,7 @@ fn sheet_metal_parts_round_trip_in_file_version_6() {
     ok(&m);
     let text = of_model::file::to_string(&m.doc);
     let v: serde_json::Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(v["version"], 6);
+    assert_eq!(v["version"], of_model::file::VERSION);
     let loaded = Model::new(of_model::file::from_str(&text).unwrap());
     ok(&loaded);
     assert_eq!(loaded.doc, m.doc);

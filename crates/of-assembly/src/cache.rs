@@ -45,6 +45,12 @@ impl Part {
         self.state().body.as_ref().map(|b| &b.shape)
     }
 
+    /// The part's solids and surfaces, for display and drawing views. Solid
+    /// sub-shapes have the same indices as in [`Self::shape`].
+    pub fn display_shape(&self) -> Option<&Shape> {
+        self.state().everything().map(|b| &b.shape)
+    }
+
     /// File name without the extension.
     pub fn stem(&self) -> String {
         self.path

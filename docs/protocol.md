@@ -260,6 +260,17 @@ run `cargo run -p openforge -- generate` instead. -->
 | `end_cap` | `faces`, `thickness`, `corners?`, `direction?`, `offset?`, `scope?` | Plates closing members' ends. |
 | `weld_gusset` | `faces`, `shape`, `thickness`, `chamfer?`, `location?`, `offset?`, `scope?`, `side?` | A plate in the corner between two members. |
 | `weld_bead` | `path`, `size`, `from_to?`, `intermittent?`, `kind?`, `mass_per_length?`, `material?`, `process?`, `scope?`, `sides?`, `symbol?`, `tangent?` | A cosmetic or modeled fillet weld bead. |
+| `extruded_surface` | `sketch`, `end1`, `cap_ends?`, `end2?`, `reverse?`, `scope?` | A surface extruded from a sketch's open or closed contours. |
+| `revolved_surface` | `sketch`, `axis`, `angle`, `reverse?`, `scope?` | A surface revolved from a sketch's contours about an axis. |
+| `swept_surface` | `profile`, `path`, `orientation?`, `scope?` | A surface swept from an open or closed profile along a path. |
+| `lofted_surface` | `profiles`, `ruled?`, `scope?` | A surface lofted through profiles in order. |
+| `boundary_surface` | `curves1`, `curves2?`, `scope?` | A surface bounded by curves in one or two directions. |
+| `planar_surface` | `edges?`, `scope?`, `sketch?` | A flat surface inside a closed sketch or loop of edges. |
+| `offset_surface` | `faces`, `distance`, `flip?`, `scope?` | Copies of faces moved along their normals, as a surface. |
+| `knit` | `bodies`, `create_solid?`, `scope?`, `tolerance?` | Join surface bodies along shared edges, optionally into a solid. |
+| `thicken` | `body`, `thickness`, `cut?`, `fill_volume?`, `merge?`, `scope?`, `side?` | Give a surface body thickness, making a solid (or a cut). |
+| `cut_with_surface` | `surface`, `flip?`, `scope?` | Cut away the solids on one side of a surface. |
+| `delete_face` | `faces`, `mode?`, `scope?` | Remove faces, leaving a gap, patching it or filling it. |
 
 <!-- /generated:features -->
 

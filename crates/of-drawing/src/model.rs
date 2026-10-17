@@ -196,17 +196,17 @@ impl Sources {
         if !is_assembly(path) {
             let part = self.part(path, configuration, flat)?;
             let whole = part
-                .shape()
+                .display_shape()
                 .cloned()
-                .ok_or_else(|| "the part has no solid geometry".to_string())?;
+                .ok_or_else(|| "the part has no geometry".to_string())?;
             let (shape, edge_map) = match bodies {
                 Some(ids) => {
                     let chosen: Vec<&Shape> = ids
                         .iter()
                         .map(|id| {
                             part.state()
-                                .solid(id)
-                                .map(|b| &b.geometry.shape)
+                                .any_body(id)
+                                .map(|(b, _)| &b.geometry.shape)
                                 .map_err(|_| format!("the part has no body {}", id.0))
                         })
                         .collect::<Result<_, _>>()?;
@@ -263,7 +263,9 @@ impl Sources {
             let Loaded::Part(part) = &i.loaded else {
                 continue;
             };
-            let Some(s) = part.shape() else { continue };
+            let Some(s) = part.display_shape() else {
+                continue;
+            };
             let pose = poses
                 .as_ref()
                 .and_then(|p| p.get(&i.key).copied())

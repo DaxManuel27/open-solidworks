@@ -481,6 +481,91 @@ pub mod ffi {
             simplify: bool,
         ) -> Result<UniquePtr<Shape>>;
 
+        /// Faces sewn into shells within `tolerance`; `free_edges` gets the
+        /// number of edges left on only one face.
+        fn sew(
+            faces: &Shape,
+            tolerance: f64,
+            hist: &mut Vec<HistoryEntry>,
+            free_edges: &mut u32,
+        ) -> Result<UniquePtr<Shape>>;
+        /// A solid from each closed shell.
+        fn solidify(shells: &Shape, hist: &mut Vec<HistoryEntry>) -> Result<UniquePtr<Shape>>;
+        /// Faces moved `distance` along their normals; 0 copies them.
+        fn offset_shape(
+            s: &Shape,
+            distance: f64,
+            hist: &mut Vec<HistoryEntry>,
+        ) -> Result<UniquePtr<Shape>>;
+        /// A surface thickened into a solid, toward its normal when positive.
+        fn thicken(
+            s: &Shape,
+            thickness: f64,
+            hist: &mut Vec<HistoryEntry>,
+        ) -> Result<UniquePtr<Shape>>;
+        /// Faces removed, with their neighbours extended to close the gap.
+        fn defeature(
+            s: &Shape,
+            faces: &[u32],
+            hist: &mut Vec<HistoryEntry>,
+        ) -> Result<UniquePtr<Shape>>;
+        /// Faces removed, leaving open shells.
+        fn remove_faces(
+            s: &Shape,
+            faces: &[u32],
+            hist: &mut Vec<HistoryEntry>,
+        ) -> Result<UniquePtr<Shape>>;
+        /// A patch bounded by `edges`. Edge i meets face `support_of[i]` of
+        /// `supports` (-1 for none) with continuity `orders[i]`: 0 contact,
+        /// 1 tangent, 2 curvature. The patch passes through `constraints`.
+        /// `max_error` gets the largest distance from the boundary.
+        fn fill(
+            edges: &Shape,
+            supports: &Shape,
+            support_of: &[i32],
+            orders: &[u8],
+            constraints: &Shape,
+            max_error: &mut f64,
+        ) -> Result<UniquePtr<Shape>>;
+        /// An open or closed profile swept along a path, as a surface.
+        fn sweep_surface(
+            profile: &Shape,
+            path: &Shape,
+            frame: &Frame,
+            orientation: u8,
+            hist: &mut Vec<HistoryEntry>,
+        ) -> Result<UniquePtr<Shape>>;
+        /// A surface through open or closed wires, in order.
+        fn loft_surface(
+            profiles: &Shape,
+            ruled: bool,
+            preserve: bool,
+            hist: &mut Vec<HistoryEntry>,
+        ) -> Result<UniquePtr<Shape>>;
+        /// Each shell of a shape, with bare faces as shells of their own.
+        fn shells_of(s: &Shape) -> Result<UniquePtr<Shape>>;
+        /// Edges used by only one face, as a compound.
+        fn free_edges(s: &Shape) -> Result<UniquePtr<Shape>>;
+        /// The solids of `body` cut by `surface`: the pieces on the side its
+        /// normal points to are removed, or the other side's with `flip`.
+        fn cut_with_surface(
+            body: &Shape,
+            surface: &Shape,
+            flip: bool,
+            hist: &mut Vec<HistoryEntry>,
+        ) -> Result<UniquePtr<Shape>>;
+        /// A surface through open or closed sections and direction-2 curves
+        /// crossing them, patched cell by cell and sewn into a shell.
+        fn boundary_surface(
+            sections: &Shape,
+            guides: &Shape,
+            hist: &mut Vec<HistoryEntry>,
+        ) -> Result<UniquePtr<Shape>>;
+        /// A planar face bounded by a closed loop of edges.
+        fn planar_face(edges: &Shape) -> Result<UniquePtr<Shape>>;
+        /// The number of direct children of a compound, solid or shell.
+        fn child_count(s: &Shape) -> u32;
+        fn child(s: &Shape, index: u32) -> Result<UniquePtr<Shape>>;
         fn write_step(s: &Shape, path: &str) -> Result<()>;
         fn read_step(path: &str) -> Result<UniquePtr<Shape>>;
         fn write_iges(s: &Shape, path: &str) -> Result<()>;

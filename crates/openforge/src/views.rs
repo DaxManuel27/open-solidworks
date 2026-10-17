@@ -41,14 +41,14 @@ fn plane_json(p: &Plane) -> Value {
 
 /// Everything the viewport draws for a model state.
 pub fn scene(doc: &Document, state: &State) -> Result<Value, String> {
-    let body = match &state.body {
+    let body = match state.everything() {
         Some(b) => Some(mesh(&b.shape)?),
         None => None,
     };
     let display_geometry = Shape::compound(
         state
-            .body
-            .iter()
+            .everything()
+            .into_iter()
             .map(|b| &b.shape)
             .chain(state.curves.values().map(|c| &c.shape)),
     );
@@ -225,15 +225,23 @@ pub fn body_name(doc: &Document, state: &State, index: usize) -> String {
         .unwrap_or_else(|| format!("Body {}", index + 1))
 }
 
+/// A surface body's display name, or `Surface-Body N` by its position.
+pub fn surface_name(doc: &Document, state: &State, index: usize) -> String {
+    doc.body_display
+        .get(&state.surfaces[index].id)
+        .and_then(|d| d.name.clone())
+        .unwrap_or_else(|| format!("Surface-Body {}", index + 1))
+}
+
 fn body_views(doc: &Document, state: &State) -> Result<Vec<Value>, String> {
-    let Some(whole) = &state.body else {
+    let Some(whole) = state.everything() else {
         return Ok(Vec::new());
     };
-    state
-        .bodies
-        .iter()
-        .enumerate()
-        .map(|(i, body)| {
+    let solids = state.bodies.iter().enumerate().map(|(i, b)| (b, false, i));
+    let surfaces = state.surfaces.iter().enumerate().map(|(i, b)| (b, true, i));
+    solids
+        .chain(surfaces)
+        .map(|(body, surface, i)| {
             let display = doc.body_display.get(&body.id);
             let indices = |kind| {
                 body.geometry
@@ -243,7 +251,8 @@ fn body_views(doc: &Document, state: &State) -> Result<Vec<Value>, String> {
             };
             Ok(json!({
                 "id": body.id,
-                "name": body_name(doc, state, i),
+                "kind": if surface { "surface" } else { "solid" },
+                "name": if surface { surface_name(doc, state, i) } else { body_name(doc, state, i) },
                 "hidden": display.is_some_and(|d| d.hidden),
                 "faces": indices(of_model::geom::Kind::Face)?,
                 "edges": indices(of_model::geom::Kind::Edge)?,

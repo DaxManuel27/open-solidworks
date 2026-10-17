@@ -1270,8 +1270,7 @@ impl Session {
                 };
                 let body = model
                     .state()
-                    .body
-                    .as_ref()
+                    .everything()
                     .ok_or_else(|| fail("there's nothing to export"))?;
                 of_io::export(&body.shape, &p.path, format).map_err(fail)?;
                 Ok(json!({ "path": p.path }))
@@ -1537,7 +1536,7 @@ impl Session {
     /// assistants that can't click on geometry.
     fn topology(&mut self) -> R {
         let state = self.visible();
-        let Some(body) = &state.body else {
+        let Some(body) = state.everything() else {
             return Ok(json!({ "faces": [], "edges": [] }));
         };
         let r3 = |v: of_model::geom::DVec3| [round(v.x), round(v.y), round(v.z)];

@@ -117,8 +117,10 @@ std::vector<TopoDS_Wire> wires_of(const TopoDS_Shape &shape) {
 }
 } // namespace
 
-std::unique_ptr<Shape> boundary(const Shape &sections_in, const Shape &guides_in,
-                                rust::Vec<HistoryEntry> &hist) {
+// With `surface`, sections may be open and the patches are returned as a
+// shell, without end caps.
+static TopoDS_Shape boundary_impl(const Shape &sections_in, const Shape &guides_in, bool surface,
+                                  rust::Vec<HistoryEntry> &hist) {
   const auto section_wires = wires_of(sections_in.shape);
   const auto guide_wires = wires_of(guides_in.shape);
   const int n = static_cast<int>(section_wires.size()), k = static_cast<int>(guide_wires.size());
@@ -134,9 +136,9 @@ std::unique_ptr<Shape> boundary(const Shape &sections_in, const Shape &guides_in
   std::vector<Handle(Geom_BSplineCurve)> S, G;
   for (int i = 0; i < n; ++i) {
     const auto &w = section_wires[i];
-    if (!BRep_Tool::IsClosed(w))
+    if (!surface && !BRep_Tool::IsClosed(w))
       throw std::invalid_argument("direction 1 section " + std::to_string(i + 1) + " is not closed");
-    if (i == 0 || i == n - 1) {
+    if (!surface && (i == 0 || i == n - 1)) {
       BRepLib_FindSurface plane(w, tol, true);
       if (!plane.Found())
         throw std::invalid_argument("the first and last boundary sections must be planar to cap them");
@@ -170,7 +172,11 @@ std::unique_ptr<Shape> boundary(const Shape &sections_in, const Shape &guides_in
   }
   // Order the direction 2 curves around the first section; every section must
   // see the same cyclic order, or the network is twisted.
+  const bool closed = BRep_Tool::IsClosed(section_wires[0]);
   for (int i = 0; i < n; ++i) {
+    if (BRep_Tool::IsClosed(section_wires[i]) != closed)
+      throw std::invalid_argument("the direction 1 sections must be all open or all closed");
+    if (!closed) continue;
     const double first = S[i]->FirstParameter(), period = S[i]->LastParameter() - first;
     for (int j = 0; j < k; ++j) {
       s[i][j] = first + std::fmod(s[i][j] - first, period);
@@ -180,7 +186,11 @@ std::unique_ptr<Shape> boundary(const Shape &sections_in, const Shape &guides_in
   std::vector<int> order(k);
   for (int j = 0; j < k; ++j) order[j] = j;
   std::sort(order.begin(), order.end(), [&](int a, int b) { return s[0][a] < s[0][b]; });
-  for (int i = 0; i < n; ++i) {
+  for (int i = 0; i < n && !closed; ++i)
+    for (int m = 0; m + 1 < k; ++m)
+      if (!(s[i][order[m + 1]] > s[i][order[m]] + 1e-12))
+        throw std::invalid_argument("direction 2 curves must cross every section in the same order");
+  for (int i = 0; i < n && closed; ++i) {
     int wraps = 0;
     for (int m = 0; m < k; ++m) {
       const double a = s[i][order[m]], b = s[i][order[(m + 1) % k]];
@@ -193,8 +203,9 @@ std::unique_ptr<Shape> boundary(const Shape &sections_in, const Shape &guides_in
 
   BRepBuilderAPI_Sewing sewing(10 * tol);
   std::vector<TopoDS_Face> patches;
+  const int gaps = closed ? k : k - 1;
   for (int i = 0; i + 1 < n; ++i)
-    for (int m = 0; m < k; ++m) {
+    for (int m = 0; m < gaps; ++m) {
       const int a = order[m], b = order[(m + 1) % k];
       Handle(Geom_BSplineCurve) c1 = forward(S[i], s[i][a], s[i][b], tol);
       Handle(Geom_BSplineCurve) c2 = segment(G[b], t[i][b], t[i + 1][b]);
@@ -221,6 +232,20 @@ std::unique_ptr<Shape> boundary(const Shape &sections_in, const Shape &guides_in
       patches.push_back(face);
       sewing.Add(face);
     }
+  if (surface) {
+    sewing.Perform();
+    TopoDS_Shape sewn = sewing.SewedShape();
+    if (sewn.IsNull()) throw std::runtime_error("the boundary patches can't be joined");
+    TopTools_IndexedMapOfShape faces;
+    TopExp::MapShapes(sewn, TopAbs_FACE, faces);
+    for (size_t p = 0; p < patches.size(); ++p) {
+      TopoDS_Shape f = sewing.IsModified(patches[p]) ? sewing.Modified(patches[p]) : patches[p];
+      const int index = faces.FindIndex(f);
+      if (index > 0)
+        hist.push_back(HistoryEntry{0, 0, static_cast<uint32_t>(p), GENERATED, 0, static_cast<uint32_t>(index - 1)});
+    }
+    return sewn;
+  }
   std::vector<TopoDS_Face> caps;
   for (int i : {0, n - 1}) {
     BRepBuilderAPI_MakeFace cap(section_wires[i], true);
@@ -259,6 +284,16 @@ std::unique_ptr<Shape> boundary(const Shape &sections_in, const Shape &guides_in
   for (size_t p = 0; p < patches.size(); ++p) record(patches[p], GENERATED, static_cast<uint32_t>(p));
   record(caps[0], FIRST_CAP, 0);
   record(caps[1], LAST_CAP, 0);
-  return std::make_unique<Shape>(solid);
+  return solid;
+}
+
+std::unique_ptr<Shape> boundary(const Shape &sections_in, const Shape &guides_in,
+                                rust::Vec<HistoryEntry> &hist) {
+  return std::make_unique<Shape>(boundary_impl(sections_in, guides_in, false, hist));
+}
+
+std::unique_ptr<Shape> boundary_surface(const Shape &sections_in, const Shape &guides_in,
+                                        rust::Vec<HistoryEntry> &hist) {
+  return std::make_unique<Shape>(boundary_impl(sections_in, guides_in, true, hist));
 }
 } // namespace ofk

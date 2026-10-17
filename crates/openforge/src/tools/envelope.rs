@@ -176,6 +176,13 @@ fn changes_material(kind: &FeatureKind) -> bool {
             | TabAndSlot(_)
             | SheetMetalGusset(_)
             | FormTool(_)
+            | Thicken(_)
+            | CutWithSurface(_)
+            | DeleteFace(_)
+            | Knit(of_model::surfaces::Knit {
+                create_solid: true,
+                ..
+            })
     )
 }
 

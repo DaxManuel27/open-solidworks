@@ -47,14 +47,23 @@ pub fn resolve(state: &State, r: &Ref) -> RResult<Resolved> {
     let missing = |what: &str, name: &str| format!("{what} {name} no longer exists");
     Ok(match r {
         Ref::Body { id } => {
-            let body = state.solid(id)?;
+            let (body, surface) = state.any_body(id)?;
+            let center = if surface {
+                body.geometry
+                    .shape
+                    .bbox()
+                    .ok_or("the surface body is empty")?
+                    .center()
+            } else {
+                body.geometry.shape.mass_props().map_err(|e| e.0)?.center
+            };
             Resolved::Body {
                 id: id.clone(),
-                center: body.geometry.shape.mass_props().map_err(|e| e.0)?.center,
+                center,
             }
         }
         Ref::BodyTopology { body, kind, name } => {
-            let selected = &state.solid(body)?.geometry;
+            let selected = &state.any_body(body)?.0.geometry;
             let local = match kind {
                 Kind::Face => selected
                     .names
@@ -77,7 +86,7 @@ pub fn resolve(state: &State, r: &Ref) -> RResult<Resolved> {
                 _ => None,
             }
             .ok_or_else(|| missing("body topology", name))?;
-            let aggregate = state.body.as_ref().ok_or("there is no body")?;
+            let aggregate = state.everything().ok_or("there is no body")?;
             let indices = selected
                 .shape
                 .indices_in(&aggregate.shape, *kind)
@@ -104,7 +113,7 @@ pub fn resolve(state: &State, r: &Ref) -> RResult<Resolved> {
         Ref::TopPlane => Resolved::Plane(Plane::top()),
         Ref::RightPlane => Resolved::Plane(Plane::right()),
         Ref::Face { name } => {
-            let body = state.body.as_ref().ok_or_else(|| missing("face", name))?;
+            let body = state.everything().ok_or_else(|| missing("face", name))?;
             let index = body.names.face(name).ok_or_else(|| missing("face", name))?;
             Resolved::Face {
                 index,
@@ -112,7 +121,7 @@ pub fn resolve(state: &State, r: &Ref) -> RResult<Resolved> {
             }
         }
         Ref::Edge { name } => {
-            let body = state.body.as_ref().ok_or_else(|| missing("edge", name))?;
+            let body = state.everything().ok_or_else(|| missing("edge", name))?;
             let index = body.names.edge(name).ok_or_else(|| missing("edge", name))?;
             Resolved::Edge {
                 index,
@@ -120,7 +129,7 @@ pub fn resolve(state: &State, r: &Ref) -> RResult<Resolved> {
             }
         }
         Ref::Vertex { name } => {
-            let body = state.body.as_ref().ok_or_else(|| missing("vertex", name))?;
+            let body = state.everything().ok_or_else(|| missing("vertex", name))?;
             let index = body
                 .names
                 .vertex(name)

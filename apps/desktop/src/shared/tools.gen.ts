@@ -1257,6 +1257,9 @@ export type DatumRef = {
   modifier?: Modifier | null
 }
 
+/** How Delete Face closes the gap the faces leave. */
+export type DeleteFaceMode = 'delete' | 'patch' | 'fill' | 'fill_tangent'
+
 export type DetailStyle = 'standard' | 'broken' | 'leader' | 'no_leader' | 'connected'
 
 /** Line display of a view. */
@@ -2487,6 +2490,126 @@ export type Feature =
     /** Carry on along edges tangent to the selected ones. */
     tangent?: boolean
   }
+  | {
+    type: 'extruded_surface'
+    sketch: number
+    /** Blind, mid plane, up to vertex, up to surface or offset from surface. */
+    end1: EndCondition
+    /** Close both ends of closed contours, making a closed surface body. */
+    cap_ends?: boolean
+    /** Optional second direction. */
+    end2?: EndCondition | null
+    reverse?: boolean
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'revolved_surface'
+    sketch: number
+    /** A sketch line, reference axis or straight edge. */
+    axis: Ref
+    /** Blind, mid plane or two direction. */
+    angle: RevolveAngle
+    reverse?: boolean
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'swept_surface'
+    /** A sketch contour or curve: open or closed. */
+    profile: Ref
+    /** A sketch contour, curve or edge chain. */
+    path: Ref
+    orientation?: SweepOrientation
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'lofted_surface'
+    /** Sketch contours or curves, in order. */
+    profiles: Ref[]
+    /** Straight lines between the profiles. */
+    ruled?: boolean
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'boundary_surface'
+    /** Ordered curves in direction 1 (sketch contours, curves or edges). */
+    curves1: Ref[]
+    /**
+     * Ordered curves in direction 2 crossing every curve in direction 1;
+     * leave empty to skin through direction 1 only.
+     */
+    curves2?: Ref[]
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'planar_surface'
+    /** Or coplanar model edges forming a closed loop. */
+    edges?: Ref[]
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+    /** A sketch whose closed regions become faces. */
+    sketch?: number | null
+  }
+  | {
+    type: 'offset_surface'
+    faces: Ref[]
+    /** mm; 0 makes an exact copy. */
+    distance: number
+    /** Offset against the faces' normals instead. */
+    flip?: boolean
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'knit'
+    /** Surface bodies to join. */
+    bodies: string[]
+    /** Make a solid when the result encloses a volume, and fail when it doesn't. */
+    create_solid?: boolean
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+    /** Edges closer than this are joined, mm. */
+    tolerance?: number
+  }
+  | {
+    type: 'thicken'
+    body: string
+    /** mm. */
+    thickness: number
+    /** Remove the thickened material from the solids instead of adding it. */
+    cut?: boolean
+    /** Fill the volume a closed surface body encloses; `thickness` is unused. */
+    fill_volume?: boolean
+    /** Join the new solid with the solids it touches. */
+    merge?: boolean
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+    side?: ThickenSide
+  }
+  | {
+    type: 'cut_with_surface'
+    /** A surface body, a face, or a plane. It must reach across the solids. */
+    surface: Ref
+    /**
+     * By default the material on the side the surface's normal points to is
+     * removed; flip removes the other side.
+     */
+    flip?: boolean
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'delete_face'
+    /** Faces of one body. */
+    faces: Ref[]
+    mode?: DeleteFaceMode
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
 
 export type FinishProcess = 'any' | 'removal' | 'no_removal'
 
@@ -3667,6 +3790,9 @@ export type Tags = 'alphabetic' | 'numeric'
 export type TangentEdges = 'visible' | 'removed' | 'font'
 
 export type TargetKind = 'point' | 'line' | 'area'
+
+/** Which side of a surface a thickness or cut goes. */
+export type ThickenSide = 'side1' | 'side2' | 'both'
 
 /** Which side of the sketch the sheet's thickness goes. */
 export type ThicknessSide = 'reverse' | 'normal' | 'mid_plane'

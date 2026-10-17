@@ -142,8 +142,8 @@ pub(crate) fn partition(body: &Body) -> Result<Vec<Body>, String> {
 
 impl State {
     pub fn qualified_ref_for(&self, kind: Kind, index: u32) -> Option<Ref> {
-        let whole = &self.body.as_ref()?.shape;
-        for body in &self.bodies {
+        let whole = &self.everything()?.shape;
+        for body in self.bodies.iter().chain(&self.surfaces) {
             let indices = body.geometry.shape.indices_in(whole, kind).ok()?;
             if let Some(local) = indices.iter().position(|i| *i == index) {
                 let names = &body.geometry.names;
@@ -164,10 +164,106 @@ impl State {
     }
 
     pub fn solid(&self, id: &BodyId) -> Result<&SolidBody, String> {
-        self.bodies
+        if let Some(b) = self.bodies.iter().find(|b| &b.id == id) {
+            return Ok(b);
+        }
+        if self.surfaces.iter().any(|b| &b.id == id) {
+            return Err(format!(
+                "body {} is a surface body; select a solid body",
+                id.0
+            ));
+        }
+        Err(format!("body {} no longer exists", id.0))
+    }
+
+    /// A surface body by ID.
+    pub fn surface(&self, id: &BodyId) -> Result<&SolidBody, String> {
+        if let Some(b) = self.surfaces.iter().find(|b| &b.id == id) {
+            return Ok(b);
+        }
+        if self.bodies.iter().any(|b| &b.id == id) {
+            return Err(format!(
+                "body {} is a solid body; select a surface body",
+                id.0
+            ));
+        }
+        Err(format!("body {} no longer exists", id.0))
+    }
+
+    /// A solid or surface body by ID, and whether it is a surface.
+    pub fn any_body(&self, id: &BodyId) -> Result<(&SolidBody, bool), String> {
+        if let Some(b) = self.bodies.iter().find(|b| &b.id == id) {
+            return Ok((b, false));
+        }
+        self.surfaces
             .iter()
             .find(|b| &b.id == id)
+            .map(|b| (b, true))
             .ok_or_else(|| format!("body {} no longer exists", id.0))
+    }
+
+    /// Every body, solids then surfaces, in one compound: what references
+    /// resolve against and what is shown and exported. Solid sub-shapes have
+    /// the same indices as in [`State::body`].
+    pub fn everything(&self) -> Option<&Body> {
+        self.all.as_ref().or(self.body.as_ref())
+    }
+
+    /// A face of [`State::everything`] by index, as its own shape.
+    pub fn face_shape(&self, index: u32) -> Result<Shape, String> {
+        self.everything()
+            .ok_or("there's no body")?
+            .shape
+            .sub_shape(Kind::Face, index)
+            .map_err(|e| e.0)
+    }
+
+    /// The surface body a face of [`State::everything`] belongs to, if any.
+    pub fn surface_of_face(&self, index: u32) -> Option<usize> {
+        let whole = &self.everything()?.shape;
+        self.surfaces.iter().position(|b| {
+            b.geometry
+                .shape
+                .indices_in(whole, Kind::Face)
+                .is_ok_and(|ix| ix.contains(&index))
+        })
+    }
+
+    /// Rebuild [`State::everything`] after the solids or surfaces changed.
+    pub(crate) fn aggregate_all(&mut self) -> Result<(), String> {
+        if self.surfaces.is_empty() {
+            self.all = None;
+            return Ok(());
+        }
+        let shapes = self
+            .body
+            .iter()
+            .map(|b| &b.shape)
+            .chain(self.surfaces.iter().map(|b| &b.geometry.shape));
+        let shape = Shape::compound(shapes);
+        let mut faces = vec![Vec::new(); shape.count(Kind::Face) as usize];
+        let parts = self
+            .body
+            .iter()
+            .chain(self.surfaces.iter().map(|b| &b.geometry));
+        for part in parts {
+            for (local, global) in part
+                .shape
+                .indices_in(&shape, Kind::Face)
+                .map_err(|e| e.0)?
+                .into_iter()
+                .enumerate()
+            {
+                for name in &part.names.faces[local] {
+                    if !faces[global as usize].contains(name) {
+                        faces[global as usize].push(name.clone());
+                    }
+                }
+            }
+        }
+        let names = Naming::from_faces(&shape, faces);
+        self.all = Some(Body { shape, names });
+        Ok(())
     }
 
     /// Reconcile legacy operations using inherited face provenance. Ambiguous

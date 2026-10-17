@@ -33,6 +33,7 @@ pub mod properties;
 mod resolve;
 pub mod sheet_metal;
 pub mod sheet_tables;
+pub mod surfaces;
 pub mod units;
 pub mod weldment;
 
@@ -261,6 +262,28 @@ pub enum FeatureKind {
     WeldGusset(weldment::WeldGusset),
     /// A cosmetic or modeled fillet weld bead.
     WeldBead(weldment::WeldBead),
+    /// A surface extruded from a sketch's open or closed contours.
+    ExtrudedSurface(surfaces::ExtrudedSurface),
+    /// A surface revolved from a sketch's contours about an axis.
+    RevolvedSurface(surfaces::RevolvedSurface),
+    /// A surface swept from an open or closed profile along a path.
+    SweptSurface(surfaces::SweptSurface),
+    /// A surface lofted through profiles in order.
+    LoftedSurface(surfaces::LoftedSurface),
+    /// A surface bounded by curves in one or two directions.
+    BoundarySurface(surfaces::BoundarySurface),
+    /// A flat surface inside a closed sketch or loop of edges.
+    PlanarSurface(surfaces::PlanarSurface),
+    /// Copies of faces moved along their normals, as a surface.
+    OffsetSurface(surfaces::OffsetSurface),
+    /// Join surface bodies along shared edges, optionally into a solid.
+    Knit(surfaces::Knit),
+    /// Give a surface body thickness, making a solid (or a cut).
+    Thicken(surfaces::Thicken),
+    /// Cut away the solids on one side of a surface.
+    CutWithSurface(surfaces::CutWithSurface),
+    /// Remove faces, leaving a gap, patching it or filling it.
+    DeleteFace(surfaces::DeleteFace),
 }
 
 impl FeatureKind {
@@ -338,6 +361,18 @@ impl FeatureKind {
             FeatureKind::EndCap(_) => "End Cap",
             FeatureKind::WeldGusset(_) => "Gusset",
             FeatureKind::WeldBead(_) => "Weld Bead",
+            FeatureKind::ExtrudedSurface(_) => "Surface-Extrude",
+            FeatureKind::RevolvedSurface(_) => "Surface-Revolve",
+            FeatureKind::SweptSurface(_) => "Surface-Sweep",
+            FeatureKind::LoftedSurface(_) => "Surface-Loft",
+            FeatureKind::BoundarySurface(_) => "Boundary-Surface",
+            FeatureKind::PlanarSurface(_) => "Surface-Plane",
+            FeatureKind::OffsetSurface(_) => "Surface-Offset",
+            FeatureKind::Knit(_) => "Surface-Knit",
+            FeatureKind::Thicken(t) if t.cut => "Thicken-Cut",
+            FeatureKind::Thicken(_) => "Thicken",
+            FeatureKind::CutWithSurface(_) => "SurfaceCut",
+            FeatureKind::DeleteFace(_) => "Delete Face",
         }
     }
 
@@ -509,6 +544,28 @@ impl FeatureKind {
                 out.push(w.sketch);
                 refs.push(&w.face);
             }
+            FeatureKind::ExtrudedSurface(e) => {
+                out.push(e.sketch);
+                for end in std::iter::once(&e.end1).chain(e.end2.as_ref()) {
+                    refs.extend(end.target());
+                }
+            }
+            FeatureKind::RevolvedSurface(r) => {
+                out.push(r.sketch);
+                refs.push(&r.axis);
+            }
+            FeatureKind::SweptSurface(s) => refs.extend([&s.profile, &s.path]),
+            FeatureKind::LoftedSurface(l) => refs.extend(&l.profiles),
+            FeatureKind::BoundarySurface(b) => refs.extend(b.curves1.iter().chain(&b.curves2)),
+            FeatureKind::PlanarSurface(p) => {
+                out.extend(p.sketch);
+                refs.extend(&p.edges);
+            }
+            FeatureKind::OffsetSurface(o) => refs.extend(&o.faces),
+            FeatureKind::Knit(k) => out.extend(k.bodies.iter().filter_map(BodyId::creator)),
+            FeatureKind::Thicken(t) => out.extend(t.body.creator()),
+            FeatureKind::CutWithSurface(c) => refs.push(&c.surface),
+            FeatureKind::DeleteFace(d) => refs.extend(&d.faces),
             FeatureKind::Fillet(f) => refs.extend(f.edges.iter().chain(&f.faces)),
             FeatureKind::Chamfer(c) => refs.extend(c.edges.iter().chain(&c.faces)),
             FeatureKind::Shell(s) => refs.extend(&s.faces),

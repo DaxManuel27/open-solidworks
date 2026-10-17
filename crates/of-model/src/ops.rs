@@ -15,6 +15,7 @@ use crate::resolve::{RResult, Resolved, resolve};
 mod face_fillet;
 mod rib;
 pub(crate) mod sheet;
+mod surface;
 mod thread;
 mod wrap;
 
@@ -58,6 +59,17 @@ pub(crate) fn build(
         FeatureKind::MiterFlange(p) => sheet::miter_flange(fid, p, prev, state),
         FeatureKind::SweptFlange(p) => sheet::swept_flange(fid, p, prev, state),
         FeatureKind::LoftedBend(p) => sheet::lofted_bend(fid, p, prev, state),
+        FeatureKind::ExtrudedSurface(p) => surface::extruded_surface(fid, p, prev, state),
+        FeatureKind::RevolvedSurface(p) => surface::revolved_surface(fid, p, prev, state),
+        FeatureKind::SweptSurface(p) => surface::swept_surface(fid, p, prev, state),
+        FeatureKind::LoftedSurface(p) => surface::lofted_surface(fid, p, prev, state),
+        FeatureKind::BoundarySurface(p) => surface::boundary_surface(fid, p, prev, state),
+        FeatureKind::PlanarSurface(p) => surface::planar_surface(fid, p, prev, state),
+        FeatureKind::OffsetSurface(p) => surface::offset_surface(fid, p, prev, state),
+        FeatureKind::Knit(p) => surface::knit(fid, p, prev, state),
+        FeatureKind::Thicken(p) => surface::thicken(fid, p, prev, state),
+        FeatureKind::CutWithSurface(p) => surface::cut_with_surface(fid, p, prev, state),
+        FeatureKind::DeleteFace(p) => surface::delete_face(fid, p, prev, state),
         _ => Ok(()),
     };
     if result.is_ok() && state.tools.contains_key(&fid) {
@@ -1352,13 +1364,7 @@ fn extrude_side(
                     let Resolved::Face { index, .. } = res else {
                         return Err("select a face, plane or surface to extrude up to".into());
                     };
-                    let mut face = prev
-                        .body
-                        .as_ref()
-                        .unwrap()
-                        .shape
-                        .sub_shape(Kind::Face, index)
-                        .map_err(geo)?;
+                    let mut face = prev.face_shape(index)?;
                     if offset != 0.0 {
                         face = face
                             .offset_face(offset, prof.shape.face_info(0).map_err(geo)?.centroid)
@@ -1782,9 +1788,13 @@ fn revolve_side(
 }
 
 fn body_of(prev: &State) -> RResult<&Body> {
-    prev.body
-        .as_ref()
-        .ok_or_else(|| "there's no body yet".to_string())
+    prev.body.as_ref().ok_or_else(|| {
+        if prev.surfaces.is_empty() {
+            "there's no body yet".to_string()
+        } else {
+            "this feature needs a solid body; the part only has surface bodies".to_string()
+        }
+    })
 }
 
 /// Edge indices from edge references plus all edges of face references.
@@ -2321,7 +2331,62 @@ fn import(fid: FeatureId, i: &Import, state: &mut State) -> RResult<()> {
         .map(|f| vec![format!("{fid}.i{content}.f{f}"), format!("{fid}.f{f}")])
         .collect();
     let names = Naming::from_faces(&shape, faces);
-    apply_tool(fid, state, shape, names, BoolOp::Fuse, false)
+    // Solids join the part's solids; faces outside any solid become surface
+    // bodies.
+    let solids = shape.solids();
+    let mut in_solids = std::collections::HashSet::new();
+    for solid in &solids {
+        in_solids.extend(solid.indices_in(&shape, Kind::Face).map_err(geo)?);
+    }
+    let open: Vec<u32> = (0..shape.count(Kind::Face))
+        .filter(|f| !in_solids.contains(f))
+        .collect();
+    if !solids.is_empty() {
+        let solid = Shape::compound(&solids);
+        let solid_names = named_part(&solid, &shape, &names)?;
+        apply_tool(fid, state, solid, solid_names, BoolOp::Fuse, false)?;
+    } else if open.is_empty() {
+        return Err("the file has no solids or surfaces".into());
+    }
+    if !open.is_empty() {
+        let faces: Vec<Shape> = open
+            .iter()
+            .map(|f| shape.sub_shape(Kind::Face, *f))
+            .collect::<Result<_, _>>()
+            .map_err(geo)?;
+        let loose = Shape::compound(&faces);
+        let loose_names = named_part(&loose, &shape, &names)?;
+        let sewn = loose.sew(1e-6).map_err(geo)?;
+        let names = Naming::from_history(
+            &sewn.result.shape,
+            &sewn.result.history,
+            Inputs {
+                named: [Some(&loose_names), None],
+            },
+            &mut |_| None,
+            &fid.to_string(),
+        );
+        surface::add_surfaces(
+            fid,
+            state,
+            Body {
+                shape: sewn.result.shape,
+                names,
+            },
+        )?;
+    }
+    Ok(())
+}
+
+/// Names for a part of a named shape whose faces are faces of `whole`.
+fn named_part(part: &Shape, whole: &Shape, names: &Naming) -> RResult<Naming> {
+    let faces = part
+        .indices_in(whole, Kind::Face)
+        .map_err(geo)?
+        .into_iter()
+        .map(|i| names.faces[i as usize].clone())
+        .collect();
+    Ok(Naming::from_faces(part, faces))
 }
 
 /// Replaces each face reference by references to all of its boundary edges, outer
