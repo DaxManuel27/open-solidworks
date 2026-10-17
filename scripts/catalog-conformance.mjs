@@ -2929,6 +2929,378 @@ check(
   },
 )
 
+// ---- 11 Weldments ----
+const tube = (size) => ({ type: 'standard', family: 'rhs', size })
+const seg = (sketch, entity) => ({ type: 'sketch_entity', sketch, entity })
+const memberOf = (profile, segments, corner = 'end_miter') => ({
+  type: 'structural_member',
+  profile,
+  groups: [{ segments, corner }],
+})
+const cutList = () => call('doc.cut_list')
+const rowsOf = async () =>
+  (await cutList()).items.map((i) => [i.properties.DESCRIPTION, i.properties.LENGTH, i.quantity])
+/** A weldment with a 1200 × 600 rectangle; returns its four line refs. */
+async function frameSketch() {
+  await fresh()
+  await ok({ type: 'weldment' })
+  const s = await sketch(front, [rect([0, 0], [1200, 600])])
+  return s.created[0].slice(4, 8).map((e) => seg(s.id, e))
+}
+/** The mitered SHS frame with two RHS cross members trimmed to its sides. */
+async function trimmedFrame() {
+  const lines4 = await frameSketch()
+  const { id: f1 } = await ok(memberOf(tube('SHS 40x40x3'), lines4))
+  const c = await sketch(front, [line([0, 200], [1200, 200]), line([0, 400], [1200, 400])])
+  const { id: f2 } = await ok(
+    memberOf(
+      tube('RHS 60x40x3'),
+      c.created.map((x) => seg(c.id, lineId(x))),
+    ),
+  )
+  await ok({
+    type: 'trim_extend',
+    bodies: [`b${f2}:g0.0`, `b${f2}:g0.1`],
+    boundary: { type: 'bodies', bodies: [`b${f1}:g0.3`, `b${f1}:g0.1`] },
+    kind: 'end_trim',
+  })
+  return { f1, f2 }
+}
+const shsArea = async () =>
+  (await call('weldment.profiles', { family: 'rhs', size: 'SHS 40x40x3' })).area
+
+check('11 Weldment feature', 'one weldment feature per part', async () => {
+  await fresh()
+  await ok({ type: 'weldment' })
+  await bad({ type: 'weldment' }, /one|already/i)
+})
+
+check('11 Structural member', 'a mitered rectangle has mitered lengths and angles', async () => {
+  const lines4 = await frameSketch()
+  await ok(memberOf(tube('SHS 40x40x3'), lines4))
+  expect(
+    JSON.stringify(await rowsOf()) ===
+      JSON.stringify([
+        ['SHS 40x40x3', '1240', 2],
+        ['SHS 40x40x3', '640', 2],
+      ]),
+    `rows ${JSON.stringify(await rowsOf())}`,
+  )
+  const a = await shsArea()
+  // Each mitered member loses a 40 × 40 triangle at both ends.
+  near(await volume(), a * (2 * 1200 + 2 * 600), 1e-3 * a * 3600, 'volume')
+  const angles = (await cutList()).items.map((i) => [i.properties.ANGLE1, i.properties.ANGLE2])
+  expect(
+    angles.every(([a1, a2]) => a1 === '45' && a2 === '45'),
+    `angles ${angles}`,
+  )
+})
+
+check('11 Structural member', 'a 3D sketch line with a corner pierce point', async () => {
+  await fresh()
+  await ok({ type: 'weldment' })
+  const { id } = await ok({
+    type: 'sketch3d',
+    entities: [
+      { id: 1, kind: 'point', at: [0, 0, 0] },
+      { id: 2, kind: 'point', at: [0, 0, 800] },
+      { id: 3, kind: 'line', a: 1, b: 2 },
+    ],
+    next_id: 4,
+  })
+  const m = memberOf(tube('SHS 40x40x3'), [seg(id, 3)])
+  await ok({ ...m, pierce: 'bottom_left' })
+  near(await volume(), (await shsArea()) * 800, 1e-5 * (await shsArea()) * 800, 'volume')
+})
+
+check(
+  '11 Weldment profiles library and custom profiles',
+  'sizes and section properties',
+  async () => {
+    const lib = await call('weldment.profiles')
+    const rhs = lib.families.find((f) => f.family === 'rhs')
+    expect(rhs?.sizes.includes('SHS 40x40x3'), 'SHS 40x40x3 listed')
+    for (const f of ['ipe', 'hea', 'upn', 'chs', 'w', 'pipe'])
+      expect(
+        lib.families.some((x) => x.family === f),
+        `${f} family`,
+      )
+    const p = await call('weldment.profiles', { family: 'rhs', size: 'SHS 40x40x3' })
+    // 40² − 34² less the corner rounds (R6 outside, R3 inside).
+    const exact = 40 * 40 - (4 - PI) * 36 - (34 * 34 - (4 - PI) * 9)
+    near(p.area, exact, 0.5, 'area')
+    near(p.centroid[0], 0, 1e-9, 'centroid on the axis')
+  },
+)
+
+check('11 Trim/extend', 'cross members end on the frame sides', async () => {
+  await trimmedFrame()
+  const rows = await rowsOf()
+  expect(
+    rows.some(([d, l, q]) => d === 'RHS 60x40x3' && l === '1160' && q === 2),
+    `rows ${JSON.stringify(rows)}`,
+  )
+})
+
+check('11 Trim/extend', 'trim to a face with a gap; extension past it', async () => {
+  const lines4 = await frameSketch()
+  await ok(memberOf(tube('SHS 40x40x3'), lines4))
+  const c = await sketch(front, [line([300, 100], [800, 100])])
+  const { id: f2 } = await ok(memberOf(tube('SHS 20x20x2'), [seg(c.id, lineId(c.created[0]))]))
+  // The right member's inner face at x = 1180: extend to it, 5 back.
+  const inner = await face((f) => facing([-1, 0, 0])(f) && at([1180, null, 0])(f.centroid))
+  await ok({
+    type: 'trim_extend',
+    bodies: [`b${f2}:g0.0`],
+    boundary: { type: 'faces', faces: [inner] },
+    kind: 'end_trim',
+    allow_extension: true,
+    gap: 5,
+  })
+  const rows = await rowsOf()
+  expect(
+    rows.some(([d, l]) => d === 'SHS 20x20x2' && l === '875'),
+    `rows ${JSON.stringify(rows)}`,
+  )
+})
+
+check(
+  '11 Corner treatments (structure system)',
+  'butt corners run one member through',
+  async () => {
+    const lines4 = await frameSketch()
+    await ok(memberOf(tube('SHS 40x40x3'), lines4, 'end_butt1'))
+    const lengths = (await rowsOf()).map((r) => r[1]).sort()
+    expect(
+      JSON.stringify(lengths) === JSON.stringify(['1200', '1240', '560', '600']),
+      `lengths ${lengths}`,
+    )
+  },
+)
+
+/** A 300 long SHS 40 up the y axis. */
+async function post() {
+  await fresh()
+  await ok({ type: 'weldment' })
+  const s = await sketch(front, [line([0, 0], [0, 300])])
+  return (await ok(memberOf(tube('SHS 40x40x3'), [seg(s.id, lineId(s.created[0]))]))).id
+}
+
+check('11 End cap', 'outward, inward and chamfered caps', async () => {
+  for (const [direction, corners, area] of [
+    [{ type: 'outward' }, null, 40 * 40 - (4 - PI) * 36],
+    [{ type: 'inward' }, null, 34 * 34 - (4 - PI) * 9],
+  ]) {
+    await post()
+    const before = await volume()
+    const end = await face((f) => facing([0, 1, 0])(f) && at([null, 300, null])(f.centroid))
+    await ok({
+      type: 'end_cap',
+      faces: [end],
+      direction,
+      thickness: 5,
+      offset: { type: 'distance', distance: 0 },
+      corners,
+    })
+    near((await volume()) - before, 5 * area, 2e-3 * 5 * area, `${direction.type} cap`)
+  }
+})
+
+check('11 Gusset', 'a triangular gusset with a chamfer in a corner', async () => {
+  await fresh()
+  await ok({ type: 'weldment' })
+  const p = await sketch(front, [line([0, 0], [0, 500])])
+  await ok(memberOf(tube('SHS 40x40x3'), [seg(p.id, lineId(p.created[0]))]))
+  const b = await sketch(front, [line([0, 500], [500, 500])])
+  await ok(memberOf(tube('SHS 40x40x3'), [seg(b.id, lineId(b.created[0]))]))
+  const before = await volume()
+  const side = await face(
+    (f) => facing([1, 0, 0])(f) && at([20, null, null])(f.centroid) && f.centroid[1] < 400,
+  )
+  const under = await face(
+    (f) => facing([0, -1, 0])(f) && at([null, 480, null])(f.centroid) && f.centroid[0] > 100,
+  )
+  await ok({
+    type: 'weld_gusset',
+    faces: [side, under],
+    shape: { type: 'triangle', d1: 100, d2: 100 },
+    chamfer: 10,
+    thickness: 10,
+  })
+  near((await volume()) - before, (5000 - 50) * 10, 1e-6, 'gusset volume')
+})
+
+/** A SHS 60 post with a SHS 40 beam butting its right side at y = 250. */
+async function postAndBeam() {
+  await fresh()
+  await ok({ type: 'weldment' })
+  const p = await sketch(front, [line([0, 0], [0, 500])])
+  await ok(memberOf(tube('SHS 60x60x4'), [seg(p.id, lineId(p.created[0]))]))
+  const b = await sketch(front, [line([30, 250], [300, 250])])
+  await ok(memberOf(tube('SHS 40x40x3'), [seg(b.id, lineId(b.created[0]))]))
+  const beam = (n) =>
+    face((f) => facing(n)(f) && f.centroid[0] > 100 && Math.abs(f.centroid[1] - 250) < 30)
+  return {
+    sides: [
+      await beam([0, 1, 0]),
+      await beam([0, -1, 0]),
+      await beam([0, 0, 1]),
+      await beam([0, 0, -1]),
+    ],
+    post: await face((f) => facing([1, 0, 0])(f) && at([30, null, null])(f.centroid)),
+  }
+}
+
+check('11 Weld beads', 'cosmetic beads round a seam, intermittent and both sides', async () => {
+  const { sides, post: p } = await postAndBeam()
+  const before = await volume()
+  await ok({ type: 'weld_bead', path: { type: 'faces', from: sides, to: [p] }, size: 5 })
+  near((await cutList()).welds.total_length, 4 * 28, 1e-6, 'four flats less the corners')
+  near(await volume(), before, 1e-9, 'cosmetic')
+  const { id } = await ok({
+    type: 'weld_bead',
+    path: { type: 'faces', from: sides, to: [p] },
+    size: 5,
+    sides: 'both',
+    intermittent: { length: 10, gap: 10, staggered: true },
+  })
+  const w = (await cutList()).welds.beads.find((b) => b.feature === id)
+  near(w.length, 4 * 28, 1e-6, 'staggered both sides')
+})
+
+check('11 Weld beads', 'a modeled fillet bead adds its triangle', async () => {
+  const { sides, post: p } = await postAndBeam()
+  const before = await volume()
+  await ok({
+    type: 'weld_bead',
+    path: { type: 'faces', from: [sides[0]], to: [p] },
+    size: 5,
+    kind: 'fillet',
+  })
+  near((await volume()) - before, 0.5 * 25 * 28, 1e-6, 'fillet volume')
+})
+
+check(
+  '11 Cut lists, cut list properties and folders',
+  'grouping, properties and mass',
+  async () => {
+    await trimmedFrame()
+    await call('doc.set_material', { name: 'Steel', density: 7850 })
+    const l = await cutList()
+    expect(l.items.length === 3, `${l.items.length} items`)
+    const it = l.items[2]
+    expect(it.properties.MATERIAL === 'Steel', 'material')
+    expect(it.properties['BOUNDING WIDTH'] === '60', 'bounding width')
+    const rhs = (await call('weldment.profiles', { family: 'rhs', size: 'RHS 60x40x3' })).area
+    near(Number(it.properties.MASS), (rhs * 1160 * 7850e-9).toFixed(3), 1.5e-3, 'mass')
+    expect(l.items.map((i) => i.number).join() === '1,2,3', 'item numbers')
+  },
+)
+
+check(
+  '11 Cut lists, cut list properties and folders',
+  'overrides, exclusion and separate items',
+  async () => {
+    const { f2 } = await trimmedFrame()
+    const first = (await cutList()).items[0].bodies[0]
+    await call('doc.cut_list.set', {
+      settings: {
+        overrides: { [first]: { DESCRIPTION: 'Frame rail' } },
+        excluded: [`b${f2}:g0.1`],
+        separate: true,
+      },
+    })
+    const l = await cutList()
+    expect(l.items[0].properties.DESCRIPTION === 'Frame rail', 'override')
+    expect(
+      l.items.every((i) => i.quantity === 1),
+      'separate',
+    )
+    const ex = l.items.find((i) => i.bodies.includes(`b${f2}:g0.1`))
+    expect(ex?.excluded && ex.number === null, 'excluded item has no number')
+    // Saved with the part.
+    const path = join(tmp, 'c11-cutlist.ofp')
+    await call('doc.save', { path })
+    await call('doc.open', { path })
+    expect((await cutList()).items[0].properties.DESCRIPTION === 'Frame rail', 'saved')
+  },
+)
+
+check('11 Sub-weldments and groups', 'a sub-weldment folder lists its own items', async () => {
+  const { f2 } = await trimmedFrame()
+  await call('doc.cut_list.set', {
+    settings: { sub_weldments: [{ name: 'Cross', bodies: [`b${f2}:g0.0`, `b${f2}:g0.1`] }] },
+  })
+  const l = await cutList()
+  const sub = l.items.filter((i) => i.folder === 'Cross')
+  expect(sub.length === 1 && sub[0].quantity === 2, `sub ${JSON.stringify(sub)}`)
+})
+
+failure(
+  '11 Trim/extend',
+  'a body that is not a member',
+  async () => {
+    const lines4 = await frameSketch()
+    await ok(memberOf(tube('SHS 40x40x3'), lines4))
+    return {
+      feature: {
+        type: 'trim_extend',
+        bodies: ['b99:g0.0'],
+        boundary: { type: 'faces', faces: [] },
+      },
+      volume: await volume(),
+    }
+  },
+  /member|body|face/i,
+)
+
+check(
+  '11 Weldment drawings and cut list tables',
+  'a member view, cut list and weld tables, balloons and CSV',
+  async () => {
+    const { f2 } = await trimmedFrame()
+    const bottom = await face(
+      (f) => facing([0, 1, 0])(f) && Math.abs(f.centroid[1] - 230) < 1e-6 && f.area > 1000,
+    )
+    const p = await face((f) => facing([1, 0, 0])(f) && at([1180, null, 0], 1)(f.centroid))
+    await ok({
+      type: 'weld_bead',
+      path: { type: 'faces', from: [bottom], to: [p] },
+      size: 4,
+      symbol: '4 FILLET',
+      process: 'MAG',
+    })
+    const path = join(tmp, 'c11-frame.ofp')
+    await call('doc.save', { path })
+    await call('drawing.new')
+    const whole = await addView(modelView(path), [120, 200])
+    const member = await addView(
+      { ...modelView(path), model: { path, bodies: [`b${f2}:g0.0`] } },
+      [120, 80],
+    )
+    const t = await annotate({ type: 'table', table: 'cut_list', view: whole, at: [250, 280] })
+    await annotate({ type: 'table', table: 'weld', view: whole, at: [250, 120] })
+    const r = await render()
+    noErrors(r)
+    near(
+      width(r.views.find((v) => v.id === member).bbox),
+      1160 * r.views[0].scale,
+      1e-6,
+      'member view',
+    )
+    const words = r.graphics.items
+      .filter((i) => i.prim.type === 'text')
+      .map((i) => i.prim.text)
+      .join(' ')
+    for (const w of ['ITEM NO.', 'RHS 60x40x3', '1160', 'SYMBOL', '4 FILLET', 'MAG'])
+      expect(words.includes(w), `${w} in the tables`)
+    const { csv } = await call('drawing.table.csv', { sheet: 1, id: t })
+    expect(csv.startsWith('ITEM NO.,QTY.,DESCRIPTION,LENGTH,ANGLE1,ANGLE2\n'), csv)
+    const b = await call('drawing.balloons.auto', { sheet: 1, view: whole })
+    expect(b.added.length === 3, `${b.added.length} balloons`)
+  },
+)
+
 // ---- run ----
 const results = []
 for (const c of checks) {
