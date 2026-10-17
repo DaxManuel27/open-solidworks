@@ -1110,6 +1110,9 @@ export type CornerReliefKind =
   | 'full_round'
   | 'suitcase'
 
+/** How the members of a group meet at their shared corners. */
+export type CornerTreatment = 'end_miter' | 'end_butt1' | 'end_butt2'
+
 /** IDs created by the call, in the form the next call accepts. */
 export type Created = {
   /** New sketch entity and relation IDs, from `edit_sketch`. */
@@ -2277,6 +2280,21 @@ export type Feature =
     /** Body IDs this feature acts on; omitted acts on the whole part. */
     scope?: string[] | null
   }
+  | {
+    type: 'structural_member'
+    profile: ProfileSource
+    groups: MemberGroup[]
+    /** Join each mitered group's members into one body. */
+    merge_miter_trimmed?: boolean
+    mirror?: ProfileMirror
+    /** Move the profile in its own plane (x across, y up), mm. */
+    offset?: [number, number]
+    pierce?: PiercePoint
+    /** Turn the profile about its pierce point, radians. */
+    rotation?: number
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
 
 export type FinishProcess = 'any' | 'removal' | 'no_removal'
 
@@ -2688,6 +2706,15 @@ export type Measurements = {
   bbox_mm?: [[number, number, number], [number, number, number]] | null
 }
 
+/** Segments that share a profile placement and corner treatment. */
+export type MemberGroup = {
+  /** Straight lines of 2D or 3D sketches. */
+  segments: Ref[]
+  corner?: CornerTreatment
+  /** Gap left between members at their corners, mm. */
+  gap?: number
+}
+
 export type MirrorItem = {
   component: string
   /**
@@ -2925,6 +2952,11 @@ export type Piece = {
   sheet?: number | null
 }
 
+/** The point of the profile that lies on the sketch segment. */
+export type PiercePoint =
+  | 'center' | 'top_left' | 'top' | 'top_right' | 'left' | 'right' | 'bottom_left' | 'bottom' | 'bottom_right'
+  | 'centroid'
+
 /** Where a projected view sits relative to its parent on the sheet. */
 export type Placement = 'left' | 'right' | 'above' | 'below' | 'above_left' | 'above_right' | 'below_left' | 'below_right'
 
@@ -2952,8 +2984,26 @@ export type Profile =
     points: ([number, number])[]
   }
 
+/** Mirror the profile across its own axes. */
+export type ProfileMirror = 'none' | 'horizontal' | 'vertical'
+
 /** Legacy sketch IDs retain their original whole-sketch behavior. */
 export type ProfileSelection = number | ContourSelection
+
+/** Where a member's profile comes from. */
+export type ProfileSource =
+  | {
+    type: 'standard'
+    family: Family
+    size: string
+  }
+  | {
+    type: 'custom'
+    /** `.ofp` file. */
+    path: string
+    /** The sketch's feature ID in that part. */
+    sketch: number
+  }
 
 /** How projected views are arranged around their parent. */
 export type Projection = 'first' | 'third'

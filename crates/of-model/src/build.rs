@@ -73,6 +73,8 @@ pub struct State {
     pub files: Vec<(FeatureId, std::path::PathBuf, u64)>,
     /// The Weldment feature, once the part is a weldment.
     pub weldment: Option<FeatureId>,
+    /// Structural member bodies, for the cut list.
+    pub members: Vec<crate::weldment::MemberRecord>,
 }
 
 /// A content hash for change detection.
@@ -553,6 +555,9 @@ fn build_kind(id: FeatureId, kind: &FeatureKind, prev: &State, state: &mut State
         FeatureKind::SheetMetalGusset(p) => return ops::sheet::gusset(id, p, prev, state),
         FeatureKind::FormTool(p) => return ops::sheet::form_tool(id, p, prev, state),
         FeatureKind::FormingTool(_) => return Ok(()),
+        FeatureKind::StructuralMember(p) => {
+            return crate::weldment::members::structural_member(id, p, prev, state);
+        }
         FeatureKind::Weldment(_) => {
             if prev.weldment.is_some() {
                 return Err("a part has one Weldment feature".into());

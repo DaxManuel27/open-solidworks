@@ -1210,7 +1210,7 @@ fn copy_chain(from: &Sketch, ids: &[of_sketch::Id], to: &mut Sketch) -> Vec<of_s
 }
 
 /// Name faces swept from a profile: sides after their sketch curves, plus caps.
-fn sweep_names<'a>(
+pub(crate) fn sweep_names<'a>(
     fid: FeatureId,
     prefix: &str,
     edge_names: &'a [String],

@@ -255,6 +255,7 @@ run `cargo run -p openforge -- generate` instead. -->
 | `form_tool` | `shape`, `face`, `flip?`, `punch_id?`, `rotation?`, `scope?`, `sketch?` | Forming tools pressed into a sheet metal face. |
 | `forming_tool` | `stopping_face`, `insertion_point?`, `remove_faces?`, `scope?` | Marks this part as a forming tool for other parts to use. |
 | `weldment` | `scope?` | Marks the part as a weldment (one per part, before its members). |
+| `structural_member` | `profile`, `groups`, `merge_miter_trimmed?`, `mirror?`, `offset?`, `pierce?`, `rotation?`, `scope?` | A profile swept along sketch segments, one body per segment. |
 
 <!-- /generated:features -->
 

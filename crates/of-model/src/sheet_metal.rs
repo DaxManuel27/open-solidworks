@@ -370,7 +370,7 @@ pub struct FlatPattern {
     pub exclude: Vec<Ref>,
 }
 
-fn is_false(b: &bool) -> bool {
+pub(crate) fn is_false(b: &bool) -> bool {
     !*b
 }
 

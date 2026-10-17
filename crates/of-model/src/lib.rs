@@ -251,6 +251,8 @@ pub enum FeatureKind {
     FormingTool(sheet_metal::FormingToolDef),
     /// Marks the part as a weldment (one per part, before its members).
     Weldment(weldment::WeldmentDef),
+    /// A profile swept along sketch segments, one body per segment.
+    StructuralMember(weldment::StructuralMember),
 }
 
 impl FeatureKind {
@@ -323,6 +325,7 @@ impl FeatureKind {
             FeatureKind::FormTool(_) => "Form Tool",
             FeatureKind::FormingTool(_) => "Forming Tool",
             FeatureKind::Weldment(_) => "Weldment",
+            FeatureKind::StructuralMember(_) => "Structural Member",
         }
     }
 
@@ -465,6 +468,9 @@ impl FeatureKind {
                 out.extend(f.sketch);
             }
             FeatureKind::Weldment(_) => {}
+            FeatureKind::StructuralMember(m) => {
+                refs.extend(m.groups.iter().flat_map(|g| &g.segments));
+            }
             FeatureKind::FormingTool(f) => {
                 refs.push(&f.stopping_face);
                 refs.extend(&f.remove_faces);

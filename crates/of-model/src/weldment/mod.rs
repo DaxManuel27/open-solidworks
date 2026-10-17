@@ -1,6 +1,7 @@
 //! Weldments: structural members cut from standard or custom profiles,
 //! their trims, end caps and gussets, weld beads and cut lists.
 
+pub mod members;
 pub mod profiles;
 
 use of_geom::{Curve2, DVec2};
@@ -8,6 +9,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::FeatureId;
+pub use members::{
+    CornerTreatment, MemberGroup, MemberRecord, PiercePoint, ProfileMirror, StructuralMember,
+};
 pub use profiles::{Family, Section};
 
 /// Marks the part as a weldment: members and other weldment features make
