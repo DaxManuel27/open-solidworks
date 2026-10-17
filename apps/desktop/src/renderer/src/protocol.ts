@@ -76,7 +76,24 @@ export interface BodyView {
   vertices: number[]
 }
 
+/** A bend line of a flattened sheet metal body: two model points. */
+export interface BendLineView {
+  polyline: number[]
+  up: boolean
+}
+
+/** A sheet metal body in the part, for the tree. */
+export interface SheetMetalView {
+  feature: number
+  body: string | null
+  name: string | null
+  parameters: import('../../shared/tools.gen').SheetMetalParams
+  bends: number
+  flattened: boolean
+}
+
 export interface Scene {
+  bend_lines?: BendLineView[]
   cosmetic_threads: {
     id: number
     name: string
@@ -161,6 +178,7 @@ export interface Snapshot {
   can_undo: boolean
   can_redo: boolean
   editing: number | null
+  sheet_metal?: SheetMetalView[]
   scene?: Scene
 }
 

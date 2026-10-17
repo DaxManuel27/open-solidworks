@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { useStore, type PanelType, type SketchTool, type ViewName } from '../store'
-import { beginSketch, startFeature } from './actions'
+import { beginSketch, isFlattened, startFeature, toggleFlatten } from './actions'
 import type { IconId } from './icons'
 
 type State = ReturnType<typeof useStore.getState>
@@ -46,6 +46,25 @@ const feature = (
   unavailable: (s) =>
     idlePanel(s) ??
     (needsBody ? body(s) : undefined) ??
+    (needsSketch && !s.snapshot?.features.some((f) => f.type === 'sketch' && !f.suppressed)
+      ? 'Requires a sketch'
+      : undefined),
+})
+/** A sheet metal feature; most need a sheet metal body to work on. */
+const sheetMetal = (
+  type: PanelType,
+  label: string,
+  icon: IconId,
+  needsSheet = true,
+  needsSketch = false,
+): Definition => ({
+  label,
+  icon,
+  run: () => startFeature(type),
+  unavailable: (s) =>
+    (s.assembly ? 'Open a part to use this' : undefined) ??
+    idlePanel(s) ??
+    (needsSheet && !s.snapshot?.sheet_metal?.length ? 'Requires a sheet metal body' : undefined) ??
     (needsSketch && !s.snapshot?.features.some((f) => f.type === 'sketch' && !f.suppressed)
       ? 'Requires a sketch'
       : undefined),
@@ -349,6 +368,46 @@ export const commands = {
   projectedCurve: feature('projected_curve', 'Projected Curve', 'curve'),
   splitLine: feature('split_line', 'Split Line', 'curve', true),
   direct: placeholder('Direct Manipulation', 'move'),
+  baseFlange: sheetMetal('base_flange', 'Base Flange/Tab', 'baseFlange', false, true),
+  edgeFlange: sheetMetal('edge_flange', 'Edge Flange', 'edgeFlange'),
+  miterFlange: sheetMetal('miter_flange', 'Miter Flange', 'miterFlange', true, true),
+  hem: sheetMetal('hem', 'Hem', 'hem'),
+  sweptFlange: sheetMetal('swept_flange', 'Swept Flange', 'sweep', false, true),
+  loftedBend: sheetMetal('lofted_bend', 'Lofted-Bend', 'loft', false, true),
+  sketchedBend: sheetMetal('sketched_bend', 'Sketched Bend', 'sketchedBend', true, true),
+  jog: sheetMetal('jog', 'Jog', 'jog', true, true),
+  crossBreak: sheetMetal('cross_break', 'Cross-Break', 'crossBreak'),
+  insertBends: sheetMetal('insert_bends', 'Insert Bends', 'insertBends', false),
+  convertToSheetMetal: sheetMetal(
+    'convert_to_sheet_metal',
+    'Convert to Sheet Metal',
+    'convertSheet',
+    false,
+  ),
+  rip: sheetMetal('rip', 'Rip', 'rip', false),
+  unfold: sheetMetal('unfold', 'Unfold', 'unfold'),
+  fold: sheetMetal('fold', 'Fold', 'fold'),
+  normalCut: sheetMetal('normal_cut', 'Extruded Cut (Normal)', 'normalCut', true, true),
+  cornerRelief: sheetMetal('corner_relief', 'Corner Relief', 'cornerRelief'),
+  closedCorner: sheetMetal('closed_corner', 'Closed Corner', 'closedCorner'),
+  weldedCorner: sheetMetal('welded_corner', 'Welded Corner', 'weldedCorner'),
+  breakCorner: sheetMetal('break_corner', 'Break-Corner/Corner-Trim', 'breakCorner'),
+  bendNotch: sheetMetal('bend_notch', 'Bend Notch', 'bendNotch'),
+  tabAndSlot: sheetMetal('tab_and_slot', 'Tab and Slot', 'tabSlot'),
+  sheetMetalGusset: sheetMetal('sheet_metal_gusset', 'Sheet Metal Gusset', 'gusset'),
+  formTool: sheetMetal('form_tool', 'Forming Tool', 'formTool'),
+  formingToolDef: sheetMetal('forming_tool', 'Make Forming Tool', 'formingToolDef', false),
+  flatPattern: sheetMetal('flat_pattern', 'Flat-Pattern Options', 'flatPattern'),
+  flatten: {
+    label: 'Flatten',
+    icon: 'flatten',
+    run: () => toggleFlatten(),
+    active: (s) => isFlattened(s),
+    unavailable: (s) =>
+      (s.assembly ? 'Open a part to use this' : undefined) ??
+      (s.sketch ? 'Exit the sketch first' : undefined) ??
+      (!s.snapshot?.sheet_metal?.length ? 'Requires a sheet metal body' : undefined),
+  },
   sketch: {
     label: 'Sketch',
     icon: 'sketch',

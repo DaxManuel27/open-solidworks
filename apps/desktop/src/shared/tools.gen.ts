@@ -3823,6 +3823,16 @@ export interface ToolArgs {
      */
     per_body?: boolean
   }
+  /** Gauge tables for sheet metal parameters' `gauge`: the built-in table names, and with `table` its gauges (name, thickness mm, allowed inside radii mm, K-factor). */
+  sheet_metal_gauges: {
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+    /**
+     * A built-in table (`steel`, `stainless`, `aluminum`) or a CSV path;
+     * omitted lists the built-in tables only.
+     */
+    table?: string | null
+  }
   /** Sheet metal bodies: parameters, bends (radians, mm) and cut list properties (flat bounding box, cutting lengths, cut-outs, bend count, gauge). With outline, each flat pattern's loops, bend lines and form marks in flat mm. */
   sheet_metal_info: {
     /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
@@ -4366,6 +4376,7 @@ export const TOOL_METHODS = {
   open_part: 'doc.open',
   save_part: 'doc.save',
   export: 'export',
+  sheet_metal_gauges: 'sheet_metal.gauges',
   sheet_metal_info: 'doc.sheet_metal',
   set_part_properties: 'doc.properties.set',
   set_dimension_display: 'doc.dimension_display.set',
@@ -4445,6 +4456,7 @@ export const TOOL_EXAMPLES: { [K in ToolName]: ToolArgs[K][] } = {
   open_part: [{"path":"part.ofp"}],
   save_part: [{"path":"part.ofp"}],
   export: [{"path":"part.step"}, {"configuration":2,"path":"part.stl"}],
+  sheet_metal_gauges: [{}, {"table":"steel"}],
   sheet_metal_info: [{}, {"outline":true}],
   set_part_properties: [{"properties":{"PartNo":{"value":"BRK-1"},"Weight":{"value":"{mass}"}}}],
   set_dimension_display: [{"key":"f2.end1.depth","show":false}, {"key":"f2.end1.depth","name":"THICKNESS"}],

@@ -1151,6 +1151,17 @@ impl Session {
                         .map_err(|e| RpcError::coded(ErrorCode::UnknownRef, e))?
                 ))
             }
+            "sheet_metal.gauges" => {
+                let p: SheetMetalGauges = args(params)?;
+                let gauges = match &p.table {
+                    Some(t) => json!(of_model::sheet_tables::gauge_table(t).map_err(fail)?),
+                    None => Value::Null,
+                };
+                Ok(json!({
+                    "tables": of_model::sheet_tables::built_in_gauge_tables(),
+                    "gauges": gauges,
+                }))
+            }
             "doc.sheet_metal" => {
                 let p: SheetMetalInfo = args(params)?;
                 self.model.rebuild();

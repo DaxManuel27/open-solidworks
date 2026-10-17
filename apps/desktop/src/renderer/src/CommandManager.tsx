@@ -14,6 +14,7 @@ import {
   availableTabs as partTabs,
   evaluateGroups,
   featureGroups,
+  sheetMetalGroups,
   sketchGroups,
   tabOrder as partTabOrder,
   unavailableTabs,
@@ -52,7 +53,9 @@ export function CommandManager() {
                 : evaluateGroups
             : tab === 'features'
               ? featureGroups
-              : sketchGroups(editing)
+              : tab === 'sheet_metal'
+                ? sheetMetalGroups
+                : sketchGroups(editing)
   useEffect(() => {
     const el = track.current!
     const update = () =>

@@ -70,6 +70,49 @@ export const featureGroups: CommandGroup[] = [
     ],
   },
 ]
+export const sheetMetalGroups: CommandGroup[] = [
+  {
+    label: 'Flanges',
+    columns: [
+      [{ command: 'baseFlange', variant: 'large' }],
+      [{ command: 'edgeFlange', variant: 'large' }],
+      [{ command: 'miterFlange' }, { command: 'hem' }, { command: 'sweptFlange' }],
+      [{ command: 'loftedBend' }],
+    ],
+  },
+  {
+    label: 'Bends',
+    columns: [
+      [{ command: 'sketchedBend' }, { command: 'jog' }, { command: 'crossBreak' }],
+      [{ command: 'insertBends' }, { command: 'convertToSheetMetal' }, { command: 'rip' }],
+      [{ command: 'unfold' }, { command: 'fold' }, { command: 'normalCut' }],
+    ],
+  },
+  {
+    label: 'Corners',
+    columns: [
+      [
+        {
+          command: 'cornerRelief',
+          variant: 'large',
+          menu: ['cornerRelief', 'closedCorner', 'weldedCorner', 'breakCorner'],
+        },
+      ],
+      [{ command: 'bendNotch' }, { command: 'closedCorner' }, { command: 'breakCorner' }],
+    ],
+  },
+  {
+    label: 'Details',
+    columns: [
+      [{ command: 'tabAndSlot' }, { command: 'sheetMetalGusset' }],
+      [{ command: 'formTool' }, { command: 'formingToolDef' }],
+    ],
+  },
+  {
+    label: 'Flat',
+    columns: [[{ command: 'flatten', variant: 'large' }], [{ command: 'flatPattern' }]],
+  },
+]
 export const sketchGroups = (editing: boolean): CommandGroup[] => [
   {
     label: 'Sketch',
@@ -320,13 +363,13 @@ export const assemblyTabOrder = [
 // Placeholder tabs never enter the store's selectable Tab union.
 export const availableTabs: { id: Tab; label: string }[] = [
   { id: 'features', label: 'Features' },
+  { id: 'sheet_metal', label: 'Sheet Metal' },
   { id: 'sketch', label: 'Sketch' },
   { id: 'evaluate', label: 'Evaluate' },
 ]
 export const unavailableTabs = [
   'Layout',
   'Surfaces',
-  'Sheet Metal',
   'Direct Editing',
   'Annotations',
   'Add-ins',

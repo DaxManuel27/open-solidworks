@@ -36,3 +36,18 @@ export async function startFeature(type: PanelType): Promise<void> {
   if (s.panel) await s.closePanel()
   useStore.getState().openPanel({ type, sketch })
 }
+
+/** Flatten every sheet metal body or form it again: the Flat-Pattern feature's suppression. */
+export async function toggleFlatten(): Promise<void> {
+  const s = useStore.getState()
+  if (s.panel) await s.closePanel()
+  const flat = s.snapshot?.features.find((f) => f.type === 'flat_pattern')
+  if (!flat) await s.run('feature.add', { feature: { type: 'flat_pattern' }, formulas: {} })
+  else await s.run('feature.suppress', { id: flat.id, suppressed: !flat.suppressed })
+}
+
+/** Whether the part shows its flat pattern. */
+export function isFlattened(s: ReturnType<typeof useStore.getState>): boolean {
+  const flat = s.snapshot?.features.find((f) => f.type === 'flat_pattern')
+  return !!flat && !flat.suppressed && !flat.rolled_back
+}

@@ -124,6 +124,17 @@ pub fn scene(doc: &Document, state: &State) -> Result<Value, String> {
             Ok(json!({ "id": id, "name": name(*id), "polylines": polylines, "segments": segments }))
         })
         .collect::<Result<Vec<_>, String>>()?;
+    // Bend lines of flattened sheet metal bodies.
+    let bend_lines: Vec<Value> = state
+        .sheet_metal
+        .iter()
+        .filter(|r| r.flat_plane.is_some())
+        .flat_map(|r| {
+            r.bend_lines.iter().map(|l| {
+                json!({ "polyline": [l.a[0], l.a[1], l.a[2], l.b[0], l.b[1], l.b[2]], "up": l.up })
+            })
+        })
+        .collect();
     let sketches3d: Vec<_> = state
         .sketches3d
         .iter()
@@ -190,6 +201,7 @@ pub fn scene(doc: &Document, state: &State) -> Result<Value, String> {
         "curves": curves,
         "sketches3d": sketches3d,
         "cosmetic_threads": cosmetic_threads,
+        "bend_lines": bend_lines,
     }))
 }
 
@@ -358,7 +370,29 @@ pub fn snapshot(model: &Model) -> Value {
         "properties": model.doc.properties,
         "dimension_display": model.doc.dimension_display,
         "bodies": body_views(&model.doc, model.state()).unwrap_or_default(),
+        "sheet_metal": sheet_metal_views(&model.doc, model.state()),
     })
+}
+
+/// Each sheet metal body for the tree: its creating feature, body and
+/// parameters, without flattening anything.
+fn sheet_metal_views(doc: &Document, state: &State) -> Vec<Value> {
+    state
+        .sheet_metal
+        .iter()
+        .enumerate()
+        .map(|(i, r)| {
+            let index = of_model::sheet_metal::record_body(state, i);
+            json!({
+                "feature": r.feature,
+                "body": index.map(|i| state.bodies[i].id.clone()),
+                "name": index.map(|i| body_name(doc, state, i)),
+                "parameters": r.params,
+                "bends": r.bends.len(),
+                "flattened": r.flat_plane.is_some(),
+            })
+        })
+        .collect()
 }
 
 pub fn equation_values(doc: &Document) -> Value {

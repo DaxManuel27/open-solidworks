@@ -9,6 +9,7 @@ import { assistantSmoke } from './assistant-smoke.mjs'
 import { phase2Smoke } from './phase-2-smoke.mjs'
 import { assemblySmoke } from './assembly-smoke.mjs'
 import { drawingSmoke } from './drawing-smoke.mjs'
+import { sheetMetalSmoke } from './sheet-metal-smoke.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 process.env.OPENFORGE_CORE = join(
@@ -232,6 +233,10 @@ async function run(win) {
     await assistantSmoke({ js, call, click, wait })
     return
   }
+  if (process.env.OPENFORGE_SMOKE_ONLY === 'sheet_metal') {
+    await sheetMetalSmoke({ js, call, click, wait, temp, win })
+    return
+  }
   assert.equal(await js(`typeof window.require`), 'undefined', 'renderer must stay sandboxed')
   assert.equal(await js(`document.querySelector('[data-command="print"]').disabled`), true)
   assert.match(
@@ -255,7 +260,7 @@ async function run(win) {
       ['Features', false],
       ['Sketch', false],
       ['Surfaces', true],
-      ['Sheet Metal', true],
+      ['Sheet Metal', false],
       ['Direct Editing', true],
       ['Evaluate', false],
       ['Annotations', true],
@@ -661,11 +666,12 @@ async function run(win) {
       },
     },
   })
+  await sheetMetalSmoke({ js, call, click, wait, temp, win })
   const screenshot = await win.capturePage()
   const artifact = process.env.OPENFORGE_SMOKE_SCREENSHOT
   if (artifact) writeFileSync(artifact, screenshot.toPNG())
   console.log(
-    'Desktop smoke passed: toolbar layout/themes, keyboard/menu isolation, sketch tools, dropdown panels, views, draw/extrude/revolve, body visibility/copy/split retention, scoped formulas, configurations, spatial sketches, hollow sweeps, domes, cosmetic threads, ribs with formula entry, modeled threads, boundaries, tangent lofts, undo/redo, save/reopen/import/export, assemblies (insert, mates, collision drag, patterns, interference, explode, BOM, save/reopen), drawings (make drawing, model items, driving dimensions, smart dimensions, notes, section/detail views, revision table, BOM with auto balloons, PDF/DXF export, undo/redo, save/reopen)',
+    'Desktop smoke passed: toolbar layout/themes, keyboard/menu isolation, sketch tools, dropdown panels, views, draw/extrude/revolve, body visibility/copy/split retention, scoped formulas, configurations, spatial sketches, hollow sweeps, domes, cosmetic threads, ribs with formula entry, modeled threads, boundaries, tangent lofts, undo/redo, save/reopen/import/export, assemblies (insert, mates, collision drag, patterns, interference, explode, BOM, save/reopen), drawings (make drawing, model items, driving dimensions, smart dimensions, notes, section/detail views, revision table, BOM with auto balloons, PDF/DXF export, undo/redo, save/reopen), sheet metal (base and edge flanges, flatten, gauge, flat DXF)',
   )
 }
 

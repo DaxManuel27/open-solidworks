@@ -138,6 +138,14 @@ fn yes() -> bool {
 }
 
 #[derive(Deserialize, JsonSchema)]
+pub struct SheetMetalGauges {
+    /// A built-in table (`steel`, `stainless`, `aluminum`) or a CSV path;
+    /// omitted lists the built-in tables only.
+    #[serde(default)]
+    pub table: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
 pub struct SheetMetalInfo {
     /// Include each flat pattern's outline, bend lines and form marks in
     /// flat millimetres.

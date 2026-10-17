@@ -46,7 +46,7 @@ const PATTERNABLE = new Set([
 ])
 
 /** The edited feature's parameters, or defaults for a new one. */
-function useParams<T>(panel: Panel, defaults: () => T): [T, (p: T) => void] {
+export function useParams<T>(panel: Panel, defaults: () => T): [T, (p: T) => void] {
   return useState<T>(() => {
     const f = useStore.getState().snapshot?.features.find((x) => x.id === panel.editing)
     return f ? (f.params as unknown as T) : defaults()
@@ -131,7 +131,7 @@ function useNewSketch(panel: Panel): number | null {
   return panel.sketch ?? defaultSketch(s.snapshot?.features ?? [], s.treeSelection)
 }
 
-function SketchChoice(props: { value: number | null; onChange: (id: number) => void }) {
+export function SketchChoice(props: { value: number | null; onChange: (id: number) => void }) {
   const sketches = useSketches()
   return (
     <Choice
@@ -202,7 +202,7 @@ export function ThinEditor(props: {
 }
 
 /** An end condition while being edited: targets may not be picked yet. */
-type EndDraft = {
+export type EndDraft = {
   type: EndCondition['type']
   depth: number
   target: Ref | null
@@ -210,13 +210,13 @@ type EndDraft = {
   reverse_offset: boolean
 }
 
-function toDraft(e: EndCondition | null | undefined): EndDraft {
+export function toDraft(e: EndCondition | null | undefined): EndDraft {
   const d: EndDraft = { type: 'blind', depth: 10, target: null, offset: 1, reverse_offset: false }
   if (!e) return d
   return { ...d, ...e } as EndDraft
 }
 
-function fromDraft(d: EndDraft): EndCondition | null {
+export function fromDraft(d: EndDraft): EndCondition | null {
   switch (d.type) {
     case 'blind':
     case 'mid_plane':
@@ -234,7 +234,7 @@ function fromDraft(d: EndDraft): EndCondition | null {
   }
 }
 
-function EndEditor(props: {
+export function EndEditor(props: {
   value: EndDraft
   onChange: (d: EndDraft) => void
   allowMid: boolean

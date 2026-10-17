@@ -289,6 +289,25 @@ export class Engine {
       if (annotation.hidden) continue
       this.addThreadLines(annotation.polylines, this.datumGroup)
     }
+    for (const bend of scene.bend_lines ?? []) {
+      const geometry = new THREE.BufferGeometry().setAttribute(
+        'position',
+        new THREE.Float32BufferAttribute(bend.polyline, 3),
+      )
+      const material = new THREE.LineDashedMaterial({
+        color: bend.up ? 0x15803d : 0x1d4ed8,
+        dashSize: 3,
+        gapSize: 1.5,
+        depthTest: false,
+      })
+      const line = new THREE.Line(geometry, material)
+      line.computeLineDistances()
+      line.renderOrder = 4
+      // Disposed with the cosmetic thread lines.
+      line.userData.cosmeticThread = true
+      line.userData.bendLine = bend.up ? 'up' : 'down'
+      this.datumGroup.add(line)
+    }
     for (const s of scene.sketches) {
       const m = new THREE.LineBasicMaterial({ color: COLORS.sketch })
       for (const pl of s.polylines) {

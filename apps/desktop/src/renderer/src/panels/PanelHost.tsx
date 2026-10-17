@@ -3,6 +3,39 @@ import { SpatialPanel } from './spatial'
 import { DomePanel } from './dome'
 import { FaceFilletPanel } from './face-fillet'
 import { RibPanel } from './rib'
+import {
+  BaseFlangePanel,
+  EdgeFlangePanel,
+  HemPanel,
+  LoftedBendPanel,
+  MiterFlangePanel,
+  SweptFlangePanel,
+} from './sheet-metal/flanges'
+import {
+  ConvertPanel,
+  CrossBreakPanel,
+  FoldPanel,
+  InsertBendsPanel,
+  JogPanel,
+  NormalCutPanel,
+  RipPanel,
+  SketchedBendPanel,
+  UnfoldPanel,
+} from './sheet-metal/bends'
+import {
+  BendNotchPanel,
+  BreakCornerPanel,
+  ClosedCornerPanel,
+  CornerReliefPanel,
+  WeldedCornerPanel,
+} from './sheet-metal/corners'
+import {
+  FlatPatternPanel,
+  FormToolPanel,
+  FormingToolPanel,
+  GussetPanel,
+  TabAndSlotPanel,
+} from './sheet-metal/details'
 import { WrapPanel } from './wrap'
 import { AdvancedDressupPanel, BoundaryPanel, CurvePanel, SweepLoftPanel } from './advanced'
 import { ConfigurationsPanel } from './configurations'
@@ -172,6 +205,56 @@ export function PanelHost({ panel }: { panel: Panel }) {
       return <FaceFilletPanel key={key} panel={panel} />
     case 'rib':
       return <RibPanel key={key} panel={panel} />
+    case 'base_flange':
+      return <BaseFlangePanel key={key} panel={panel} />
+    case 'edge_flange':
+      return <EdgeFlangePanel key={key} panel={panel} />
+    case 'miter_flange':
+      return <MiterFlangePanel key={key} panel={panel} />
+    case 'hem':
+      return <HemPanel key={key} panel={panel} />
+    case 'jog':
+      return <JogPanel key={key} panel={panel} />
+    case 'sketched_bend':
+      return <SketchedBendPanel key={key} panel={panel} />
+    case 'swept_flange':
+      return <SweptFlangePanel key={key} panel={panel} />
+    case 'lofted_bend':
+      return <LoftedBendPanel key={key} panel={panel} />
+    case 'cross_break':
+      return <CrossBreakPanel key={key} panel={panel} />
+    case 'insert_bends':
+      return <InsertBendsPanel key={key} panel={panel} />
+    case 'convert_to_sheet_metal':
+      return <ConvertPanel key={key} panel={panel} />
+    case 'rip':
+      return <RipPanel key={key} panel={panel} />
+    case 'unfold':
+      return <UnfoldPanel key={key} panel={panel} />
+    case 'fold':
+      return <FoldPanel key={key} panel={panel} />
+    case 'normal_cut':
+      return <NormalCutPanel key={key} panel={panel} />
+    case 'corner_relief':
+      return <CornerReliefPanel key={key} panel={panel} />
+    case 'closed_corner':
+      return <ClosedCornerPanel key={key} panel={panel} />
+    case 'welded_corner':
+      return <WeldedCornerPanel key={key} panel={panel} />
+    case 'break_corner':
+      return <BreakCornerPanel key={key} panel={panel} />
+    case 'bend_notch':
+      return <BendNotchPanel key={key} panel={panel} />
+    case 'tab_and_slot':
+      return <TabAndSlotPanel key={key} panel={panel} />
+    case 'sheet_metal_gusset':
+      return <GussetPanel key={key} panel={panel} />
+    case 'form_tool':
+      return <FormToolPanel key={key} panel={panel} />
+    case 'forming_tool':
+      return <FormingToolPanel key={key} panel={panel} />
+    case 'flat_pattern':
+      return <FlatPatternPanel key={key} panel={panel} />
     case 'wrap':
       return <WrapPanel key={key} panel={panel} />
     case 'cosmetic_thread':

@@ -522,6 +522,11 @@ pub struct Flattened {
     pub marks: Vec<FormMark>,
 }
 
+/// The index in `state.bodies` of sheet metal body `index`'s solid.
+pub fn record_body(state: &State, index: usize) -> Option<usize> {
+    crate::ops::sheet::record_body(state, state.sheet_metal.get(index)?)
+}
+
 /// The flat pattern of sheet metal body `index` of `state.sheet_metal`.
 pub fn flattened(state: &State, index: usize) -> Result<Flattened, String> {
     let record = state

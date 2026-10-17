@@ -20,6 +20,11 @@ const ICONS: Record<string, string> = {
   circular_pattern: '✲',
   mirror: '⧓',
   import: '⬇',
+  base_flange: '▭',
+  edge_flange: '⌐',
+  miter_flange: '⌐',
+  hem: '⊃',
+  flat_pattern: '▬',
 }
 
 const STD: { ref: Ref; name: string }[] = [
@@ -42,6 +47,31 @@ export function panelFor(f: FeatureView): PanelType | null {
       return f.params['cut'] ? 'loft_cut' : 'loft'
     case 'boundary':
       return f.params['cut'] ? 'boundary_cut' : 'boundary'
+    case 'base_flange':
+    case 'edge_flange':
+    case 'miter_flange':
+    case 'hem':
+    case 'jog':
+    case 'sketched_bend':
+    case 'swept_flange':
+    case 'lofted_bend':
+    case 'cross_break':
+    case 'insert_bends':
+    case 'convert_to_sheet_metal':
+    case 'rip':
+    case 'unfold':
+    case 'fold':
+    case 'normal_cut':
+    case 'corner_relief':
+    case 'closed_corner':
+    case 'welded_corner':
+    case 'break_corner':
+    case 'bend_notch':
+    case 'tab_and_slot':
+    case 'sheet_metal_gusset':
+    case 'form_tool':
+    case 'forming_tool':
+    case 'flat_pattern':
     case 'cosmetic_thread':
     case 'sketch3d':
     case 'draft':
@@ -331,6 +361,31 @@ export function FeatureTree() {
           </div>
         )
       })}
+      {!!snapshot.sheet_metal?.length && (
+        <>
+          <div className="tree-item meta">Sheet Metal ({snapshot.sheet_metal.length})</div>
+          {snapshot.sheet_metal.map((sm) => {
+            const owner = snapshot.features.find((f) => f.id === sm.feature)
+            const g = sm.parameters.gauge
+            return (
+              <div
+                className="tree-item"
+                key={sm.feature}
+                title="Double-click to edit this body's sheet metal parameters"
+                onDoubleClick={() => owner && editFeature(owner)}
+              >
+                <span className="icon">▭</span>
+                <span className="name">
+                  {sm.name ?? 'Sheet metal'} ·{' '}
+                  {g ? `gauge ${g.gauge}` : `${sm.parameters.thickness} mm`} · {sm.bends} bend
+                  {sm.bends === 1 ? '' : 's'}
+                  {sm.flattened ? ' · flat' : ''}
+                </span>
+              </div>
+            )
+          })}
+        </>
+      )}
       <div className="tree-item meta">Bodies ({bodies.length})</div>
       {bodies.map((body) => (
         <div className="tree-item" key={body.id}>

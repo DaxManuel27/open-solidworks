@@ -62,6 +62,31 @@ export interface PickTarget {
 }
 
 export type PanelType =
+  | 'base_flange'
+  | 'edge_flange'
+  | 'miter_flange'
+  | 'hem'
+  | 'jog'
+  | 'sketched_bend'
+  | 'swept_flange'
+  | 'lofted_bend'
+  | 'cross_break'
+  | 'insert_bends'
+  | 'convert_to_sheet_metal'
+  | 'rip'
+  | 'unfold'
+  | 'fold'
+  | 'normal_cut'
+  | 'corner_relief'
+  | 'closed_corner'
+  | 'welded_corner'
+  | 'break_corner'
+  | 'bend_notch'
+  | 'tab_and_slot'
+  | 'sheet_metal_gusset'
+  | 'form_tool'
+  | 'forming_tool'
+  | 'flat_pattern'
   | 'dome'
   | 'rib'
   | 'thread'
@@ -169,7 +194,8 @@ export interface Toast {
   kind: 'error' | 'info'
 }
 
-export type Tab = 'features' | 'sketch' | 'evaluate' | 'assembly' | 'drawing' | 'annotation'
+export type Tab =
+  'features' | 'sheet_metal' | 'sketch' | 'evaluate' | 'assembly' | 'drawing' | 'annotation'
 
 export type ViewName =
   'front' | 'back' | 'left' | 'right' | 'top' | 'bottom' | 'iso' | 'normal' | 'fit'
