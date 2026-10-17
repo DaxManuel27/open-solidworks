@@ -16,6 +16,7 @@ pub mod configurations;
 pub mod cosmetic_thread;
 pub use cosmetic_thread::{CosmeticThread, Thread};
 pub mod curves;
+pub mod direct;
 pub use curves::{
     Boundary, CompositeCurve, ContourSelection, CurveSelection, Helix, HelixInput, HelixPitch,
     Loft, LoftEnd, OrderedFloat, ProfileSelection, ProjectedCurve, ProjectionMode, Sweep,
@@ -284,6 +285,12 @@ pub enum FeatureKind {
     CutWithSurface(surfaces::CutWithSurface),
     /// Remove faces, leaving a gap, patching it or filling it.
     DeleteFace(surfaces::DeleteFace),
+    /// Offset, translate or rotate faces of a solid.
+    MoveFace(direct::MoveFace),
+    /// Replace faces of a solid with a surface.
+    ReplaceFace(direct::ReplaceFace),
+    /// Remove the holes of surface faces.
+    DeleteHole(direct::DeleteHole),
 }
 
 impl FeatureKind {
@@ -373,6 +380,9 @@ impl FeatureKind {
             FeatureKind::Thicken(_) => "Thicken",
             FeatureKind::CutWithSurface(_) => "SurfaceCut",
             FeatureKind::DeleteFace(_) => "Delete Face",
+            FeatureKind::MoveFace(_) => "Move Face",
+            FeatureKind::ReplaceFace(_) => "Replace Face",
+            FeatureKind::DeleteHole(_) => "Delete Hole",
         }
     }
 
@@ -566,6 +576,24 @@ impl FeatureKind {
             FeatureKind::Thicken(t) => out.extend(t.body.creator()),
             FeatureKind::CutWithSurface(c) => refs.push(&c.surface),
             FeatureKind::DeleteFace(d) => refs.extend(&d.faces),
+            FeatureKind::MoveFace(m) => {
+                refs.extend(&m.faces);
+                match &m.motion {
+                    direct::FaceMotion::Offset { .. } => {}
+                    direct::FaceMotion::Translate {
+                        direction, up_to, ..
+                    } => {
+                        refs.push(direction);
+                        refs.extend(up_to);
+                    }
+                    direct::FaceMotion::Rotate { axis, .. } => refs.push(axis),
+                }
+            }
+            FeatureKind::ReplaceFace(r) => {
+                refs.extend(&r.faces);
+                refs.push(&r.replacement);
+            }
+            FeatureKind::DeleteHole(d) => refs.extend(&d.faces),
             FeatureKind::Fillet(f) => refs.extend(f.edges.iter().chain(&f.faces)),
             FeatureKind::Chamfer(c) => refs.extend(c.edges.iter().chain(&c.faces)),
             FeatureKind::Shell(s) => refs.extend(&s.faces),

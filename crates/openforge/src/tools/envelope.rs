@@ -179,6 +179,8 @@ fn changes_material(kind: &FeatureKind) -> bool {
             | Thicken(_)
             | CutWithSurface(_)
             | DeleteFace(_)
+            | MoveFace(_)
+            | ReplaceFace(_)
             | Knit(of_model::surfaces::Knit {
                 create_solid: true,
                 ..

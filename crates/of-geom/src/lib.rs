@@ -8,6 +8,7 @@
 
 mod assembly;
 mod curves;
+mod faceedit;
 mod hlr;
 mod plane;
 mod profile;
@@ -16,6 +17,7 @@ mod surface;
 
 pub use assembly::{STEP_ROOT, StepAssemblyWriter, StepInstance, read_step_assembly};
 pub use curves::{Curve3, EndTangent};
+pub use faceedit::{Replaced, compose};
 pub use glam::{DAffine3, DMat3, DVec2, DVec3};
 pub use hlr::{Curve2d, EdgeClass, HlrEdge, HlrQuality};
 pub use plane::Plane;

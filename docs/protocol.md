@@ -271,6 +271,9 @@ run `cargo run -p openforge -- generate` instead. -->
 | `thicken` | `body`, `thickness`, `cut?`, `fill_volume?`, `merge?`, `scope?`, `side?` | Give a surface body thickness, making a solid (or a cut). |
 | `cut_with_surface` | `surface`, `flip?`, `scope?` | Cut away the solids on one side of a surface. |
 | `delete_face` | `faces`, `mode?`, `scope?` | Remove faces, leaving a gap, patching it or filling it. |
+| `move_face` | `faces`, `motion`, `scope?` | Offset, translate or rotate faces of a solid. |
+| `replace_face` | `faces`, `replacement`, `scope?` | Replace faces of a solid with a surface. |
+| `delete_hole` | `faces`, `scope?` | Remove the holes of surface faces. |
 
 <!-- /generated:features -->
 

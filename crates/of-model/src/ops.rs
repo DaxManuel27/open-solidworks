@@ -12,6 +12,7 @@ use crate::build::{Body, State, Tool};
 use crate::features::holes;
 use crate::naming::{Inputs, Naming};
 use crate::resolve::{RResult, Resolved, resolve};
+mod direct;
 mod face_fillet;
 mod rib;
 pub(crate) mod sheet;
@@ -70,6 +71,9 @@ pub(crate) fn build(
         FeatureKind::Thicken(p) => surface::thicken(fid, p, prev, state),
         FeatureKind::CutWithSurface(p) => surface::cut_with_surface(fid, p, prev, state),
         FeatureKind::DeleteFace(p) => surface::delete_face(fid, p, prev, state),
+        FeatureKind::MoveFace(p) => direct::move_face(fid, p, prev, state),
+        FeatureKind::ReplaceFace(p) => direct::replace_face(fid, p, prev, state),
+        FeatureKind::DeleteHole(p) => direct::delete_hole(fid, p, prev, state),
         _ => Ok(()),
     };
     if result.is_ok() && state.tools.contains_key(&fid) {

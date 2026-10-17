@@ -206,6 +206,14 @@ uint32_t child_count(const Shape &s);
 std::unique_ptr<Shape> cut_with_surface(const Shape &body, const Shape &surface, bool flip,
                                         rust::Vec<HistoryEntry> &hist);
 std::unique_ptr<Shape> planar_face(const Shape &edges);
+std::unique_ptr<Shape> extend_face(const Shape &face_in, double length);
+std::unique_ptr<Shape> cells(const Shape &faces);
+int8_t classify(const Shape &solid, const Vec3 &point);
+Vec3 inner_point(const Shape &solid);
+rust::Vec<uint32_t> faces_on(const Shape &s, const Shape &target, double tolerance);
+std::unique_ptr<Shape> unify(const Shape &s, rust::Vec<HistoryEntry> &hist);
+std::unique_ptr<Shape> remove_holes(const Shape &s, rust::Slice<const uint32_t> faces,
+                                    rust::Vec<HistoryEntry> &hist);
 std::unique_ptr<Shape> boundary_surface(const Shape &sections_in, const Shape &guides_in,
                                         rust::Vec<HistoryEntry> &hist);
 std::unique_ptr<Shape> child(const Shape &s, uint32_t index);

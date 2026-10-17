@@ -563,6 +563,25 @@ pub mod ffi {
         ) -> Result<UniquePtr<Shape>>;
         /// A planar face bounded by a closed loop of edges.
         fn planar_face(edges: &Shape) -> Result<UniquePtr<Shape>>;
+        /// A face's surface extended `length` past its boundary in every
+        /// direction it can go, as an untrimmed face.
+        fn extend_face(face: &Shape, length: f64) -> Result<UniquePtr<Shape>>;
+        /// The closed regions a set of faces encloses, as solids.
+        fn cells(faces: &Shape) -> Result<UniquePtr<Shape>>;
+        /// 1 inside the solid, -1 outside, 0 on its boundary.
+        fn classify(solid: &Shape, point: &Vec3) -> Result<i8>;
+        /// A point strictly inside a solid.
+        fn inner_point(solid: &Shape) -> Result<Vec3>;
+        /// Faces of `s` with a point within `tolerance` of `target`.
+        fn faces_on(s: &Shape, target: &Shape, tolerance: f64) -> Result<Vec<u32>>;
+        /// Neighbouring faces and edges on one surface merged.
+        fn unify(s: &Shape, hist: &mut Vec<HistoryEntry>) -> Result<UniquePtr<Shape>>;
+        /// Faces with their inner loops (holes) removed.
+        fn remove_holes(
+            s: &Shape,
+            faces: &[u32],
+            hist: &mut Vec<HistoryEntry>,
+        ) -> Result<UniquePtr<Shape>>;
         /// The number of direct children of a compound, solid or shell.
         fn child_count(s: &Shape) -> u32;
         fn child(s: &Shape, index: u32) -> Result<UniquePtr<Shape>>;

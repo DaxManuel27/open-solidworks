@@ -204,6 +204,51 @@ impl Shape {
         Ok(Shape(ffi::planar_face(&edges.0)?))
     }
 
+    /// The face's surface extended `length` past its boundary, untrimmed.
+    pub fn extend_face(&self, length: f64) -> Result<Shape> {
+        Ok(Shape(ffi::extend_face(&self.0, length)?))
+    }
+
+    /// The closed regions the faces of this shape enclose, each a solid.
+    pub fn cells(&self) -> Result<Vec<Shape>> {
+        Ok(Shape(ffi::cells(&self.0)?).solids())
+    }
+
+    /// Whether a point is inside (1), outside (-1) or on (0) this solid.
+    pub fn classify(&self, point: DVec3) -> Result<i8> {
+        Ok(ffi::classify(&self.0, &crate::v3(point))?)
+    }
+
+    /// A point strictly inside this solid.
+    pub fn inner_point(&self) -> Result<DVec3> {
+        Ok(crate::dv3(ffi::inner_point(&self.0)?))
+    }
+
+    /// Faces of this shape lying on `target`, within `tolerance`.
+    pub fn faces_on(&self, target: &Shape, tolerance: f64) -> Result<Vec<u32>> {
+        Ok(ffi::faces_on(&self.0, &target.0, tolerance)?)
+    }
+
+    /// Merge neighbouring faces and edges that lie on one surface.
+    pub fn unify(&self) -> Result<OpResult> {
+        let mut h = Vec::new();
+        let s = ffi::unify(&self.0, &mut h)?;
+        Ok(OpResult {
+            shape: Shape(s),
+            history: convert_history(h),
+        })
+    }
+
+    /// Remove the holes (inner loops) of faces.
+    pub fn remove_holes(&self, faces: &[u32]) -> Result<OpResult> {
+        let mut h = Vec::new();
+        let s = ffi::remove_holes(&self.0, faces, &mut h)?;
+        Ok(OpResult {
+            shape: Shape(s),
+            history: convert_history(h),
+        })
+    }
+
     /// Whether this shape has faces outside any solid.
     pub fn has_open_faces(&self) -> bool {
         let in_solids: u32 = self

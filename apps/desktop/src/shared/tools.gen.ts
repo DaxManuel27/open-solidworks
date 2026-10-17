@@ -1367,6 +1367,31 @@ export type ExplodeMotion =
 
 export type FaceKind = 'face'
 
+/** How Move Face moves its faces. */
+export type FaceMotion =
+  | {
+    type: 'offset'
+    /** mm. */
+    distance: number
+  }
+  | {
+    type: 'translate'
+    /** An edge, axis, or plane whose normal is the direction. */
+    direction: Ref
+    /** mm; ignored with `up_to`. */
+    distance?: number
+    reverse?: boolean
+    /** A vertex, point or flat face to move up to. */
+    up_to?: Ref | null
+  }
+  | {
+    type: 'rotate'
+    /** A reference axis, straight edge or cylindrical face. */
+    axis: Ref
+    /** Radians. */
+    angle: number
+  }
+
 /** A profile family. */
 export type Family =
   | 'ipe'
@@ -2607,6 +2632,27 @@ export type Feature =
     /** Faces of one body. */
     faces: Ref[]
     mode?: DeleteFaceMode
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'move_face'
+    faces: Ref[]
+    motion: FaceMotion
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'replace_face'
+    faces: Ref[]
+    /** A surface body, or a face of one. */
+    replacement: Ref
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'delete_hole'
+    faces: Ref[]
     /** Body IDs this feature acts on; omitted acts on the whole part. */
     scope?: string[] | null
   }

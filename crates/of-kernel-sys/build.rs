@@ -73,6 +73,7 @@ fn main() {
         .file("cpp/hlr.cpp")
         .file("cpp/sheet.cpp")
         .file("cpp/surface.cpp")
+        .file("cpp/faceedit.cpp")
         .include(&include)
         .std("c++17")
         .flag_if_supported("-Wno-unused-parameter")
@@ -107,6 +108,7 @@ fn main() {
     println!("cargo:rerun-if-changed=cpp/hlr.cpp");
     println!("cargo:rerun-if-changed=cpp/sheet.cpp");
     println!("cargo:rerun-if-changed=cpp/surface.cpp");
+    println!("cargo:rerun-if-changed=cpp/faceedit.cpp");
     println!("cargo:rerun-if-changed=src/lib.rs");
     println!("cargo:rerun-if-changed=src/probes.rs");
     println!("cargo:rerun-if-changed=cpp/probes.h");
