@@ -838,6 +838,37 @@ impl Session {
                 self.model.doc.material = m;
                 Ok(self.snapshot())
             }
+            "doc.cut_list" => {
+                self.model.rebuild();
+                let list =
+                    of_model::weldment::cutlist::cut_list(&self.model.doc, self.model.state())
+                        .map_err(fail)?;
+                Ok(
+                    json!({ "settings": self.model.doc.cut_list, "items": list.items, "welds": list.welds }),
+                )
+            }
+            "doc.cut_list.set" => {
+                let p: SetCutList = args(params)?;
+                for id in p
+                    .settings
+                    .groups
+                    .iter()
+                    .flatten()
+                    .chain(&p.settings.excluded)
+                    .chain(p.settings.overrides.keys())
+                    .chain(p.settings.sub_weldments.iter().flat_map(|s| &s.bodies))
+                {
+                    if self.model.state().solid(id).is_err() {
+                        return Err(RpcError::coded(
+                            ErrorCode::UnknownRef,
+                            format!("no body {}", id.0),
+                        ));
+                    }
+                }
+                self.checkpoint();
+                self.model.doc.cut_list = p.settings;
+                Ok(self.snapshot())
+            }
             "doc.properties.set" => {
                 let p: SetProperties = args(params)?;
                 let mut doc = self.model.doc.clone();

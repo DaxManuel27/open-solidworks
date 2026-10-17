@@ -2,6 +2,7 @@
 //! their trims, end caps and gussets, weld beads and cut lists.
 
 pub mod beads;
+pub mod cutlist;
 pub mod details;
 pub mod members;
 pub mod profiles;

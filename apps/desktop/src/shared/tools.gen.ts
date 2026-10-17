@@ -1166,6 +1166,23 @@ export type CurveSelection = {
   reverse?: boolean
 }
 
+/** The cut list's settings, saved with the part. */
+export type CutListSettings = {
+  /** Bodies left out of the cut list. */
+  excluded?: string[]
+  /** Bodies listed together as one item whatever their shape. */
+  groups?: string[][]
+  /** Item properties set by hand, keyed by the item's first body. */
+  overrides?: Record<string, Record<string, string>>
+  /** List each body as its own item instead of collecting identical ones. */
+  separate?: boolean
+  sort?: CutListSort
+  /** Folders of bodies fabricated apart, listed on their own. */
+  sub_weldments?: SubWeldment[]
+}
+
+export type CutListSort = 'default' | 'profile'
+
 /**
  * The cutting line of a section view, in the parent view's model plane:
  * points are model coordinates projected into the parent (view-plane mm,
@@ -3542,6 +3559,11 @@ export type Standard = {
 
 export type StandardBase = 'iso' | 'ansi'
 
+export type SubWeldment = {
+  name: string
+  bodies: string[]
+}
+
 export type SweepOrientation = 'minimum_twist' | 'frenet' | 'fixed'
 
 /** How tab and slot corners are finished. */
@@ -4043,6 +4065,21 @@ export interface ToolArgs {
      * all side by side in one.
      */
     per_body?: boolean
+  }
+  /** The weldment cut list: items of identical bodies (members by profile, length and end angles; sheet metal by blank; other bodies by shape) with quantity, folder and properties (DESCRIPTION, LENGTH, ANGLE1/2 in degrees, MASS kg, BLANK LENGTH/WIDTH, bounding sizes), the settings, and the weld folder (beads, total length mm, total mass kg). */
+  cut_list: {
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+  }
+  /** Replace the cut list settings: manual groups (lists of body IDs), excluded bodies, property overrides keyed by an item's first body, sub-weldment folders, separate (no automatic grouping) and sort (default or profile). */
+  set_cut_list: {
+    /**
+     * The whole settings object: manual groups, exclusions, overrides,
+     * sub-weldments, separate and sort.
+     */
+    settings: CutListSettings
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
   }
   /** Structural member profiles: families (ISO IPE, HEA, UPN, angles, SHS/RHS, CHS; ANSI W, C, L, HSS, pipe) with their sizes; with family and size, that section's outline (mm, centered on its bounding box), area, centroid and second moments. */
   weldment_profiles: {
@@ -4605,6 +4642,8 @@ export const TOOL_METHODS = {
   open_part: 'doc.open',
   save_part: 'doc.save',
   export: 'export',
+  cut_list: 'doc.cut_list',
+  set_cut_list: 'doc.cut_list.set',
   weldment_profiles: 'weldment.profiles',
   sheet_metal_gauges: 'sheet_metal.gauges',
   sheet_metal_info: 'doc.sheet_metal',
@@ -4686,6 +4725,8 @@ export const TOOL_EXAMPLES: { [K in ToolName]: ToolArgs[K][] } = {
   open_part: [{"path":"part.ofp"}],
   save_part: [{"path":"part.ofp"}],
   export: [{"path":"part.step"}, {"configuration":2,"path":"part.stl"}],
+  cut_list: [{}],
+  set_cut_list: [{"settings":{}}],
   weldment_profiles: [{}, {"family":"rhs","size":"SHS 40x40x3"}],
   sheet_metal_gauges: [{}, {"table":"steel"}],
   sheet_metal_info: [{}, {"outline":true}],

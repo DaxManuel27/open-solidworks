@@ -1,33 +1,41 @@
 {
-  "recorded_at_utc": "2026-10-17T02:19:15.090Z",
+  "recorded_at_utc": "2026-10-17T02:50:06.627Z",
   "machine": "Apple M3 Max, darwin arm64",
   "build_profile": "debug",
-  "fixture": "Enclosure 200 x 120 x 40 of 1.5 mm steel: base flange, four edge flanges, two open hems, circular corner reliefs, three louvers (rebuild on open, flatten, flat DXF, sheet metal properties)",
+  "fixture": "Enclosure 200 x 120 x 40 of 1.5 mm steel: base flange, four edge flanges, two open hems, circular corner reliefs, three louvers (rebuild on open, flatten, flat DXF, sheet metal properties); weldment frame of 40 members, a mitered SHS rectangle and 36 RHS cross members (rebuild on open, cut list)",
   "rule": "Each budget is three times the slowest of three runs (at least 50 ms). Scale with OPENFORGE_BUDGET_SCALE on slower machines.",
   "budgets": {
-    "enclosure_rebuild_ms": 4816,
-    "flatten_ms": 551,
-    "flat_dxf_ms": 85,
-    "sheet_metal_info_ms": 78
+    "enclosure_rebuild_ms": 5041,
+    "flatten_ms": 568,
+    "flat_dxf_ms": 89,
+    "sheet_metal_info_ms": 79,
+    "frame_rebuild_ms": 5612,
+    "cut_list_ms": 269
   },
   "observed": [
     {
-      "enclosure_rebuild_ms": 1578.7535839999998,
-      "flatten_ms": 175.6237500000002,
-      "flat_dxf_ms": 27.629833999999846,
-      "sheet_metal_info_ms": 25.39145899999994
+      "enclosure_rebuild_ms": 1611.3835829999998,
+      "flatten_ms": 189.09454199999982,
+      "flat_dxf_ms": 28.261500000000524,
+      "sheet_metal_info_ms": 25.86816700000054,
+      "frame_rebuild_ms": 1870.6629159999993,
+      "cut_list_ms": 89.61845800000083
     },
     {
-      "enclosure_rebuild_ms": 1593.5496249999997,
-      "flatten_ms": 183.63941599999998,
-      "flat_dxf_ms": 27.46845899999971,
-      "sheet_metal_info_ms": 25.82208300000002
+      "enclosure_rebuild_ms": 1680.285750000001,
+      "flatten_ms": 185.90220799999952,
+      "flat_dxf_ms": 29.3977079999986,
+      "sheet_metal_info_ms": 26.0301670000008,
+      "frame_rebuild_ms": 1849.0660000000007,
+      "cut_list_ms": 89.45850000000064
     },
     {
-      "enclosure_rebuild_ms": 1605.0920839999999,
-      "flatten_ms": 182.40712499999972,
-      "flat_dxf_ms": 28.005999999999403,
-      "sheet_metal_info_ms": 25.80616700000064
+      "enclosure_rebuild_ms": 1621.4520840000005,
+      "flatten_ms": 178.13770900000236,
+      "flat_dxf_ms": 27.815041999998357,
+      "sheet_metal_info_ms": 25.34112499999901,
+      "frame_rebuild_ms": 1862.3421249999992,
+      "cut_list_ms": 86.30254200000127
     }
   ]
 }

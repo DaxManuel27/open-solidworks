@@ -139,14 +139,15 @@ fn extend(fid: FeatureId, body: Body, m: &Member, end: usize, to: f64) -> Result
             Inputs {
                 named: [Some(&body.names), None],
             },
-            &mut |_| Some(format!("{fid}.extended")),
+            &mut |_| Some(format!("{fid}.m{}.extended", m.record)),
             &fid.to_string(),
         ),
         shape: r.shape,
     })
 }
 
-fn cut(fid: FeatureId, body: Body, point: DVec3, keep: DVec3) -> Result<Body, String> {
+/// Faces a trim makes are named per member, so bodies never share names.
+fn cut(fid: FeatureId, m: &Member, body: Body, point: DVec3, keep: DVec3) -> Result<Body, String> {
     let tool = half_space(point, keep)?;
     let r = body.shape.boolean(BoolOp::Common, &tool).map_err(|e| e.0)?;
     if r.shape.count(Kind::Solid) == 0 {
@@ -159,7 +160,7 @@ fn cut(fid: FeatureId, body: Body, point: DVec3, keep: DVec3) -> Result<Body, St
             Inputs {
                 named: [Some(&body.names), None],
             },
-            &mut |_| Some(format!("{fid}.trim")),
+            &mut |_| Some(format!("{fid}.m{}.trim", m.record)),
             &fid.to_string(),
         ),
         shape: r.shape,
@@ -207,7 +208,7 @@ fn trim_at(
     } else {
         body
     };
-    Ok(Some((cut(fid, body, point + keep * gap, keep)?, keep)))
+    Ok(Some((cut(fid, m, body, point + keep * gap, keep)?, keep)))
 }
 
 /// Where the member's axis enters and leaves a body, along the axis.
@@ -389,7 +390,7 @@ fn cope(
             Inputs {
                 named: [Some(&body.names), None],
             },
-            &mut |_| Some(format!("{fid}.cope")),
+            &mut |_| Some(format!("{fid}.m{}.cope", m.record)),
             &fid.to_string(),
         ),
         shape: r.shape,
@@ -421,7 +422,7 @@ fn cope(
             Inputs {
                 named: [Some(&named.names), None],
             },
-            &mut |_| Some(format!("{fid}.cope")),
+            &mut |_| Some(format!("{fid}.m{}.cope", m.record)),
             &fid.to_string(),
         ),
         shape: r.shape,
@@ -501,7 +502,12 @@ fn pair(fid: FeatureId, p: &TrimExtend, prev: &State, state: &mut State) -> Resu
         } else {
             body
         };
-        finish(state, m, cut(fid, body, point, normal)?, &[(end, normal)]);
+        finish(
+            state,
+            m,
+            cut(fid, m, body, point, normal)?,
+            &[(end, normal)],
+        );
     }
     state.aggregate_bodies()
 }

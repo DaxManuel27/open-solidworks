@@ -112,6 +112,48 @@ async function enclosure(core, path) {
   await core.call('doc.save', { path })
 }
 
+/**
+ * A frame of 40 members: a mitered 2000 × 1000 SHS 40x40x3 rectangle and 36
+ * RHS 60x40x3 cross members, then the parts' cut list.
+ */
+async function frame(core, path) {
+  await core.call('doc.new')
+  await core.call('feature.add', { feature: { type: 'weldment' } })
+  const { id } = await core.call('sketch.new', { plane: { type: 'front_plane' } })
+  const rect = await core.call('sketch.edit', {
+    id,
+    op: { op: 'rectangle', a: [0, 0], b: [2000, 1000] },
+  })
+  const sides = rect.created.slice(4, 8)
+  const cross = []
+  for (let k = 1; k <= 36; k++) {
+    const x = (2000 * k) / 37
+    const r = await core.call('sketch.edit', {
+      id,
+      op: { op: 'add_line', a: { at: [x, 0] }, b: { at: [x, 1000] } },
+    })
+    cross.push(r.created[0])
+  }
+  await core.call('sketch.close')
+  const seg = (entity) => ({ type: 'sketch_entity', sketch: id, entity })
+  await core.call('feature.add', {
+    feature: {
+      type: 'structural_member',
+      profile: { type: 'standard', family: 'rhs', size: 'SHS 40x40x3' },
+      groups: [{ segments: sides.map(seg) }],
+    },
+  })
+  const r = await core.call('feature.add', {
+    feature: {
+      type: 'structural_member',
+      profile: { type: 'standard', family: 'rhs', size: 'RHS 60x40x3' },
+      groups: cross.map((c) => ({ segments: [seg(c)] })),
+    },
+  })
+  for (const f of r.features) if (f.error) throw new Error(`${f.name}: ${f.error}`)
+  await core.call('doc.save', { path })
+}
+
 async function measure(dir) {
   const kept = process.env.OPENFORGE_PERF_OUTPUT ?? dir
   const part = join(kept, 'enclosure.ofp')
@@ -130,6 +172,18 @@ async function measure(dir) {
   if (info.bodies[0].error) throw new Error(info.bodies[0].error)
   if (info.bodies[0].properties.forms !== 3) throw new Error('the louvers are missing')
   core.stop()
+  // The weldment frame: rebuild on open, then the cut list.
+  const framePart = join(kept, 'frame.ofp')
+  core = new Core()
+  await frame(core, framePart)
+  core.stop()
+  core = new Core()
+  out.frame_rebuild_ms = await time(() => core.call('doc.open', { path: framePart }))
+  out.cut_list_ms = await time(() => core.call('doc.cut_list'))
+  const list = await core.call('doc.cut_list')
+  const count = list.items.reduce((n, i) => n + i.quantity, 0)
+  if (count !== 40) throw new Error(`the frame lists ${count} members, not 40`)
+  core.stop()
   return out
 }
 const dir = mkdtempSync(join(tmpdir(), 'openforge-phase5-perf-'))
@@ -138,7 +192,7 @@ try {
   const results = []
   for (let i = 0; i < runs; i++) results.push(await measure(dir))
   const machine = `${cpus()[0]?.model ?? 'unknown'}, ${platform()} ${arch()}`
-  console.log(`Phase 5 performance (sheet metal enclosure), ${machine}`)
+  console.log(`Phase 5 performance (sheet metal enclosure, 40-member frame), ${machine}`)
   for (const [k, v] of Object.entries(results[0])) console.log(`  ${k.padEnd(24)} ${v.toFixed(1)}`)
   if (settingBudgets) {
     const budgets = {}
@@ -154,7 +208,7 @@ try {
           machine,
           build_profile: binary.includes('release') ? 'release' : 'debug',
           fixture:
-            'Enclosure 200 x 120 x 40 of 1.5 mm steel: base flange, four edge flanges, two open hems, circular corner reliefs, three louvers (rebuild on open, flatten, flat DXF, sheet metal properties)',
+            'Enclosure 200 x 120 x 40 of 1.5 mm steel: base flange, four edge flanges, two open hems, circular corner reliefs, three louvers (rebuild on open, flatten, flat DXF, sheet metal properties); weldment frame of 40 members, a mitered SHS rectangle and 36 RHS cross members (rebuild on open, cut list)',
           rule: 'Each budget is three times the slowest of three runs (at least 50 ms). Scale with OPENFORGE_BUDGET_SCALE on slower machines.',
           budgets,
           observed: results,

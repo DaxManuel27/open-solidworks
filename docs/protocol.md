@@ -367,6 +367,8 @@ run `cargo run -p openforge -- generate` instead. -->
 | `open_part` | `doc.open` | file/session (not in drafts) | `path`, `detail?` |
 | `save_part` | `doc.save` | file/session (not in drafts) | `detail?`, `path?` |
 | `export` | `export` | file/session (not in drafts) | `path`, `bend_notes?`, `bodies?`, `configuration?`, `detail?`, `dxf_version?`, `per_body?` |
+| `cut_list` | `doc.cut_list` | read | `detail?` |
+| `set_cut_list` | `doc.cut_list.set` | edit (draft) | `settings`, `detail?` |
 | `weldment_profiles` | `weldment.profiles` | read | `detail?`, `family?`, `size?` |
 | `sheet_metal_gauges` | `sheet_metal.gauges` | read | `detail?`, `table?` |
 | `sheet_metal_info` | `doc.sheet_metal` | read | `detail?`, `outline?` |

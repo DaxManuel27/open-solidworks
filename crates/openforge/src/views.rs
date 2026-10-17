@@ -124,6 +124,17 @@ pub fn scene(doc: &Document, state: &State) -> Result<Value, String> {
             Ok(json!({ "id": id, "name": name(*id), "polylines": polylines, "segments": segments }))
         })
         .collect::<Result<Vec<_>, String>>()?;
+    // Cosmetic weld beads, piece by piece.
+    let weld_beads: Vec<Value> = state
+        .welds
+        .iter()
+        .filter(|w| w.kind == of_model::weldment::BeadKind::Cosmetic)
+        .flat_map(|w| {
+            w.pieces.iter().map(move |p| {
+                json!({ "feature": w.feature, "polyline": p.iter().flatten().collect::<Vec<_>>(), "size": w.size })
+            })
+        })
+        .collect();
     // Bend lines of flattened sheet metal bodies.
     let bend_lines: Vec<Value> = state
         .sheet_metal
@@ -202,6 +213,7 @@ pub fn scene(doc: &Document, state: &State) -> Result<Value, String> {
         "sketches3d": sketches3d,
         "cosmetic_threads": cosmetic_threads,
         "bend_lines": bend_lines,
+        "weld_beads": weld_beads,
     }))
 }
 

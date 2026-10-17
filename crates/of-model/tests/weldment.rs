@@ -633,3 +633,198 @@ fn modeled_fillet_bead_adds_its_triangle() {
     close(volume(&m) - before, 0.5 * 5.0 * 5.0 * 28.0, 1e-6);
     assert_eq!(m.state().welds[0].bodies.len(), 1);
 }
+
+/// The frame: a mitered 1200 × 600 SHS rectangle, two RHS cross members
+/// trimmed to its sides, and a 100 × 60 × 3 sheet metal bracket on top.
+fn frame_with_bracket() -> (Model, FeatureId, FeatureId) {
+    let (mut doc, _, frame) = rectangle_frame(1200.0, 600.0);
+    doc.material = Some(of_model::materials::Material {
+        name: "Steel".into(),
+        density: 7850.0,
+    });
+    let f1 = doc.add(FeatureKind::StructuralMember(member(
+        frame,
+        CornerTreatment::EndMiter,
+    )));
+    let cross = lines(
+        &mut doc,
+        &[
+            ([0.0, 200.0], [1200.0, 200.0]),
+            ([0.0, 400.0], [1200.0, 400.0]),
+        ],
+    );
+    let f2 = doc.add(along(rhs(), cross));
+    let id = |f: FeatureId, k: &str| BodyId(format!("b{f}:{k}"));
+    doc.add(FeatureKind::TrimExtend(TrimExtend {
+        bodies: vec![id(f2, "g0.0"), id(f2, "g0.1")],
+        boundary: TrimBoundary::Bodies {
+            bodies: vec![id(f1, "g0.3"), id(f1, "g0.1")],
+            coped: false,
+        },
+        kind: TrimKind::EndTrim,
+        allow_extension: true,
+        gap: 0.0,
+    }));
+    // The bracket: a plate standing clear of the frame.
+    let mut sk = Sketch::new();
+    tools::corner_rectangle(&mut sk, DVec2::new(500.0, 250.0), DVec2::new(600.0, 310.0));
+    let plane = doc.add(FeatureKind::Plane(PlaneDef::Offset {
+        reference: Ref::FrontPlane,
+        distance: 20.0,
+        flip: false,
+    }));
+    let s = doc.add(FeatureKind::Sketch(SketchFeature {
+        plane: Ref::Feature { id: plane },
+        sketch: sk,
+    }));
+    doc.add(FeatureKind::BaseFlange(of_model::sheet_metal::BaseFlange {
+        sketch: s,
+        sheet: of_model::sheet_metal::SheetMetalParams {
+            thickness: 3.0,
+            radius: 3.0,
+            ..Default::default()
+        },
+        side: of_model::sheet_metal::ThicknessSide::Normal,
+        end1: None,
+        end2: None,
+        reverse: false,
+    }));
+    let m = Model::new(doc);
+    ok(&m);
+    (m, f1, f2)
+}
+
+fn prop<'a>(item: &'a cutlist::CutListItem, k: &str) -> &'a str {
+    item.properties.get(k).map(String::as_str).unwrap_or("")
+}
+
+#[test]
+fn cut_list_groups_members_and_sheet_metal() {
+    let (mut m, f1, f2) = frame_with_bracket();
+    let list = cutlist::cut_list(&m.doc, m.state()).unwrap();
+    let summary: Vec<(String, String, u32, String, String)> = list
+        .items
+        .iter()
+        .map(|i| {
+            (
+                prop(i, "DESCRIPTION").into(),
+                prop(i, "LENGTH").into(),
+                i.quantity,
+                prop(i, "ANGLE1").into(),
+                prop(i, "ANGLE2").into(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        summary,
+        vec![
+            (
+                "SHS 40x40x3".into(),
+                "1240".into(),
+                2,
+                "45".into(),
+                "45".into()
+            ),
+            (
+                "SHS 40x40x3".into(),
+                "640".into(),
+                2,
+                "45".into(),
+                "45".into()
+            ),
+            (
+                "RHS 60x40x3".into(),
+                "1160".into(),
+                2,
+                "0".into(),
+                "0".into()
+            ),
+            ("Sheet 3 mm".into(), "".into(), 1, "".into(), "".into()),
+        ]
+    );
+    let sheet = &list.items[3];
+    assert_eq!(sheet.kind, cutlist::ItemKind::SheetMetal);
+    assert_eq!(prop(sheet, "BLANK LENGTH"), "100");
+    assert_eq!(prop(sheet, "BLANK WIDTH"), "60");
+    assert_eq!(
+        list.items.iter().map(|i| i.number).collect::<Vec<_>>(),
+        vec![Some(1), Some(2), Some(3), Some(4)]
+    );
+    // Each SHS 1240 weighs its section × 1200 at 7850 kg/m³.
+    let mass: f64 = prop(&list.items[0], "MASS").parse().unwrap();
+    close(mass, shs_area() * 1200.0 * 7850e-9, 1e-3);
+
+    // Exclude a cross member, group two sides by hand, override a
+    // description, put the other cross member in a sub-weldment.
+    let id = |f: FeatureId, k: &str| BodyId(format!("b{f}:{k}"));
+    m.doc.cut_list.excluded = vec![id(f2, "g0.0")];
+    m.doc.cut_list.groups = vec![vec![id(f1, "g0.0"), id(f1, "g0.1")]];
+    m.doc.cut_list.overrides.insert(
+        id(f1, "g0.0"),
+        [("Description".into(), "Base frame side".into())].into(),
+    );
+    m.doc.cut_list.sub_weldments = vec![cutlist::SubWeldment {
+        name: "Stiffeners".into(),
+        bodies: vec![id(f2, "g0.1")],
+    }];
+    let list = cutlist::cut_list(&m.doc, m.state()).unwrap();
+    type Row = (Option<u32>, String, u32, Option<String>, bool);
+    let rows: Vec<Row> = list
+        .items
+        .iter()
+        .map(|i| {
+            (
+                i.number,
+                prop(i, "DESCRIPTION").into(),
+                i.quantity,
+                i.folder.clone(),
+                i.excluded,
+            )
+        })
+        .collect();
+    assert_eq!(
+        rows,
+        vec![
+            (Some(1), "Base frame side".into(), 2, None, false),
+            (Some(2), "SHS 40x40x3".into(), 1, None, false),
+            (Some(3), "SHS 40x40x3".into(), 1, None, false),
+            (None, "RHS 60x40x3".into(), 1, None, true),
+            (Some(4), "Sheet 3 mm".into(), 1, None, false),
+            (
+                Some(5),
+                "RHS 60x40x3".into(),
+                1,
+                Some("Stiffeners".into()),
+                false
+            ),
+        ]
+    );
+}
+
+#[test]
+fn weld_folder_totals_beads() {
+    use of_model::geom::DVec3;
+    let mut m = post_and_beam();
+    let (sides, post) = seam_faces(&m);
+    m.doc.add(FeatureKind::WeldBead(bead(BeadPath::Faces {
+        from: sides,
+        to: vec![post.clone()],
+    })));
+    m.rebuild();
+    let top = face(&m, DVec3::Y, |c| c.x > 100.0 && (c.y - 270.0).abs() < 1e-6);
+    let mut fillet = bead(BeadPath::Faces {
+        from: vec![top],
+        to: vec![post],
+    });
+    fillet.kind = BeadKind::Fillet;
+    m.doc.add(FeatureKind::WeldBead(fillet));
+    m.rebuild();
+    ok(&m);
+    let list = cutlist::cut_list(&m.doc, m.state()).unwrap();
+    // The modeled bead belongs to the weld folder, not the cut list.
+    assert_eq!(list.items.iter().map(|i| i.quantity).sum::<u32>(), 2);
+    close(list.welds.total_length, 4.0 * 28.0 + 28.0, 1e-6);
+    // 0.15 kg/m over 112 mm, plus 350 mm³ at the default 1000 kg/m³.
+    close(list.welds.total_mass, 0.15 * 0.112 + 350.0 * 1e-6, 1e-9);
+    assert_eq!(list.welds.beads[0].symbol.as_deref(), Some("5 ⊿"));
+}

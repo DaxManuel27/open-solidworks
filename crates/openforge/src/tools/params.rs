@@ -138,6 +138,13 @@ fn yes() -> bool {
 }
 
 #[derive(Deserialize, JsonSchema)]
+pub struct SetCutList {
+    /// The whole settings object: manual groups, exclusions, overrides,
+    /// sub-weldments, separate and sort.
+    pub settings: of_model::weldment::cutlist::CutListSettings,
+}
+
+#[derive(Deserialize, JsonSchema)]
 pub struct WeldmentProfiles {
     /// With `size`: that profile's outline and section properties.
     #[serde(default)]

@@ -575,6 +575,12 @@ pub struct Document {
     /// Only the first `rollback` features are built. `None` builds all.
     #[serde(default)]
     pub rollback: Option<usize>,
+    /// Weldment cut list settings.
+    #[serde(
+        default,
+        skip_serializing_if = "weldment::cutlist::CutListSettings::is_empty"
+    )]
+    pub cut_list: weldment::cutlist::CutListSettings,
     next_id: FeatureId,
 }
 
@@ -591,6 +597,7 @@ impl Default for Document {
             material: None,
             features: Vec::new(),
             rollback: None,
+            cut_list: Default::default(),
             next_id: 1,
         }
     }
