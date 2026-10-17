@@ -14,7 +14,7 @@ export async function sheetMetalSmoke(context) {
   }
 }
 
-async function scenario({ js, call, wait, temp, win }) {
+async function scenario({ js, call, wait, temp, win, dialogs }) {
   console.log('Sheet metal smoke: base and edge flanges, flatten, gauge, flat DXF')
   const frame = () =>
     js('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
@@ -166,12 +166,71 @@ async function scenario({ js, call, wait, temp, win }) {
   const gauged = (await call('doc.sheet_metal')).bodies[0].properties
   close(gauged.thickness, 1.519, 'gauge 16 thickness', 1e-3)
 
-  // Flat DXF through the core.
+  // Flat DXF from the Export panel.
   const dxf = join(temp, 'smoke-flat.dxf')
-  await call('export', { path: dxf })
-  assert.ok(existsSync(dxf))
+  await store(`(s.openPanel({ type: 'export' }), true)`)
+  await panel('Export')
+  await choose('Format', 'dxf')
+  await check('DXF R12 (for older software)', true)
+  dialogs.save(dxf)
+  await js(`document.querySelector('.panel .ok').click()`)
+  await wait(async () => existsSync(dxf), 'flat DXF written')
   const text = readFileSync(dxf, 'utf8')
+  assert.ok(text.includes('AC1009'), 'R12')
   assert.ok(text.includes('BEND_UP') || text.includes('BEND_DOWN'))
   assert.ok(text.includes('CUT'))
+  await wait(() => js(`!document.querySelector('.panel')`), 'export panel closed')
+
+  // A drawing of the part with a flat pattern view, a bend table and a punch table.
+  const part = join(temp, 'smoke-tray.ofp')
+  await call('doc.save', { path: part })
+  await store(`s.run('doc.info')`)
+  await store(`s.run('drawing.new', { model: ${JSON.stringify(part)} })`)
+  await wait(() => store(`!!s.drawing && s.tab === 'drawing'`), 'drawing adopted')
+  const drawingPick = (p) =>
+    js(
+      `(() => { const t = window.__openforgeDrawing.getState().target; if (!t) throw new Error('no pick target'); t.onPick(${JSON.stringify(p)}); })()`,
+    )
+  const views = () => store(`s.drawing.drawing.sheets[0].views.length`)
+  const viewsBefore = await views()
+  await command('modelView')
+  await panel('Model View')
+  await check('Flat pattern (sheet metal)', true)
+  await drawingPick({ type: 'point', at: [150, 70], view: null })
+  await wait(async () => (await views()) === viewsBefore + 1, 'flat view added')
+  const flatView = await store(
+    `s.drawing.drawing.sheets[0].views.find(v => v.kind.type === 'model' && v.kind.model.flat)`,
+  )
+  assert.ok(flatView, 'a flat pattern view')
+  await tab('Annotation')
+  for (const [variant, title, at] of [
+    ['bend', 'Bend Table', [30, 280]],
+    ['punch', 'Punch Table', [30, 200]],
+  ]) {
+    // Table commands sit in the Tables menu; open them as it does.
+    await store(`(s.openPanel({ type: 'table', variant: ${JSON.stringify(variant)} }), true)`)
+    await panel(title)
+    await drawingPick({ type: 'point', at, view: null })
+    await wait(() => js(`!document.querySelector('.panel')`), `${title} placed`)
+  }
+  const render = await wait(
+    () =>
+      js(
+        `!!window.__openforgeDrawing.getState().render && !window.__openforgeDrawing.getState().rendering`,
+      ),
+    'sheet rendered',
+  ).then(() => js(`window.__openforgeDrawing.getState().render`))
+  const words = render.graphics.items
+    .filter((i) => i.prim.type === 'text')
+    .map((i) => i.prim.text)
+    .join(' ')
+  assert.ok(words.includes('DIRECTION') && words.includes('PUNCH ID'), words.slice(0, 400))
+  assert.ok(/90° R1\.5/.test(words), 'bend notes')
+  const bendLines = render.graphics.items.filter(
+    (i) => i.layer === 'BEND_UP' || i.layer === 'BEND_DOWN',
+  )
+  assert.equal(bendLines.length, 4)
+  await shot('flat-drawing')
+  await store(`s.closeDocument?.() ?? true`)
   assert.deepEqual(await js('window.__smokeErrors'), [], 'renderer errors in sheet metal')
 }

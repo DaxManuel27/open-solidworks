@@ -290,13 +290,18 @@ export function UnitsPanel() {
   )
 }
 
-type ExportKind = 'step' | 'iges' | 'stl'
+type ExportKind = 'step' | 'iges' | 'stl' | 'dxf'
 
 export function ExportPanel() {
   const path = useStore((s) => s.snapshot!.path)
   const toast = useStore((s) => s.toast)
   const close = useClose()
   const [kind, setKind] = useState<ExportKind>('step')
+  const sheets = useStore((s) => s.snapshot!.sheet_metal ?? [])
+  const [bodies, setBodies] = useState<string[] | null>(null)
+  const [perBody, setPerBody] = useState(false)
+  const [notes, setNotes] = useState(true)
+  const [r12, setR12] = useState(false)
   const [ascii, setAscii] = useState(false)
   const [deviation, setDeviation] = useState(0.01)
   const [angle, setAngle] = useState(10)
@@ -306,14 +311,29 @@ export function ExportPanel() {
         ?.split(/[\\/]/)
         .pop()
         ?.replace(/\.ofp$/i, '') ?? 'Part1'
-    const file = await window.openforge.saveDialog('export', `${base}.${kind}`)
+    const file =
+      kind === 'dxf'
+        ? await window.openforge.saveDialog('dxf', `${base}-flat.dxf`)
+        : await window.openforge.saveDialog('export', `${base}.${kind}`)
     if (!file) return
-    const format =
-      kind === 'stl'
-        ? { format: 'stl', ascii, deviation, angle: (angle * Math.PI) / 180 }
-        : { format: kind }
+    const params =
+      kind === 'dxf'
+        ? {
+            path: file,
+            bodies,
+            per_body: perBody,
+            bend_notes: notes,
+            dxf_version: r12 ? 'r12' : 'r2018',
+          }
+        : {
+            path: file,
+            format:
+              kind === 'stl'
+                ? { format: 'stl', ascii, deviation, angle: (angle * Math.PI) / 180 }
+                : { format: kind },
+          }
     try {
-      await call('export', { path: file, format })
+      await call('export', params)
       toast(`Exported ${file.split(/[\\/]/).pop()}`, 'info')
       close()
     } catch (e) {
@@ -330,9 +350,36 @@ export function ExportPanel() {
             { value: 'step', label: 'STEP AP214 (.step)' },
             { value: 'iges', label: 'IGES (.iges)' },
             { value: 'stl', label: 'STL (.stl) for 3D printing' },
+            ...(sheets.length ? [{ value: 'dxf' as const, label: 'Flat pattern DXF (.dxf)' }] : []),
           ]}
           onChange={setKind}
         />
+        {kind === 'dxf' && (
+          <>
+            {sheets.length > 1 &&
+              sheets.map((sm) => (
+                <Check
+                  key={sm.feature}
+                  label={sm.name ?? 'Sheet metal body'}
+                  value={!bodies || (!!sm.body && bodies.includes(sm.body))}
+                  onChange={(on) => {
+                    const all = sheets.flatMap((x) => (x.body ? [x.body] : []))
+                    const cur = bodies ?? all
+                    const next = on ? [...cur, sm.body!] : cur.filter((b) => b !== sm.body)
+                    setBodies(next.length === all.length ? null : next)
+                  }}
+                />
+              ))}
+            {sheets.length > 1 && (
+              <Check label="One file per body" value={perBody} onChange={setPerBody} />
+            )}
+            <Check label="Bend notes" value={notes} onChange={setNotes} />
+            <Check label="DXF R12 (for older software)" value={r12} onChange={setR12} />
+            <p className="hint">
+              True size in mm: outline on CUT, bend lines on BEND_UP and BEND_DOWN, forms on FORM.
+            </p>
+          </>
+        )}
         {kind === 'stl' && (
           <>
             <LengthField label="Deviation" value={deviation} onChange={setDeviation} />

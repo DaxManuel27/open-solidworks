@@ -1039,8 +1039,15 @@ export function TablePanel({ variant = 'bom' }: { variant?: string }) {
   const [tags, setTags] = useState<Tags>('alphabetic')
   const [combine, setCombine] = useState(false)
   const [placing, setPlacing] = useState(variant !== 'hole')
+  const flatViews = (sheet?.views ?? []).filter(
+    (v) => v.kind.type === 'model' && !!v.kind.model.flat,
+  )
+  const [flatView, setFlatView] = useState<number | null>(flatViews[0]?.id ?? null)
+  const [showTags, setShowTags] = useState(true)
+  const [punchOrigin, setPunchOrigin] = useState(false)
 
-  const holeStep = variant === 'hole' && !placing
+  const originStep = variant === 'punch' && punchOrigin && !origin
+  const holeStep = (variant === 'hole' && !placing) || originStep
   useSheetPicks(
     holeStep ? ['entity'] : ['point'],
     holeStep
@@ -1052,6 +1059,7 @@ export function TablePanel({ variant = 'bom' }: { variant?: string }) {
       if (holeStep) {
         if (p.type !== 'entity') return
         if (!origin) return setOrigin(p)
+        if (variant === 'punch') return
         if (p.prim?.type !== 'arc')
           return useStore.getState().toast('Pick the circular edge of a hole', 'info')
         setHoles([...holes, p])
@@ -1081,6 +1089,27 @@ export function TablePanel({ variant = 'bom' }: { variant?: string }) {
         case 'general_tolerance':
           kind = { table: 'general_tolerance', class: cls }
           break
+        case 'bend':
+        case 'punch':
+          if (flatView === null)
+            return useStore.getState().toast('Add a flat pattern view first', 'info')
+          kind =
+            variant === 'bend'
+              ? { table: 'bend', view: flatView, show_tags: showTags }
+              : {
+                  table: 'punch',
+                  view: flatView,
+                  ...(origin
+                    ? {
+                        origin: {
+                          view: origin.view,
+                          entity: origin.entity,
+                          near: toViewPlane(origin.view, origin.at),
+                        },
+                      }
+                    : {}),
+                }
+          break
         default: {
           if (bomView === null) return useStore.getState().toast('Choose an assembly view', 'info')
           const cols: Column[] = columns.map((c) => ({ type: c }) as Column)
@@ -1103,6 +1132,8 @@ export function TablePanel({ variant = 'bom' }: { variant?: string }) {
     revision: 'Revision Table',
     general: 'General Table',
     general_tolerance: 'General Tolerance Table',
+    bend: 'Bend Table',
+    punch: 'Punch Table',
   }
   return (
     <PanelShell title={titles[variant] ?? 'Table'} onCancel={() => void closeDrawingPanel()}>
@@ -1203,6 +1234,45 @@ export function TablePanel({ variant = 'bom' }: { variant?: string }) {
           <Check label="First row is a header" value={header} onChange={setHeader} />
         </>
       )}
+      {(variant === 'bend' || variant === 'punch') && (
+        <>
+          <Choice
+            label="Flat pattern view"
+            value={flatView ?? 0}
+            options={
+              flatViews.length
+                ? flatViews.map((v) => ({ value: v.id, label: v.name }))
+                : [{ value: 0, label: 'Add a flat pattern view first' }]
+            }
+            onChange={(v) => setFlatView(v || null)}
+          />
+          {variant === 'bend' && (
+            <Check label="Tag bends on the view" value={showTags} onChange={setShowTags} />
+          )}
+          {variant === 'punch' && (
+            <>
+              <Check
+                label="Measure from a picked vertex"
+                value={punchOrigin}
+                onChange={(on) => {
+                  setPunchOrigin(on)
+                  setOrigin(null)
+                }}
+              />
+              {punchOrigin && (
+                <Prompt>
+                  {origin
+                    ? `Origin: ${entityLabel(origin.entity)}.`
+                    : 'Pick the origin edge near its corner.'}
+                </Prompt>
+              )}
+              {!punchOrigin && (
+                <small>Positions are measured from the flat's lower left corner.</small>
+              )}
+            </>
+          )}
+        </>
+      )}
       {variant === 'general_tolerance' && (
         <Choice
           label="ISO 2768-1 class"
@@ -1227,7 +1297,7 @@ export function TablePanel({ variant = 'bom' }: { variant?: string }) {
         ]}
         onChange={setAnchor}
       />
-      {placing && <Prompt>Click on the sheet to place the table.</Prompt>}
+      {placing && !originStep && <Prompt>Click on the sheet to place the table.</Prompt>}
     </PanelShell>
   )
 }

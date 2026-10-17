@@ -322,6 +322,8 @@ export const commands = {
   revisionTable: draw('table', 'Revision Table', 'table', false, 'revision'),
   generalTable: draw('table', 'General Table', 'table', false, 'general'),
   toleranceTable: draw('table', 'General Tolerance Table', 'table', false, 'general_tolerance'),
+  bendTable: draw('table', 'Bend Table', 'table', true, 'bend'),
+  punchTable: draw('table', 'Punch Table', 'table', true, 'punch'),
   equations: panel('equations', 'Equations', 'dimension'),
   configurations: panel('configurations', 'Configurations', 'properties'),
   options: {

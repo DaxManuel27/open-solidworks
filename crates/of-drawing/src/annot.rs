@@ -795,10 +795,11 @@ impl Drawing {
                     let h = std.text_height() * 0.8;
                     let thin = Pen::new(LineStyle::Continuous, std.thin_line());
                     for (i, b) in flat.bends.iter().enumerate() {
-                        let mid = r.to_sheet((b.a + b.b) / 2.0);
+                        // A fifth along the line, clear of the bend note at its middle.
+                        let at = r.to_sheet(b.a + (b.b - b.a) * 0.2);
                         for prim in text::layout(
                             &(i + 1).to_string(),
-                            [mid[0] + 1.0, mid[1] + 1.0],
+                            [at[0] + 1.0, at[1] + 1.0],
                             h,
                             0.0,
                             HAlign::Left,

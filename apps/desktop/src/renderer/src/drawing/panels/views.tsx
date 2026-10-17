@@ -3,6 +3,7 @@ import type {
   CompRef,
   DetailStyle,
   DisplayStyle,
+  FlatView,
   Orientation,
   Profile,
   Scale,
@@ -159,6 +160,7 @@ export function ModelViewPanel() {
   const [scale, setScale] = useState<Scale | null>(null)
   const [display, setDisplay] = useState<DisplayStyle>('hidden_removed')
   const [exploded, setExploded] = useState(false)
+  const [flat, setFlat] = useState<FlatView | null>(null)
   const assembly = !!model?.toLowerCase().endsWith('.ofa')
 
   useEffect(() => {
@@ -186,7 +188,7 @@ export function ModelViewPanel() {
       const ok = await addView(
         {
           type: 'model',
-          model: { path: model },
+          model: { path: model, ...(flat && !assembly ? { flat } : {}) },
           orientation: o,
           ...(assembly ? { exploded } : {}),
         },
@@ -232,6 +234,7 @@ export function ModelViewPanel() {
       <ScaleField label="Scale" value={scale} onChange={setScale} />
       <Choice label="Display" value={display} options={DISPLAY} onChange={setDisplay} />
       {assembly && <Check label="Exploded" value={exploded} onChange={setExploded} />}
+      {!assembly && model && <FlatOptions value={flat} onChange={setFlat} />}
       <Prompt>
         {model ? 'Click on the sheet to place the view.' : 'Choose a part or assembly.'}
       </Prompt>
@@ -734,6 +737,9 @@ export function ViewPropertiesPanel({ editing }: { editing?: number }) {
   const [exploded, setExploded] = useState(
     view?.kind.type === 'model' ? !!view.kind.exploded : false,
   )
+  const [flat, setFlat] = useState<FlatView | null>(
+    view?.kind.type === 'model' ? (view.kind.model.flat ?? null) : null,
+  )
   const [hatchScale, setHatchScale] = useState(view?.hatch?.scale ?? 1)
   const [hatchAngle, setHatchAngle] = useState(((view?.hatch?.angle ?? 0) * 180) / Math.PI)
   const [hatchPattern, setHatchPattern] = useState<string>(view?.hatch?.pattern ?? 'material')
@@ -772,6 +778,7 @@ export function ViewPropertiesPanel({ editing }: { editing?: number }) {
     if (isModel && view.kind.type === 'model' && orient && orient !== 'relative')
       params['view'] = {
         ...view.kind,
+        model: { ...view.kind.model, flat },
         orientation:
           orient === view.kind.orientation.type ? view.kind.orientation : { type: orient },
         exploded,
@@ -807,6 +814,7 @@ export function ViewPropertiesPanel({ editing }: { editing?: number }) {
         />
       )}
       {isAssembly && <Check label="Exploded" value={exploded} onChange={setExploded} />}
+      {isModel && !isAssembly && <FlatOptions value={flat} onChange={setFlat} />}
       <ScaleField
         label="Scale"
         value={scale}
@@ -899,4 +907,32 @@ function HideComponents({ view }: { view: DrawingView }) {
     on,
   )
   return <Check label="Pick components to hide" value={on} onChange={setOn} />
+}
+
+/** A sheet metal part's flat pattern instead of the formed part. */
+function FlatOptions(props: { value: FlatView | null; onChange: (f: FlatView | null) => void }) {
+  const f = props.value
+  return (
+    <>
+      <Check
+        label="Flat pattern (sheet metal)"
+        value={!!f}
+        onChange={(on) => props.onChange(on ? { bend_lines: true, bend_notes: true } : null)}
+      />
+      {f && (
+        <>
+          <Check
+            label="Bend lines"
+            value={f.bend_lines ?? true}
+            onChange={(bend_lines) => props.onChange({ ...f, bend_lines })}
+          />
+          <Check
+            label="Bend notes"
+            value={f.bend_notes ?? true}
+            onChange={(bend_notes) => props.onChange({ ...f, bend_notes })}
+          />
+        </>
+      )}
+    </>
+  )
 }

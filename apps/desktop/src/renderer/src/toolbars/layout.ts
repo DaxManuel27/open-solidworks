@@ -320,7 +320,15 @@ export const annotationGroups: CommandGroup[] = [
         {
           command: 'bomTable',
           variant: 'large',
-          menu: ['bomTable', 'holeTable', 'revisionTable', 'generalTable', 'toleranceTable'],
+          menu: [
+            'bomTable',
+            'holeTable',
+            'revisionTable',
+            'generalTable',
+            'toleranceTable',
+            'bendTable',
+            'punchTable',
+          ],
         },
       ],
     ],

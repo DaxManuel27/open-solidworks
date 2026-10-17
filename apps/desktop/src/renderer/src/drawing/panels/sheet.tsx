@@ -490,6 +490,8 @@ export function PartPropertiesPanel() {
       <Section title="Custom properties">
         <small>
           Values may link to {'{mass}'}, {'{material}'}, {'{volume}'} or {'{param:f2.end1.depth}'}.
+          {!!useStore.getState().snapshot?.sheet_metal?.length &&
+            ' Sheet metal: {flat_length}, {flat_width}, {thickness}, {bends}, {cutouts}, {outer_cut}, {inner_cut}, {gauge}.'}
         </small>
         <table className="prop-table">
           <tbody>
