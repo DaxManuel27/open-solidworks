@@ -256,6 +256,9 @@ run `cargo run -p openforge -- generate` instead. -->
 | `forming_tool` | `stopping_face`, `insertion_point?`, `remove_faces?`, `scope?` | Marks this part as a forming tool for other parts to use. |
 | `weldment` | `scope?` | Marks the part as a weldment (one per part, before its members). |
 | `structural_member` | `profile`, `groups`, `merge_miter_trimmed?`, `mirror?`, `offset?`, `pierce?`, `rotation?`, `scope?` | A profile swept along sketch segments, one body per segment. |
+| `trim_extend` | `bodies`, `boundary`, `allow_extension?`, `gap?`, `kind?`, `scope?` | Members cut back or lengthened to faces, planes or other bodies. |
+| `end_cap` | `faces`, `thickness`, `corners?`, `direction?`, `offset?`, `scope?` | Plates closing members' ends. |
+| `weld_gusset` | `faces`, `shape`, `thickness`, `chamfer?`, `location?`, `offset?`, `scope?`, `side?` | A plate in the corner between two members. |
 
 <!-- /generated:features -->
 

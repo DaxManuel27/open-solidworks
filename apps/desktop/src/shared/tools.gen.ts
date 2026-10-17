@@ -713,6 +713,30 @@ export type CalculationRange = {
   formula: string
 }
 
+/** Which way an end cap's thickness goes. */
+export type CapDirection =
+  | {
+    type: 'outward'
+  }
+  | {
+    type: 'inward'
+  }
+  | {
+    type: 'inset'
+    depth: number
+  }
+
+/** How far a cap's edge stays in from the profile's edge. */
+export type CapOffset =
+  | {
+    type: 'ratio'
+    ratio: number
+  }
+  | {
+    type: 'distance'
+    distance: number
+  }
+
 export type ChamferMode =
   | {
     type: 'equal'
@@ -2295,6 +2319,48 @@ export type Feature =
     /** Body IDs this feature acts on; omitted acts on the whole part. */
     scope?: string[] | null
   }
+  | {
+    type: 'trim_extend'
+    /** Member bodies to trim or extend. */
+    bodies: string[]
+    boundary: TrimBoundary
+    /** Lengthen members that stop short of the boundary. */
+    allow_extension?: boolean
+    /** Weld gap left at the boundary, mm. */
+    gap?: number
+    kind?: TrimKind
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'end_cap'
+    /** Square end faces of structural members. */
+    faces: Ref[]
+    /** mm. */
+    thickness: number
+    /** Chamfer or round the cap's corners. */
+    corners?: CornerBreak | null
+    direction?: CapDirection
+    offset?: CapOffset
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+  }
+  | {
+    type: 'weld_gusset'
+    /** Two planar faces meeting at an inside corner. */
+    faces: [Ref, Ref]
+    shape: GussetShape
+    /** mm. */
+    thickness: number
+    /** Corner cut off where the faces meet, for the weld, mm. */
+    chamfer?: number
+    location?: GussetLocation
+    /** Along the shared edge from the location, mm. */
+    offset?: number
+    /** Body IDs this feature acts on; omitted acts on the whole part. */
+    scope?: string[] | null
+    side?: GussetSide
+  }
 
 export type FinishProcess = 'any' | 'removal' | 'no_removal'
 
@@ -2408,6 +2474,27 @@ export type GtolRow = {
   diameter?: boolean
   modifiers?: Modifier[]
 }
+
+/** Where along the faces' shared edge a gusset goes. */
+export type GussetLocation = 'start' | 'middle' | 'end'
+
+/** A gusset's outline in its plane. */
+export type GussetShape =
+  | {
+    type: 'triangle'
+    d1: number
+    d2: number
+  }
+  | {
+    type: 'polygon'
+    d1: number
+    d2: number
+    d3: number
+    d4: number
+  }
+
+/** Where a gusset's thickness lies from its location. */
+export type GussetSide = 'both' | 'inner' | 'outer'
 
 /** Kinds of standard hardware. */
 export type HardwareKind =
@@ -3520,6 +3607,22 @@ export type TravelConstraint =
     percent: number
     flip?: boolean
   }
+
+/** What members are trimmed to. */
+export type TrimBoundary =
+  | {
+    type: 'faces'
+    faces: Ref[]
+  }
+  | {
+    type: 'bodies'
+    bodies: string[]
+    /** Cope to the bodies' shape instead of a plane at their face. */
+    coped?: boolean
+  }
+
+/** How trimmed members end. */
+export type TrimKind = 'end_trim' | 'end_miter' | 'end_butt1' | 'end_butt2'
 
 /** What a view shows. */
 export type ViewKind =

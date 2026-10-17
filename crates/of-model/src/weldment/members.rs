@@ -101,6 +101,15 @@ pub struct MemberRecord {
     pub length: f64,
     /// Each end's cut, radians off square.
     pub angles: [f64; 2],
+    /// The sketch segment the member follows, start to end.
+    pub axis: [[f64; 3]; 2],
+    /// The profile's frame: x across, y up, z along the axis.
+    pub frame: [[f64; 3]; 3],
+    /// The placed section's outside and largest hole, in that frame, mm.
+    pub outline: Vec<[f64; 2]>,
+    pub hole: Vec<[f64; 2]>,
+    /// Wall or flange thickness, mm.
+    pub wall: f64,
 }
 
 /// A segment in model space and the direction profiles stand up from.
@@ -218,20 +227,70 @@ fn placed(section: &Section, p: &StructuralMember) -> Section {
 }
 
 /// How far a section reaches from its axis along a model direction.
-fn reach(points: &[DVec2], x: DVec3, y: DVec3, dir: DVec3) -> f64 {
+pub(crate) fn reach(points: &[DVec2], x: DVec3, y: DVec3, dir: DVec3) -> f64 {
     points
         .iter()
         .map(|q| (x * q.x + y * q.y).dot(dir))
         .fold(f64::MIN, f64::max)
 }
 
-fn half_space(point: DVec3, keep: DVec3) -> Result<Shape, String> {
+/// One member at a corner: its section points in its frame, and its
+/// direction away from the corner.
+pub(crate) struct Side<'a> {
+    pub points: &'a [DVec2],
+    pub x: DVec3,
+    pub y: DVec3,
+    pub away: DVec3,
+}
+
+/// A cutting plane: a point on it and the normal of the side kept.
+pub(crate) type Cut = (DVec3, DVec3);
+
+/// The planes cutting two members meeting at `corner`.
+pub(crate) fn corner_cuts(
+    kind: CornerTreatment,
+    corner: DVec3,
+    gap: f64,
+    i: Side,
+    j: Side,
+) -> Result<(Cut, Cut), String> {
+    let (u, v) = (i.away, j.away);
+    if u.dot(v) > 1.0 - 1e-9 {
+        return Err("two members fold back onto each other".into());
+    }
+    Ok(match kind {
+        CornerTreatment::EndMiter => {
+            let n = (u - v).normalize();
+            (
+                (corner + n * (gap / 2.0), n),
+                (corner - n * (gap / 2.0), -n),
+            )
+        }
+        CornerTreatment::EndButt1 | CornerTreatment::EndButt2 => {
+            // `through` runs past the corner to cover the other.
+            let first = kind == CornerTreatment::EndButt1;
+            let (through, stops) = if first { (&i, &j) } else { (&j, &i) };
+            let (ut, us) = (through.away, stops.away);
+            let side = (us - ut * ut.dot(us)).normalize_or_zero();
+            if side == DVec3::ZERO {
+                return Err("butted members can't run straight on".into());
+            }
+            let face_at = reach(through.points, through.x, through.y, side);
+            let cover = reach(stops.points, stops.x, stops.y, -ut);
+            let stop = (corner + side * (face_at + gap), side);
+            let run = (corner - ut * cover, ut);
+            if first { (run, stop) } else { (stop, run) }
+        }
+    })
+}
+
+pub(crate) fn half_space(point: DVec3, keep: DVec3) -> Result<Shape, String> {
     let plane = Plane::new(point, keep.any_orthonormal_vector(), keep);
     Shape::half_space(&Shape::plane_face(&plane).map_err(|e| e.0)?, point + keep).map_err(|e| e.0)
 }
 
 /// A segment's place in its feature, end angles and length.
-type Part = (usize, usize, [f64; 2], f64);
+type Part = (usize, usize, [f64; 2], f64, [[f64; 3]; 2], [[f64; 3]; 3]);
 
 /// One member body before its corners are cut.
 struct Raw {
@@ -256,6 +315,7 @@ pub(crate) fn structural_member(
     }
     let section = placed(&super::section(&p.profile)?, p);
     let points = profiles::outline_points(&section);
+    let hole = profiles::largest_hole_points(&section);
     let reach_out = section.size.length() * 2.0 + 1.0;
     let mut raws: Vec<Raw> = Vec::new();
     for (g, group) in p.groups.iter().enumerate() {
@@ -327,49 +387,30 @@ pub(crate) fn structural_member(
                 } else {
                     -raws[j].axes.2
                 };
-                if u.dot(v) > 1.0 - 1e-9 {
-                    return Err("two members of a group fold back onto each other".into());
-                }
-                let (cut_i, cut_j) = match group.corner {
-                    CornerTreatment::EndMiter => {
-                        let n = (u - v).normalize();
-                        (
-                            (corner + n * (group.gap / 2.0), n),
-                            (corner - n * (group.gap / 2.0), -n),
-                        )
-                    }
-                    CornerTreatment::EndButt1 | CornerTreatment::EndButt2 => {
-                        // `through` runs past the corner to cover the other.
-                        let (through, stops, ut, us) = if group.corner == CornerTreatment::EndButt1
-                        {
-                            (i, j, u, v)
-                        } else {
-                            (j, i, v, u)
-                        };
-                        let side = (us - ut * ut.dot(us)).normalize_or_zero();
-                        if side == DVec3::ZERO {
-                            return Err("butted members can't run straight on".into());
-                        }
-                        let (tx, ty, _) = raws[through].axes;
-                        let (sx, sy, _) = raws[stops].axes;
-                        let face_at = reach(&raws[through].points, tx, ty, side);
-                        let cover = reach(&raws[stops].points, sx, sy, -ut);
-                        let stop = (corner + side * (face_at + group.gap), side);
-                        let run = (corner - ut * cover, ut);
-                        if through == i {
-                            (run, stop)
-                        } else {
-                            (stop, run)
-                        }
-                    }
-                };
+                let (cut_i, cut_j) = corner_cuts(
+                    group.corner,
+                    corner,
+                    group.gap,
+                    Side {
+                        points: &raws[i].points,
+                        x: raws[i].axes.0,
+                        y: raws[i].axes.1,
+                        away: u,
+                    },
+                    Side {
+                        points: &raws[j].points,
+                        x: raws[j].axes.0,
+                        y: raws[j].axes.1,
+                        away: v,
+                    },
+                )?;
                 raws[i].ends[ei] = Some(cut_i);
                 raws[j].ends[ej] = Some(cut_j);
             }
         }
     }
     // Free ends are cut square at the segment's ends.
-    let mut bodies: Vec<(usize, usize, Body, [f64; 2], f64)> = Vec::new();
+    let mut bodies: Vec<(usize, usize, Body, Part)> = Vec::new();
     for raw in &mut raws {
         let z = raw.axes.2;
         let defaults = [(raw.seg.a, z), (raw.seg.b, -z)];
@@ -407,11 +448,24 @@ pub(crate) fn structural_member(
             along.iter().copied().fold(f64::MIN, f64::max)
                 - along.iter().copied().fold(f64::MAX, f64::min)
         };
-        bodies.push((raw.group, raw.index, body, angles, length));
+        let (x, y, z) = raw.axes;
+        bodies.push((
+            raw.group,
+            raw.index,
+            body,
+            (
+                raw.group,
+                raw.index,
+                angles,
+                length,
+                [raw.seg.a.to_array(), raw.seg.b.to_array()],
+                [x.to_array(), y.to_array(), z.to_array()],
+            ),
+        ));
     }
     // Mitered groups may become one body each.
     let mut merged: Vec<(String, Body, Vec<Part>)> = Vec::new();
-    for (g, i, body, angles, length) in bodies {
+    for (g, i, body, part) in bodies {
         let join = p.merge_miter_trimmed && p.groups[g].corner == CornerTreatment::EndMiter;
         let key = if join {
             format!("g{g}")
@@ -436,14 +490,14 @@ pub(crate) fn structural_member(
                     ),
                     shape: r.shape,
                 };
-                m.2.push((g, i, angles, length));
+                m.2.push(part);
             }
-            None => merged.push((key, body, vec![(g, i, angles, length)])),
+            None => merged.push((key, body, vec![part])),
         }
     }
     for (key, body, parts) in merged {
         let id = BodyId(format!("b{fid}:{key}"));
-        for (g, i, angles, length) in parts {
+        for (g, i, angles, length, axis, frame) in parts {
             state.members.push(MemberRecord {
                 feature: fid,
                 body: id.clone(),
@@ -452,6 +506,11 @@ pub(crate) fn structural_member(
                 profile: p.profile.clone(),
                 length,
                 angles,
+                axis,
+                frame,
+                outline: points.iter().map(|q| q.to_array()).collect(),
+                hole: hole.iter().map(|q| q.to_array()).collect(),
+                wall: section.wall,
             });
         }
         state.bodies.push(SolidBody { id, geometry: body });

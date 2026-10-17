@@ -249,3 +249,285 @@ fn members_follow_3d_sketch_lines_with_any_pierce_point() {
     close(b.max.z - b.min.z, 800.0, 1e-6);
     assert!(b.min.x.abs() < 1e-6 || b.max.x.abs() < 1e-6, "{b:?}");
 }
+
+/// A sketch of lines on the front plane; returns it and its line refs.
+fn lines(doc: &mut Document, segs: &[([f64; 2], [f64; 2])]) -> Vec<Ref> {
+    let mut sk = Sketch::new();
+    let ids: Vec<_> = segs
+        .iter()
+        .map(|(a, b)| sk.add_line_at(DVec2::from(*a), DVec2::from(*b)).0)
+        .collect();
+    let s = doc.add(FeatureKind::Sketch(SketchFeature {
+        plane: Ref::FrontPlane,
+        sketch: sk,
+    }));
+    ids.into_iter()
+        .map(|entity| Ref::SketchEntity { sketch: s, entity })
+        .collect()
+}
+
+fn along(profile: ProfileSource, segments: Vec<Ref>) -> FeatureKind {
+    let mut p = member(segments, CornerTreatment::EndMiter);
+    p.profile = profile;
+    FeatureKind::StructuralMember(p)
+}
+
+fn rhs() -> ProfileSource {
+    ProfileSource::Standard {
+        family: Family::Rhs,
+        size: "RHS 60x40x3".into(),
+    }
+}
+
+fn record(m: &Model, body: &BodyId) -> MemberRecord {
+    m.state()
+        .members
+        .iter()
+        .find(|r| r.body == *body)
+        .unwrap()
+        .clone()
+}
+
+fn body_volume(m: &Model, id: &BodyId) -> f64 {
+    m.state()
+        .solid(id)
+        .unwrap()
+        .geometry
+        .shape
+        .mass_props()
+        .unwrap()
+        .volume
+}
+
+#[test]
+fn cross_member_trimmed_to_the_frame() {
+    let (mut doc, _, frame) = rectangle_frame(1200.0, 600.0);
+    let f1 = doc.add(FeatureKind::StructuralMember(member(
+        frame,
+        CornerTreatment::EndMiter,
+    )));
+    let cross = lines(&mut doc, &[([0.0, 300.0], [1200.0, 300.0])]);
+    let f2 = doc.add(along(rhs(), cross));
+    let id = |f: FeatureId, k: &str| BodyId(format!("b{f}:{k}"));
+    doc.add(FeatureKind::TrimExtend(TrimExtend {
+        bodies: vec![id(f2, "g0.0")],
+        boundary: TrimBoundary::Bodies {
+            bodies: vec![id(f1, "g0.3"), id(f1, "g0.1")],
+            coped: false,
+        },
+        kind: TrimKind::EndTrim,
+        allow_extension: true,
+        gap: 0.0,
+    }));
+    let m = Model::new(doc);
+    ok(&m);
+    // Between the side members' inner faces at x = 20 and 1180.
+    let r = record(&m, &id(f2, "g0.0"));
+    close(r.length, 1160.0, 1e-6);
+    assert_eq!(r.angles, [0.0, 0.0]);
+    let area = profiles::properties(&profiles::section(Family::Rhs, "RHS 60x40x3").unwrap()).0;
+    close_rel(body_volume(&m, &id(f2, "g0.0")), area * 1160.0);
+}
+
+#[test]
+fn members_extend_to_a_plane_with_a_gap() {
+    for (allow, length) in [(true, 498.0), (false, 300.0)] {
+        let mut doc = Document::new();
+        doc.add(FeatureKind::Weldment(WeldmentDef::default()));
+        let segs = lines(&mut doc, &[([0.0, 0.0], [0.0, 300.0])]);
+        let f = doc.add(along(shs(), segs));
+        let plane = doc.add(FeatureKind::Plane(PlaneDef::Offset {
+            reference: Ref::TopPlane,
+            distance: 500.0,
+            flip: false,
+        }));
+        doc.add(FeatureKind::TrimExtend(TrimExtend {
+            bodies: vec![BodyId(format!("b{f}:g0.0"))],
+            boundary: TrimBoundary::Faces {
+                faces: vec![Ref::Feature { id: plane }],
+            },
+            kind: TrimKind::EndTrim,
+            allow_extension: allow,
+            gap: 2.0,
+        }));
+        let m = Model::new(doc);
+        ok(&m);
+        let r = record(&m, &BodyId(format!("b{f}:g0.0")));
+        close(r.length, length, 1e-6);
+        close_rel(volume(&m), shs_area() * length);
+    }
+}
+
+#[test]
+fn round_tube_coped_onto_a_post() {
+    let chs = |size: &str| ProfileSource::Standard {
+        family: Family::Chs,
+        size: size.into(),
+    };
+    let mut doc = Document::new();
+    doc.add(FeatureKind::Weldment(WeldmentDef::default()));
+    let post = lines(&mut doc, &[([0.0, 0.0], [0.0, 400.0])]);
+    let fp = doc.add(along(chs("CHS 88.9x5"), post));
+    let branch = lines(&mut doc, &[([300.0, 200.0], [0.0, 200.0])]);
+    let fb = doc.add(along(chs("CHS 48.3x3"), branch));
+    let branch_id = BodyId(format!("b{fb}:g0.0"));
+    let before = {
+        let m = Model::new(doc.clone());
+        ok(&m);
+        body_volume(&m, &branch_id)
+    };
+    doc.add(FeatureKind::TrimExtend(TrimExtend {
+        bodies: vec![branch_id.clone()],
+        boundary: TrimBoundary::Bodies {
+            bodies: vec![BodyId(format!("b{fp}:g0.0"))],
+            coped: true,
+        },
+        kind: TrimKind::EndTrim,
+        allow_extension: true,
+        gap: 0.0,
+    }));
+    let m = Model::new(doc);
+    ok(&m);
+    let after = body_volume(&m, &branch_id);
+    // The branch now stops at the post's surface: between its outside
+    // (44.45 from the axis) and its axis.
+    let area = profiles::properties(&profiles::section(Family::Chs, "CHS 48.3x3").unwrap()).0;
+    assert!(after < before - area * 40.0 && after > area * (300.0 - 44.45 - 1.0));
+    assert_eq!(m.state().bodies.len(), 2);
+}
+
+#[test]
+fn two_members_mitered_by_trim() {
+    let mut doc = Document::new();
+    doc.add(FeatureKind::Weldment(WeldmentDef::default()));
+    let a = lines(&mut doc, &[([0.0, 0.0], [1000.0, 0.0])]);
+    let fa = doc.add(along(shs(), a));
+    let b = lines(&mut doc, &[([0.0, 0.0], [0.0, 500.0])]);
+    let fb = doc.add(along(shs(), b));
+    let (ia, ib) = (BodyId(format!("b{fa}:g0.0")), BodyId(format!("b{fb}:g0.0")));
+    doc.add(FeatureKind::TrimExtend(TrimExtend {
+        bodies: vec![ia.clone()],
+        boundary: TrimBoundary::Bodies {
+            bodies: vec![ib.clone()],
+            coped: false,
+        },
+        kind: TrimKind::EndMiter,
+        allow_extension: true,
+        gap: 0.0,
+    }));
+    let m = Model::new(doc);
+    ok(&m);
+    close(record(&m, &ia).length, 1020.0, 1e-6);
+    close(record(&m, &ib).length, 520.0, 1e-6);
+    close(record(&m, &ia).angles[0], std::f64::consts::FRAC_PI_4, 1e-9);
+    close_rel(volume(&m), shs_area() * 1500.0);
+}
+
+/// The part's planar face with outward normal `n` whose centroid satisfies `f`.
+fn face(m: &Model, n: of_model::geom::DVec3, f: impl Fn(of_model::geom::DVec3) -> bool) -> Ref {
+    let shape = &m.state().body.as_ref().unwrap().shape;
+    let i = (0..shape.count(of_model::geom::Kind::Face))
+        .find(|i| {
+            let info = shape.face_info(*i).unwrap();
+            info.kind == of_model::geom::SurfaceKind::Plane
+                && info.normal.dot(n) > 1.0 - 1e-9
+                && f(info.centroid)
+        })
+        .expect("face");
+    m.state().ref_for(of_model::geom::Kind::Face, i).unwrap()
+}
+
+#[test]
+fn end_caps_outward_and_inward() {
+    use of_model::geom::DVec3;
+    let hea = ProfileSource::Standard {
+        family: Family::Hea,
+        size: "HEA 100".into(),
+    };
+    for (profile, direction, offset, corners, area) in [
+        // A full 100 × 96 plate on the beam's end, then with chamfered corners.
+        (
+            hea.clone(),
+            CapDirection::Outward,
+            CapOffset::Distance { distance: 0.0 },
+            None,
+            9600.0,
+        ),
+        (
+            hea,
+            CapDirection::Outward,
+            CapOffset::Distance { distance: 0.0 },
+            Some(of_model::sheet_metal::CornerBreak::Chamfer { distance: 5.0 }),
+            9600.0 - 4.0 * 12.5,
+        ),
+        // A plug in the square tube's 34 × 34 opening with its R3 corners.
+        (
+            shs(),
+            CapDirection::Inward,
+            CapOffset::Distance { distance: 0.0 },
+            None,
+            34.0 * 34.0 - (4.0 - std::f64::consts::PI) * 9.0,
+        ),
+    ] {
+        let mut doc = Document::new();
+        doc.add(FeatureKind::Weldment(WeldmentDef::default()));
+        let segs = lines(&mut doc, &[([0.0, 0.0], [0.0, 300.0])]);
+        doc.add(along(profile, segs));
+        let mut m = Model::new(doc);
+        ok(&m);
+        let before = volume(&m);
+        let end = face(&m, DVec3::Y, |c| (c.y - 300.0).abs() < 1e-6);
+        m.doc.add(FeatureKind::EndCap(EndCap {
+            faces: vec![end],
+            direction,
+            thickness: 5.0,
+            offset,
+            corners,
+        }));
+        m.rebuild();
+        ok(&m);
+        assert_eq!(m.state().bodies.len(), 2);
+        // Arcs are sampled every 0.5° in the cap outline.
+        let added = volume(&m) - before;
+        assert!(
+            (added - 5.0 * area).abs() < 2e-3 * 5.0 * area,
+            "{added} vs {}",
+            5.0 * area
+        );
+    }
+}
+
+#[test]
+fn gusset_in_the_corner_of_a_post_and_beam() {
+    use of_model::geom::DVec3;
+    for (chamfer, area) in [(0.0, 5000.0), (10.0, 5000.0 - 50.0)] {
+        let mut doc = Document::new();
+        doc.add(FeatureKind::Weldment(WeldmentDef::default()));
+        let post = lines(&mut doc, &[([0.0, 0.0], [0.0, 500.0])]);
+        doc.add(along(shs(), post));
+        let beam = lines(&mut doc, &[([0.0, 500.0], [500.0, 500.0])]);
+        doc.add(along(shs(), beam));
+        let mut m = Model::new(doc);
+        ok(&m);
+        let before = volume(&m);
+        // The post's right side and the beam's underside.
+        let side = face(&m, DVec3::X, |c| (c.x - 20.0).abs() < 1e-6 && c.y < 400.0);
+        let under = face(&m, -DVec3::Y, |c| (c.y - 480.0).abs() < 1e-6 && c.x > 100.0);
+        m.doc.add(FeatureKind::WeldGusset(WeldGusset {
+            faces: [side, under],
+            shape: GussetShape::Triangle {
+                d1: 100.0,
+                d2: 100.0,
+            },
+            chamfer,
+            thickness: 10.0,
+            side: GussetSide::Both,
+            location: GussetLocation::Middle,
+            offset: 0.0,
+        }));
+        m.rebuild();
+        ok(&m);
+        assert_eq!(m.state().bodies.len(), 3);
+        close(volume(&m) - before, area * 10.0, 1e-6);
+    }
+}

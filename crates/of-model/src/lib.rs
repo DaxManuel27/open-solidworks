@@ -253,6 +253,12 @@ pub enum FeatureKind {
     Weldment(weldment::WeldmentDef),
     /// A profile swept along sketch segments, one body per segment.
     StructuralMember(weldment::StructuralMember),
+    /// Members cut back or lengthened to faces, planes or other bodies.
+    TrimExtend(weldment::TrimExtend),
+    /// Plates closing members' ends.
+    EndCap(weldment::EndCap),
+    /// A plate in the corner between two members.
+    WeldGusset(weldment::WeldGusset),
 }
 
 impl FeatureKind {
@@ -326,6 +332,9 @@ impl FeatureKind {
             FeatureKind::FormingTool(_) => "Forming Tool",
             FeatureKind::Weldment(_) => "Weldment",
             FeatureKind::StructuralMember(_) => "Structural Member",
+            FeatureKind::TrimExtend(_) => "Trim/Extend",
+            FeatureKind::EndCap(_) => "End Cap",
+            FeatureKind::WeldGusset(_) => "Gusset",
         }
     }
 
@@ -470,6 +479,17 @@ impl FeatureKind {
             FeatureKind::Weldment(_) => {}
             FeatureKind::StructuralMember(m) => {
                 refs.extend(m.groups.iter().flat_map(|g| &g.segments));
+            }
+            FeatureKind::EndCap(c) => refs.extend(&c.faces),
+            FeatureKind::WeldGusset(g) => refs.extend(&g.faces),
+            FeatureKind::TrimExtend(t) => {
+                out.extend(t.bodies.iter().filter_map(BodyId::creator));
+                match &t.boundary {
+                    weldment::TrimBoundary::Faces { faces } => refs.extend(faces),
+                    weldment::TrimBoundary::Bodies { bodies, .. } => {
+                        out.extend(bodies.iter().filter_map(BodyId::creator))
+                    }
+                }
             }
             FeatureKind::FormingTool(f) => {
                 refs.push(&f.stopping_face);

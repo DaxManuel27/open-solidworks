@@ -1,18 +1,24 @@
 //! Weldments: structural members cut from standard or custom profiles,
 //! their trims, end caps and gussets, weld beads and cut lists.
 
+pub mod details;
 pub mod members;
 pub mod profiles;
+pub mod trim;
 
 use of_geom::{Curve2, DVec2};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::FeatureId;
+pub use details::{
+    CapDirection, CapOffset, EndCap, GussetLocation, GussetShape, GussetSide, WeldGusset,
+};
 pub use members::{
     CornerTreatment, MemberGroup, MemberRecord, PiercePoint, ProfileMirror, StructuralMember,
 };
 pub use profiles::{Family, Section};
+pub use trim::{TrimBoundary, TrimExtend, TrimKind};
 
 /// Marks the part as a weldment: members and other weldment features make
 /// bodies of their own, and the part has a cut list.

@@ -558,6 +558,11 @@ fn build_kind(id: FeatureId, kind: &FeatureKind, prev: &State, state: &mut State
         FeatureKind::StructuralMember(p) => {
             return crate::weldment::members::structural_member(id, p, prev, state);
         }
+        FeatureKind::TrimExtend(p) => {
+            return crate::weldment::trim::trim_extend(id, p, prev, state);
+        }
+        FeatureKind::EndCap(p) => return crate::weldment::details::end_cap(id, p, prev, state),
+        FeatureKind::WeldGusset(p) => return crate::weldment::details::gusset(id, p, prev, state),
         FeatureKind::Weldment(_) => {
             if prev.weldment.is_some() {
                 return Err("a part has one Weldment feature".into());

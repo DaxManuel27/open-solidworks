@@ -514,6 +514,23 @@ pub fn outline_points(s: &Section) -> Vec<DVec2> {
     sample(&s.outer)
 }
 
+/// Points along a section's largest hole (none for solid sections).
+pub fn largest_hole_points(s: &Section) -> Vec<DVec2> {
+    s.holes
+        .iter()
+        .map(|h| sample(h))
+        .max_by(|a, b| loop_area(a).total_cmp(&loop_area(b)))
+        .unwrap_or_default()
+}
+
+fn loop_area(pts: &[DVec2]) -> f64 {
+    (0..pts.len())
+        .map(|i| pts[i].perp_dot(pts[(i + 1) % pts.len()]))
+        .sum::<f64>()
+        .abs()
+        / 2.0
+}
+
 /// Points along a loop, arcs every 0.5°.
 fn sample(curves: &[Curve2]) -> Vec<DVec2> {
     let mut out: Vec<DVec2> = Vec::new();
