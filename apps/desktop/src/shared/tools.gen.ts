@@ -5,12 +5,632 @@
 /** Direction sense for mates between oriented entities. */
 export type Alignment = 'aligned' | 'anti_aligned' | 'closest'
 
+/** Where an annotation is attached. */
+export type Anchor =
+  | {
+    type: 'sheet'
+    at: [number, number]
+  }
+  | {
+    type: 'model'
+    target: ViewRef
+    at: [number, number]
+  }
+
+export type AnnotationKind =
+  | {
+    type: 'note'
+    /** Where the text's bottom-left corner sits. */
+    at: [number, number]
+    text: string
+    /** Radians, counter-clockwise. */
+    angle?: number
+    border?: Border
+    height?: number | null
+    /** Leader jog (a horizontal shoulder at the text). */
+    jog?: boolean
+    leader?: Anchor | null
+  }
+  | {
+    type: 'dimension'
+    dim: 'linear'
+    /**
+     * Where the value text goes, sheet mm: relative to the annotation's
+     * view when it has one; for imported model dimensions, relative to the
+     * middle of what they measure (so they follow model changes). The
+     * dimension line passes through it.
+     */
+    at: [number, number]
+    a: Pick
+    arrows?: Arrows
+    b?: Pick | null
+    /** A second line of text under the value. */
+    below?: string
+    /** Also show the value in inches; the standard decides when unset. */
+    dual?: boolean | null
+    /** A radius whose center is off the sheet: jogged dimension line. */
+    foreshortened?: boolean
+    /** An inspection dimension: value in a rounded frame. */
+    inspection?: boolean
+    orientation?: Orient
+    /** A reference dimension: value in parentheses. */
+    parentheses?: boolean
+    /** Decimal places of the value; the standard's when unset. */
+    precision?: number | null
+    prefix?: string
+    suffix?: string
+    /** Replaces the value; `<DIM>` stands for it. */
+    text?: string | null
+    tolerance?: Tolerance
+    tolerance_precision?: number | null
+  }
+  | {
+    type: 'dimension'
+    dim: 'angular'
+    /**
+     * Where the value text goes, sheet mm: relative to the annotation's
+     * view when it has one; for imported model dimensions, relative to the
+     * middle of what they measure (so they follow model changes). The
+     * dimension line passes through it.
+     */
+    at: [number, number]
+    a: Pick
+    b: Pick
+    arrows?: Arrows
+    /** A second line of text under the value. */
+    below?: string
+    /** Also show the value in inches; the standard decides when unset. */
+    dual?: boolean | null
+    /** A radius whose center is off the sheet: jogged dimension line. */
+    foreshortened?: boolean
+    /** An inspection dimension: value in a rounded frame. */
+    inspection?: boolean
+    /** A reference dimension: value in parentheses. */
+    parentheses?: boolean
+    /** Decimal places of the value; the standard's when unset. */
+    precision?: number | null
+    prefix?: string
+    suffix?: string
+    /** Replaces the value; `<DIM>` stands for it. */
+    text?: string | null
+    tolerance?: Tolerance
+    tolerance_precision?: number | null
+  }
+  | {
+    type: 'dimension'
+    dim: 'radius'
+    /**
+     * Where the value text goes, sheet mm: relative to the annotation's
+     * view when it has one; for imported model dimensions, relative to the
+     * middle of what they measure (so they follow model changes). The
+     * dimension line passes through it.
+     */
+    at: [number, number]
+    target: Pick
+    arrows?: Arrows
+    /** A second line of text under the value. */
+    below?: string
+    /** Also show the value in inches; the standard decides when unset. */
+    dual?: boolean | null
+    /** A radius whose center is off the sheet: jogged dimension line. */
+    foreshortened?: boolean
+    /** An inspection dimension: value in a rounded frame. */
+    inspection?: boolean
+    /** A reference dimension: value in parentheses. */
+    parentheses?: boolean
+    /** Decimal places of the value; the standard's when unset. */
+    precision?: number | null
+    prefix?: string
+    suffix?: string
+    /** Replaces the value; `<DIM>` stands for it. */
+    text?: string | null
+    tolerance?: Tolerance
+    tolerance_precision?: number | null
+  }
+  | {
+    type: 'dimension'
+    dim: 'diameter'
+    /**
+     * Where the value text goes, sheet mm: relative to the annotation's
+     * view when it has one; for imported model dimensions, relative to the
+     * middle of what they measure (so they follow model changes). The
+     * dimension line passes through it.
+     */
+    at: [number, number]
+    target: Pick
+    arrows?: Arrows
+    /** A second line of text under the value. */
+    below?: string
+    /** Also show the value in inches; the standard decides when unset. */
+    dual?: boolean | null
+    /** A radius whose center is off the sheet: jogged dimension line. */
+    foreshortened?: boolean
+    /** An inspection dimension: value in a rounded frame. */
+    inspection?: boolean
+    /** A reference dimension: value in parentheses. */
+    parentheses?: boolean
+    /** Decimal places of the value; the standard's when unset. */
+    precision?: number | null
+    prefix?: string
+    suffix?: string
+    /** Replaces the value; `<DIM>` stands for it. */
+    text?: string | null
+    tolerance?: Tolerance
+    tolerance_precision?: number | null
+  }
+  | {
+    type: 'dimension'
+    dim: 'arc_length'
+    /**
+     * Where the value text goes, sheet mm: relative to the annotation's
+     * view when it has one; for imported model dimensions, relative to the
+     * middle of what they measure (so they follow model changes). The
+     * dimension line passes through it.
+     */
+    at: [number, number]
+    target: Pick
+    arrows?: Arrows
+    /** A second line of text under the value. */
+    below?: string
+    /** Also show the value in inches; the standard decides when unset. */
+    dual?: boolean | null
+    /** A radius whose center is off the sheet: jogged dimension line. */
+    foreshortened?: boolean
+    /** An inspection dimension: value in a rounded frame. */
+    inspection?: boolean
+    /** A reference dimension: value in parentheses. */
+    parentheses?: boolean
+    /** Decimal places of the value; the standard's when unset. */
+    precision?: number | null
+    prefix?: string
+    suffix?: string
+    /** Replaces the value; `<DIM>` stands for it. */
+    text?: string | null
+    tolerance?: Tolerance
+    tolerance_precision?: number | null
+  }
+  | {
+    type: 'dimension'
+    dim: 'chamfer'
+    /**
+     * Where the value text goes, sheet mm: relative to the annotation's
+     * view when it has one; for imported model dimensions, relative to the
+     * middle of what they measure (so they follow model changes). The
+     * dimension line passes through it.
+     */
+    at: [number, number]
+    edge: Pick
+    adjacent: Pick
+    arrows?: Arrows
+    /** A second line of text under the value. */
+    below?: string
+    /** Also show the value in inches; the standard decides when unset. */
+    dual?: boolean | null
+    /** A radius whose center is off the sheet: jogged dimension line. */
+    foreshortened?: boolean
+    /** An inspection dimension: value in a rounded frame. */
+    inspection?: boolean
+    /** A reference dimension: value in parentheses. */
+    parentheses?: boolean
+    /** Decimal places of the value; the standard's when unset. */
+    precision?: number | null
+    prefix?: string
+    suffix?: string
+    /** Replaces the value; `<DIM>` stands for it. */
+    text?: string | null
+    tolerance?: Tolerance
+    tolerance_precision?: number | null
+  }
+  | {
+    type: 'dimension'
+    dim: 'ordinate'
+    /**
+     * Where the value text goes, sheet mm: relative to the annotation's
+     * view when it has one; for imported model dimensions, relative to the
+     * middle of what they measure (so they follow model changes). The
+     * dimension line passes through it.
+     */
+    at: [number, number]
+    origin: Pick
+    points: Pick[]
+    arrows?: Arrows
+    /** A second line of text under the value. */
+    below?: string
+    /** Also show the value in inches; the standard decides when unset. */
+    dual?: boolean | null
+    /** A radius whose center is off the sheet: jogged dimension line. */
+    foreshortened?: boolean
+    /** An inspection dimension: value in a rounded frame. */
+    inspection?: boolean
+    /** A reference dimension: value in parentheses. */
+    parentheses?: boolean
+    /** Decimal places of the value; the standard's when unset. */
+    precision?: number | null
+    prefix?: string
+    suffix?: string
+    /** Replaces the value; `<DIM>` stands for it. */
+    text?: string | null
+    tolerance?: Tolerance
+    tolerance_precision?: number | null
+    vertical?: boolean
+  }
+  | {
+    type: 'dimension'
+    dim: 'baseline'
+    /**
+     * Where the value text goes, sheet mm: relative to the annotation's
+     * view when it has one; for imported model dimensions, relative to the
+     * middle of what they measure (so they follow model changes). The
+     * dimension line passes through it.
+     */
+    at: [number, number]
+    base: Pick
+    points: Pick[]
+    arrows?: Arrows
+    /** A second line of text under the value. */
+    below?: string
+    /** Also show the value in inches; the standard decides when unset. */
+    dual?: boolean | null
+    /** A radius whose center is off the sheet: jogged dimension line. */
+    foreshortened?: boolean
+    /** An inspection dimension: value in a rounded frame. */
+    inspection?: boolean
+    orientation?: Orient
+    /** A reference dimension: value in parentheses. */
+    parentheses?: boolean
+    /** Decimal places of the value; the standard's when unset. */
+    precision?: number | null
+    prefix?: string
+    spacing?: number
+    suffix?: string
+    /** Replaces the value; `<DIM>` stands for it. */
+    text?: string | null
+    tolerance?: Tolerance
+    tolerance_precision?: number | null
+  }
+  | {
+    type: 'dimension'
+    dim: 'chain'
+    /**
+     * Where the value text goes, sheet mm: relative to the annotation's
+     * view when it has one; for imported model dimensions, relative to the
+     * middle of what they measure (so they follow model changes). The
+     * dimension line passes through it.
+     */
+    at: [number, number]
+    points: Pick[]
+    arrows?: Arrows
+    /** A second line of text under the value. */
+    below?: string
+    /** Also show the value in inches; the standard decides when unset. */
+    dual?: boolean | null
+    /** A radius whose center is off the sheet: jogged dimension line. */
+    foreshortened?: boolean
+    /** An inspection dimension: value in a rounded frame. */
+    inspection?: boolean
+    orientation?: Orient
+    /** A reference dimension: value in parentheses. */
+    parentheses?: boolean
+    /** Decimal places of the value; the standard's when unset. */
+    precision?: number | null
+    prefix?: string
+    suffix?: string
+    /** Replaces the value; `<DIM>` stands for it. */
+    text?: string | null
+    tolerance?: Tolerance
+    tolerance_precision?: number | null
+  }
+  | {
+    type: 'dimension'
+    dim: 'angular_running'
+    /**
+     * Where the value text goes, sheet mm: relative to the annotation's
+     * view when it has one; for imported model dimensions, relative to the
+     * middle of what they measure (so they follow model changes). The
+     * dimension line passes through it.
+     */
+    at: [number, number]
+    base: Pick
+    lines: Pick[]
+    arrows?: Arrows
+    /** A second line of text under the value. */
+    below?: string
+    /** Also show the value in inches; the standard decides when unset. */
+    dual?: boolean | null
+    /** A radius whose center is off the sheet: jogged dimension line. */
+    foreshortened?: boolean
+    /** An inspection dimension: value in a rounded frame. */
+    inspection?: boolean
+    /** A reference dimension: value in parentheses. */
+    parentheses?: boolean
+    /** Decimal places of the value; the standard's when unset. */
+    precision?: number | null
+    prefix?: string
+    suffix?: string
+    /** Replaces the value; `<DIM>` stands for it. */
+    text?: string | null
+    tolerance?: Tolerance
+    tolerance_precision?: number | null
+  }
+  | {
+    type: 'dimension'
+    dim: 'model'
+    /**
+     * Where the value text goes, sheet mm: relative to the annotation's
+     * view when it has one; for imported model dimensions, relative to the
+     * middle of what they measure (so they follow model changes). The
+     * dimension line passes through it.
+     */
+    at: [number, number]
+    view: number
+    key: string
+    arrows?: Arrows
+    /** A second line of text under the value. */
+    below?: string
+    /** Also show the value in inches; the standard decides when unset. */
+    dual?: boolean | null
+    /** A radius whose center is off the sheet: jogged dimension line. */
+    foreshortened?: boolean
+    /** An inspection dimension: value in a rounded frame. */
+    inspection?: boolean
+    /** A reference dimension: value in parentheses. */
+    parentheses?: boolean
+    /** Decimal places of the value; the standard's when unset. */
+    precision?: number | null
+    prefix?: string
+    suffix?: string
+    /** Replaces the value; `<DIM>` stands for it. */
+    text?: string | null
+    tolerance?: Tolerance
+    tolerance_precision?: number | null
+  }
+  | {
+    type: 'balloon'
+    at: [number, number]
+    leader: Anchor
+    content: BalloonText
+    /** Second line of a split circle (quantity by default). */
+    lower?: BalloonText | null
+    shape?: BalloonShape
+    /** Diameter (or side), mm; default from the standard. */
+    size?: number | null
+    /** Further balloons stacked beside this one, one leader for all. */
+    stacked?: BalloonText[]
+    /**
+     * BOM table the item numbers come from; the first on the sheet when
+     * unset.
+     */
+    table?: number | null
+  }
+  | {
+    type: 'hole_callout'
+    at: [number, number]
+    /** A circular edge of the hole. */
+    target: ViewRef
+    /** Replaces the generated text. */
+    text?: string | null
+  }
+  | {
+    type: 'center_mark'
+    targets: ViewRef[]
+    /** Extend the lines past the circle. */
+    extended?: boolean
+    pattern?: MarkPattern
+    /** Mark size, mm of paper; default from the standard. */
+    size?: number | null
+  }
+  | {
+    type: 'centerline'
+    a: ViewRef
+    b?: ViewRef | null
+    /** Overshoot past the geometry, mm of paper. */
+    extend?: number
+  }
+  | {
+    type: 'surface_finish'
+    at: [number, number]
+    /** The same requirement all around the part outline. */
+    all_around?: boolean
+    angle?: number
+    /** Lay symbol: `=`, `⊥`, `X`, `M`, `C`, `R`, `P`. */
+    lay?: string
+    leader?: Anchor | null
+    /** Production method (above the long leg). */
+    method?: string
+    process?: FinishProcess
+    /** Roughness requirement text, e.g. `Ra 1.6`. */
+    roughness?: string
+  }
+  | {
+    type: 'datum_feature'
+    at: [number, number]
+    label: string
+    target: Anchor
+  }
+  | {
+    type: 'datum_target'
+    at: [number, number]
+    label: string
+    target: Anchor
+    /** Point (X), line or area target drawn at the anchor. */
+    kind?: TargetKind
+    size?: string
+  }
+  | {
+    type: 'gtol'
+    at: [number, number]
+    rows: GtolRow[]
+    /** Text above the frame, e.g. `6X`. */
+    above?: string
+    leader?: Anchor | null
+  }
+  | {
+    type: 'weld'
+    at: [number, number]
+    leader: Anchor
+    all_around?: boolean
+    arrow?: WeldSide | null
+    field?: boolean
+    other?: WeldSide | null
+    /** Tail text (process, specification). */
+    tail?: string
+  }
+  | {
+    type: 'area_hatch'
+    boundary: ([number, number])[]
+    angle?: number
+    pattern?: Pattern
+    scale?: number
+  }
+  | {
+    type: 'revision_cloud'
+    shape: CloudShape
+    /** Arc size, mm of paper. */
+    arc?: number
+    /** Revision letter shown in a triangle beside it. */
+    revision?: string | null
+  }
+  | {
+    type: 'revision_symbol'
+    at: [number, number]
+    revision: string
+    leader?: Anchor | null
+  }
+  | {
+    type: 'table'
+    table: 'bom'
+    /** Sheet position of the `anchor` corner, mm. */
+    at: [number, number]
+    view: number
+    anchor?: Corner
+    bom?: BomType
+    columns?: Column[]
+    continued?: Piece[]
+    increment?: number
+    /** Rows per piece; the rest continue at `continued`. */
+    max_rows?: number | null
+    numbering?: Numbering
+    start?: number
+    /** Capital height of cell text; the standard's when unset. */
+    text_height?: number | null
+  }
+  | {
+    type: 'table'
+    table: 'hole'
+    /** Sheet position of the `anchor` corner, mm. */
+    at: [number, number]
+    origin: Pick
+    holes: ViewRef[]
+    anchor?: Corner
+    /** Combine holes of the same size into one row each. */
+    combine?: boolean
+    continued?: Piece[]
+    /** Rows per piece; the rest continue at `continued`. */
+    max_rows?: number | null
+    /** Draw each hole's tag beside it. */
+    show_tags?: boolean
+    tags?: Tags
+    /** Capital height of cell text; the standard's when unset. */
+    text_height?: number | null
+  }
+  | {
+    type: 'table'
+    table: 'revision'
+    /** Sheet position of the `anchor` corner, mm. */
+    at: [number, number]
+    rows: RevisionRow[]
+    anchor?: Corner
+    continued?: Piece[]
+    /** Rows per piece; the rest continue at `continued`. */
+    max_rows?: number | null
+    /** Number revisions 1, 2, 3 instead of A, B, C. */
+    numeric?: boolean
+    /** Capital height of cell text; the standard's when unset. */
+    text_height?: number | null
+  }
+  | {
+    type: 'table'
+    table: 'general'
+    /** Sheet position of the `anchor` corner, mm. */
+    at: [number, number]
+    cells: string[][]
+    anchor?: Corner
+    continued?: Piece[]
+    /** The first row is a header. */
+    header?: boolean
+    /** Rows per piece; the rest continue at `continued`. */
+    max_rows?: number | null
+    /** Capital height of cell text; the standard's when unset. */
+    text_height?: number | null
+  }
+  | {
+    type: 'table'
+    table: 'general_tolerance'
+    /** Sheet position of the `anchor` corner, mm. */
+    at: [number, number]
+    class: ToleranceClass
+    anchor?: Corner
+    continued?: Piece[]
+    /** Rows per piece; the rest continue at `continued`. */
+    max_rows?: number | null
+    /** Capital height of cell text; the standard's when unset. */
+    text_height?: number | null
+  }
+
+export type Arrows = 'auto' | 'inside' | 'outside'
+
 export type Axis3 = 'x' | 'y' | 'z'
+
+export type BalloonLayout = 'circular' | 'top' | 'bottom' | 'left' | 'right' | 'square'
+
+export type BalloonShape =
+  | 'circle' | 'triangle' | 'hexagon' | 'box' | 'diamond' | 'flag'
+  | 'split_circle'
+  | 'none'
+
+/** What a balloon shows. */
+export type BalloonText =
+  | {
+    type: 'item'
+    component: string[]
+  }
+  | {
+    type: 'quantity'
+    component: string[]
+  }
+  | {
+    type: 'property'
+    component: string[]
+    name: string
+  }
+  | {
+    type: 'text'
+    text: string
+  }
 
 export type BomType = 'top_level' | 'parts_only' | 'indented'
 
 /** Boolean operations. */
 export type BoolOp = 'fuse' | 'cut' | 'common'
+
+export type Border = 'none' | 'box' | 'circle'
+
+/**
+ * One gap of a break view, along the view's x (vertical break lines) or
+ * y axis (horizontal), in view-plane mm relative to the model origin.
+ */
+export type Break = {
+  vertical: boolean
+  from: number
+  to: number
+}
+
+export type BreakStyle = 'straight' | 'curved' | 'zig_zag' | 'small_zig_zag' | 'jagged'
+
+export type BrokenOut = {
+  profile: Profile
+  depth: number
+}
 
 export type ChamferMode =
   | {
@@ -38,10 +658,58 @@ export type Changed = {
   change: Change
 }
 
+/** Geometric characteristics. */
+export type Characteristic = 'straightness' | 'flatness' | 'circularity' | 'cylindricity' | 'line_profile' | 'surface_profile' | 'angularity' | 'perpendicularity' | 'parallelism' | 'position' | 'concentricity' | 'symmetry' | 'circular_runout' | 'total_runout'
+
+export type CloudShape =
+  | {
+    type: 'rectangle'
+    a: [number, number]
+    b: [number, number]
+  }
+  | {
+    type: 'ellipse'
+    center: [number, number]
+    rx: number
+    ry: number
+  }
+  | {
+    type: 'polygon'
+    points: ([number, number])[]
+  }
+  | {
+    type: 'freehand'
+    points: ([number, number])[]
+  }
+
 export type Collision = {
   /** Check only the dragged component. */
   dragged_only?: boolean
 }
+
+export type Column =
+  | {
+    type: 'item'
+  }
+  | {
+    type: 'part_number'
+  }
+  | {
+    type: 'description'
+  }
+  | {
+    type: 'quantity'
+  }
+  | {
+    type: 'material'
+  }
+  | {
+    type: 'mass'
+  }
+  | {
+    type: 'property'
+    name: string
+  }
 
 /**
  * A reference to geometry in the assembly: a component path (empty for the
@@ -316,6 +984,8 @@ export type ConstraintKind =
     value: number
   }
 
+export type Contour = 'none' | 'flat' | 'convex' | 'concave'
+
 /** An explicit complete closed contour. The first traversed entity is its seam. */
 export type ContourSelection = {
   sketch: number
@@ -332,6 +1002,9 @@ export type ContourSelection = {
   start?: number | null
 }
 
+/** Which corner of the table `at` names. */
+export type Corner = 'top_left' | 'top_right' | 'bottom_left' | 'bottom_right'
+
 /** IDs created by the call, in the form the next call accepts. */
 export type Created = {
   /** New sketch entity and relation IDs, from `edit_sketch`. */
@@ -345,7 +1018,30 @@ export type CurveSelection = {
   reverse?: boolean
 }
 
+/**
+ * The cutting line of a section view, in the parent view's model plane:
+ * points are model coordinates projected into the parent (view-plane mm,
+ * relative to the model origin, unscaled). Two points make a straight cut;
+ * more make an offset (jogged) or aligned cut.
+ */
+export type CuttingLine = {
+  points: ([number, number])[]
+}
+
+export type DatumRef = {
+  label: string
+  modifier?: Modifier | null
+}
+
+export type DetailStyle = 'standard' | 'broken' | 'leader' | 'no_leader' | 'connected'
+
+/** Line display of a view. */
+export type DisplayStyle = 'hidden_removed' | 'hidden_visible' | 'wireframe' | 'shaded_edges' | 'shaded'
+
 export type DragPhase = 'start' | 'move' | 'end'
+
+/** DXF file version. */
+export type DxfVersion = 'r12' | 'r2018'
 
 /** How far an extrude goes in one direction. */
 export type EndCondition =
@@ -1061,6 +1757,21 @@ export type Feature =
     scope?: string[] | null
   }
 
+export type FinishProcess = 'any' | 'removal' | 'no_removal'
+
+export type FitDisplay = 'classes' | 'classes_with_tolerance' | 'tolerance_only'
+
+/** One row of a feature control frame. */
+export type GtolRow = {
+  characteristic: Characteristic
+  /** Tolerance value text, e.g. `0.05`. */
+  tolerance: string
+  datums?: DatumRef[]
+  /** Cylindrical zone: `⌀` before the value. */
+  diameter?: boolean
+  modifiers?: Modifier[]
+}
+
 /** Kinds of standard hardware. */
 export type HardwareKind =
   | 'socket_head_cap_screw'
@@ -1081,6 +1792,14 @@ export type HardwareSpec = {
   size: string
   /** Length under the head (screws) or overall (pins), mm. */
   length?: number | null
+}
+
+export type HatchOptions = {
+  /** Radians added to the pattern's own angle. */
+  angle?: number
+  /** `None` picks a pattern from each body's material. */
+  pattern?: Pattern | null
+  scale?: number
 }
 
 export type HelixInput = 'pitch_and_turns' | 'height_and_turns' | 'height_and_pitch'
@@ -1144,6 +1863,8 @@ export type LoftEnd =
     flip?: boolean
     tangent_length?: number
   }
+
+export type MarkPattern = 'single' | 'linear' | 'circular'
 
 /** The mate types: standard, advanced and mechanical. */
 export type MateKind =
@@ -1320,6 +2041,38 @@ export type MirrorItem = {
 
 export type MirrorPosition = 'center_of_mass' | 'bounding_box' | 'origin'
 
+/** Which model items to import. */
+export type ModelItems = {
+  /** Centerlines and center marks of cylinders. */
+  axes?: boolean
+  dimensions?: boolean
+  hole_callouts?: boolean
+  threads?: boolean
+}
+
+/** A model file shown in a view. */
+export type ModelSource = {
+  /**
+   * `.ofp` or `.ofa` file, relative to the drawing (forward slashes) or
+   * absolute while the drawing is unsaved.
+   */
+  path: string
+  /** Part or assembly configuration ID; `None` uses the file's active one. */
+  configuration?: number | null
+  /** Content hash of the file when it was last loaded. */
+  hash?: string | null
+}
+
+/** Material condition and other modifiers. */
+export type Modifier =
+  | 'mmc'
+  | 'lmc'
+  | 'projected'
+  | 'free_state'
+  | 'tangent_plane'
+  | 'rfs'
+  | 'unequal'
+
 /** How to move a component. */
 export type Motion =
   | {
@@ -1355,8 +2108,93 @@ export type Motion =
     point: [number, number, number]
   }
 
+export type Numbering = 'detailed' | 'flat' | 'none'
+
 /** A finite number that compares and hashes by value. */
 export type OrderedFloat = number
+
+/** Direction a linear dimension measures in. */
+export type Orient = 'horizontal' | 'vertical' | 'auto' | 'aligned'
+
+/** A view direction. */
+export type Orientation =
+  | {
+    type: 'front'
+  }
+  | {
+    type: 'back'
+  }
+  | {
+    type: 'left'
+  }
+  | {
+    type: 'right'
+  }
+  | {
+    type: 'top'
+  }
+  | {
+    type: 'bottom'
+  }
+  | {
+    type: 'isometric'
+  }
+  | {
+    type: 'dimetric'
+  }
+  | {
+    type: 'trimetric'
+  }
+  | {
+    type: 'custom'
+    toward: [number, number, number]
+    up: [number, number, number]
+  }
+  | {
+    type: 'relative'
+    front: CompRef
+    top: CompRef
+  }
+
+/**
+ * Values a document may change from its base standard. Lengths are mm of
+ * paper.
+ */
+export type Overrides = {
+  /** Decimal places of angles, degrees. */
+  angle_precision?: number | null
+  arrow_length?: number | null
+  /** Use a decimal comma. */
+  decimal_comma?: boolean | null
+  /** Show a second value in inches after every linear dimension. */
+  dual_units?: boolean | null
+  /** Gap between the part and an extension line, mm. */
+  extension_gap?: number | null
+  /** Extension line past the dimension line, mm. */
+  extension_overshoot?: number | null
+  label_height?: number | null
+  /** Decimal places of linear dimensions. */
+  precision?: number | null
+  text_height?: number | null
+  thick_line?: number | null
+  thin_line?: number | null
+  /** Tolerance text height as a fraction of the value's. */
+  tolerance_scale?: number | null
+  /** Show trailing zeros up to the precision. */
+  trailing_zeros?: boolean | null
+  /** Dimension text always horizontal (ANSI) instead of along the line (ISO). */
+  unidirectional?: boolean | null
+}
+
+/** A named hatch pattern from the library. */
+export type Pattern =
+  | 'general'
+  | 'steel'
+  | 'bronze'
+  | 'aluminium'
+  | 'plastic'
+  | 'insulation'
+  | 'solid'
 
 export type PatternDirection = {
   /** A straight edge, sketch line, axis, or plane/face (its normal). */
@@ -1404,6 +2242,29 @@ export type PatternKind =
     tangent?: boolean
   }
 
+/** Model geometry picked in a view. */
+export type Pick = {
+  view: number
+  entity: CompRef
+  /**
+   * Where the user picked, in view-plane mm (model mm relative to the
+   * model origin): with `point` auto, the edge's end, middle or center
+   * nearest this point is used.
+   */
+  near?: [number, number] | null
+  point?: Which
+}
+
+/** Where the rows past `max_rows` continue. */
+export type Piece = {
+  at: [number, number]
+  /** Sheet ID; the table's own sheet when unset. */
+  sheet?: number | null
+}
+
+/** Where a projected view sits relative to its parent on the sheet. */
+export type Placement = 'left' | 'right' | 'above' | 'below' | 'above_left' | 'above_right' | 'below_left' | 'below_right'
+
 /** A point given by sketch entity ID, or a new point at a position. */
 export type PointArg =
   | {
@@ -1413,8 +2274,26 @@ export type PointArg =
     at: [number, number]
   }
 
+/**
+ * A closed profile on a parent view (view-plane mm relative to the model
+ * origin, unscaled), used by detail, broken-out section and crop views.
+ */
+export type Profile =
+  | {
+    type: 'circle'
+    center: [number, number]
+    radius: number
+  }
+  | {
+    type: 'polygon'
+    points: ([number, number])[]
+  }
+
 /** Legacy sketch IDs retain their original whole-sketch behavior. */
 export type ProfileSelection = number | ContourSelection
+
+/** How projected views are arranged around their parent. */
+export type Projection = 'first' | 'third'
 
 export type ProjectionMode = 'onto_face' | 'sketch_on_sketch' | 'intersection' | 'silhouette'
 
@@ -1504,6 +2383,15 @@ export type Ref =
     entities: number[]
   }
 
+export type RevisionRow = {
+  approved?: string
+  date?: string
+  description?: string
+  /** Letter or number; given automatically when empty. */
+  revision?: string
+  zone?: string
+}
+
 export type RevolveAngle =
   | {
     type: 'blind'
@@ -1548,6 +2436,52 @@ export type Roll = {
   axis: CompRef
   up: CompRef
 }
+
+/** A drawing scale `num:den`; 1:2 draws the model at half size. */
+export type Scale = {
+  num: number
+  den: number
+}
+
+export type SectionKind = 'full' | 'half' | 'aligned'
+
+/** Paper sizes. Standard sizes are landscape unless the sheet says portrait. */
+export type SheetSize =
+  | {
+    type: 'a0'
+  }
+  | {
+    type: 'a1'
+  }
+  | {
+    type: 'a2'
+  }
+  | {
+    type: 'a3'
+  }
+  | {
+    type: 'a4'
+  }
+  | {
+    type: 'ansi_a'
+  }
+  | {
+    type: 'ansi_b'
+  }
+  | {
+    type: 'ansi_c'
+  }
+  | {
+    type: 'ansi_d'
+  }
+  | {
+    type: 'ansi_e'
+  }
+  | {
+    type: 'custom'
+    width: number
+    height: number
+  }
 
 export type Sketch3D = {
   /** Monotonically increasing; deleted entity IDs must never be reused. */
@@ -1714,7 +2648,21 @@ export type SpatialDrag = {
   to: [number, number, number]
 }
 
+export type Standard = {
+  base?: StandardBase
+  overrides?: Overrides
+}
+
+export type StandardBase = 'iso' | 'ansi'
+
 export type SweepOrientation = 'minimum_twist' | 'frenet' | 'fixed'
+
+export type Tags = 'alphabetic' | 'numeric'
+
+/** How edges between tangent faces are drawn. */
+export type TangentEdges = 'visible' | 'removed' | 'font'
+
+export type TargetKind = 'point' | 'line' | 'area'
 
 /** A thin feature: the sketch contour thickened into a wall. */
 export type Thin = {
@@ -1727,6 +2675,46 @@ export type Thin = {
 }
 
 export type ThinKind = 'one_direction' | 'mid_plane' | 'two_direction'
+
+/** Tolerance of a dimension; values in mm (or degrees for angles). */
+export type Tolerance =
+  | {
+    type: 'none'
+  }
+  | {
+    type: 'basic'
+  }
+  | {
+    type: 'bilateral'
+    plus: number
+    minus: number
+  }
+  | {
+    type: 'limit'
+    plus: number
+    minus: number
+  }
+  | {
+    type: 'symmetric'
+    value: number
+  }
+  | {
+    type: 'min'
+  }
+  | {
+    type: 'max'
+  }
+  | {
+    type: 'fit'
+    display?: FitDisplay
+    hole?: string | null
+    shaft?: string | null
+  }
+  | {
+    type: 'general'
+  }
+
+export type ToleranceClass = 'f' | 'm' | 'c' | 'v'
 
 export type ToolError = {
   code: ErrorCode
@@ -1764,6 +2752,62 @@ export type TravelConstraint =
     flip?: boolean
   }
 
+/** What a view shows. */
+export type ViewKind =
+  | {
+    type: 'model'
+    model: ModelSource
+    orientation: Orientation
+    /** Assemblies: show the active configuration's explode steps. */
+    exploded?: boolean
+  }
+  | {
+    type: 'projected'
+    parent: number
+    placement: Placement
+  }
+  | {
+    type: 'auxiliary'
+    parent: number
+    edge: CompRef
+    flip?: boolean
+  }
+  | {
+    type: 'section'
+    parent: number
+    line: CuttingLine
+    /**
+     * Section depth in mm beyond the cut (partial section); `None`
+     * shows everything behind it.
+     */
+    depth?: number | null
+    /** Leave hardware library parts uncut. */
+    exclude_fasteners?: boolean
+    /** Assembly components not cut (drawn whole), by key path. */
+    excluded?: string[][]
+    /** Look the other way along the cut. */
+    flip?: boolean
+    kind?: SectionKind
+    /** Show only the cut faces. */
+    slice?: boolean
+  }
+  | {
+    type: 'detail'
+    parent: number
+    profile: Profile
+    full_outline?: boolean
+    style?: DetailStyle
+  }
+
+/**
+ * Model geometry seen in a view: an edge, face, vertex or reference entity
+ * of the view's model (a part: empty component path).
+ */
+export type ViewRef = {
+  view: number
+  entity: CompRef
+}
+
 export type Warning = {
   code: WarningCode
   message: string
@@ -1771,6 +2815,21 @@ export type Warning = {
 }
 
 export type WarningCode = 'W_SKETCH_UNDER_DEFINED' | 'W_SKETCH_OVER_DEFINED'
+
+export type WeldSide = {
+  symbol: WeldSymbol
+  contour?: Contour
+  /** Length and pitch after it, e.g. `50-100`. */
+  length?: string
+  /** Size (or throat) before the symbol, e.g. `a5` or `6`. */
+  size?: string
+}
+
+/** Weld symbols on one side of the reference line. */
+export type WeldSymbol = 'fillet' | 'square' | 'v' | 'bevel' | 'u' | 'j' | 'flare_v' | 'flare_bevel' | 'plug' | 'spot' | 'seam' | 'backing' | 'surfacing' | 'edge'
+
+/** Which point of an edge a dimension uses. */
+export type Which = 'start' | 'end' | 'mid' | 'center' | 'auto'
 
 export type WidthConstraint =
   | {
@@ -2039,7 +3098,7 @@ export interface ToolArgs {
     /** Omitted saves to the path the part was opened from. */
     path?: string | null
   }
-  /** Export a configuration (default: active) to STEP, IGES or STL, chosen by extension. Fails while active features have errors. Hidden bodies are included. */
+  /** Export a configuration (default: active) to STEP, IGES or STL, chosen by extension. Fails while active features have errors. Hidden bodies are included. An open drawing exports every sheet to .pdf or .dxf. */
   export: {
     /** `.step`, `.stp`, `.iges`, `.igs` or `.stl`; the extension picks the format. */
     path: string
@@ -2047,6 +3106,32 @@ export interface ToolArgs {
     configuration?: number | null
     /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
     detail?: 'summary' | 'full'
+  }
+  /** Set part custom properties used by BOMs and drawing title blocks ($PRP:"PartNo"); values may link to {mass}, {material}, {volume} or {param:KEY}. Null removes one. */
+  set_part_properties: {
+    /**
+     * Part custom properties for BOMs and title blocks (`PartNo`,
+     * `Description`, ...); values may link to `{mass}`, `{material}` or
+     * `{param:f2.end1.depth}`. Null removes one.
+     */
+    properties: Record<string, Property | null>
+    additionalProperties?: unknown
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+  }
+  /** Choose whether a part dimension (parameter key from part_info) is imported into drawings by insert_model_items, and the name shown under it. */
+  set_dimension_display: {
+    /**
+     * Parameter key from part_info, such as `f2.end1.depth` or
+     * `f1.dimension.4`.
+     */
+    key: string
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+    /** Name shown under the value in drawings; null removes it. */
+    name?: string | null
+    /** Import it into drawings with model items. */
+    show?: boolean | null
   }
   /** Import a .step or .iges file as a new body feature. */
   import: {
@@ -2239,6 +3324,288 @@ export interface ToolArgs {
      */
     folder?: string | null
   }
+  /** Replace the open document with a drawing of one sheet (ISO: A3, first angle; ANSI: B, third angle); with `model`, start it with a standard 3 view and isometric of that file. Add views of saved parts or assemblies with add_drawing_view; export writes every sheet to PDF or DXF. */
+  new_drawing: {
+    /** Part or assembly configuration ID for `model`. */
+    configuration?: number | null
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+    /**
+     * Make the drawing from this `.ofp` or `.ofa` file: a standard 3 view
+     * and an isometric, scaled to fit.
+     */
+    model?: string | null
+    /** Omitted uses first angle (ISO) or third angle (ANSI). */
+    projection?: Projection | null
+    /** First sheet's paper; omitted uses A3 (ISO) or ANSI B. */
+    size?: SheetSize | null
+    /** Drafting standard; omitted uses ISO. */
+    standard?: StandardBase | null
+  }
+  /** Add a standard 3 view of a saved part or assembly to a sheet (front, top and side per the sheet's projection) and by default an isometric, laid out and scaled to fit. Returns the view IDs in `views`. */
+  standard_views: {
+    sheet: number
+    /** `.ofp` or `.ofa` file. */
+    model: string
+    configuration?: number | null
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+    /** Also add an isometric view (default true). */
+    isometric?: boolean
+    /**
+     * Omitted picks the largest preferred scale that fits and sets it as
+     * the sheet scale.
+     */
+    scale?: Scale | null
+  }
+  /** Planar faces of a saved part or assembly (component path, stable face ref, outward normal, area; largest first), for relative-to-model view orientations. */
+  model_planar_faces: {
+    /** `.ofp` or `.ofa` file. */
+    model: string
+    configuration?: number | null
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+  }
+  /** Mark every view as up to date with its model. Views always draw the saved model; render_sheet reports `stale` views whose model changed since the last update or save. */
+  update_drawing: {
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+  }
+  /** The open drawing: standard, drawing properties, and each sheet's ID, size, scale, projection and format with its views (IDs, kinds, parents, model files, positions) and annotations. */
+  drawing_info: {
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+  }
+  /** Draw a sheet. Returns each view's sheet box, scale, paper axes and error; without `summary` also the display list: lines, arcs, polylines, fills and text in sheet mm, each naming its view and the model edge it shows. */
+  render_sheet: {
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+    /** Omitted renders the first sheet. */
+    sheet?: number | null
+    /** Only view boxes, scales and errors, without the display list. */
+    summary?: boolean
+  }
+  /** Add a sheet after the last one; omitted fields copy the last sheet. Returns its ID as `id`. */
+  add_sheet: {
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+    name?: string | null
+    portrait?: boolean | null
+    projection?: Projection | null
+    scale?: Scale | null
+    /** Omitted fields copy the last sheet. */
+    size?: SheetSize | null
+    /** Sheet format: `iso`, `ansi` or an `.ofdt` file. */
+    template?: string | null
+  }
+  /** Rename, resize, rescale or reorder a sheet, change its projection or format, or pick the view whose model fills the title block. */
+  update_sheet: {
+    id: number
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+    /** Show the border and title block. */
+    format_visible?: boolean | null
+    /** New position in the sheet order, from 0. */
+    index?: number | null
+    name?: string | null
+    portrait?: boolean | null
+    projection?: Projection | null
+    /**
+     * View whose model fills `$PRP` title block fields; null uses the first
+     * view.
+     */
+    properties_view?: number | null
+    scale?: Scale | null
+    size?: SheetSize | null
+    template?: string | null
+  }
+  /** Delete sheets with everything on them. A drawing keeps at least one sheet. */
+  delete_sheets: {
+    ids: number[]
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+  }
+  /** Add a view to a sheet: a model view of an .ofp or .ofa file in a named or custom orientation (model Y is up; front looks along -Z), or a view projected or folded from another view. `origin` is where the model origin lands on the sheet, mm. Returns its ID as `id`. */
+  add_drawing_view: {
+    sheet: number
+    /** What the view shows. Model paths are `.ofp` or `.ofa` files. */
+    view: ViewKind
+    /**
+     * Sheet position of the model origin, mm. Projected and auxiliary
+     * views stay aligned with their parent along the fold.
+     */
+    origin: [number, number]
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+    display?: DisplayStyle | null
+    name?: string | null
+    /** Omitted uses the sheet scale (model views) or the parent's. */
+    scale?: Scale | null
+    tangent?: TangentEdges | null
+  }
+  /** Move, rescale, rename or restyle a view, hide model edges or components in it, break it (gaps closed up, dimensions keep true lengths), crop it, add broken-out sections, set section hatching, or replace what it shows. */
+  update_drawing_view: {
+    id: number
+    aligned?: boolean | null
+    /** Gap between break lines, mm of paper. */
+    break_gap?: number | null
+    break_style?: BreakStyle | null
+    /**
+     * Break gaps in view-plane mm (replaces the list); empty removes the
+     * break.
+     */
+    breaks?: Break[] | null
+    /** Broken-out sections (replaces the list). */
+    broken_out?: BrokenOut[] | null
+    /** Crop the view to a closed profile (view-plane mm); null removes it. */
+    crop?: Profile | null
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+    /** Null follows the parent view. */
+    display?: DisplayStyle | null
+    /** Section hatching: pattern (null: by material), scale and angle. */
+    hatch?: HatchOptions | null
+    /** Assembly components not drawn, by key path (replaces the list). */
+    hidden_components?: string[][] | null
+    /** Model edges not drawn (replaces the list). */
+    hidden_edges?: CompRef[] | null
+    label?: string | null
+    name?: string | null
+    origin?: [number, number] | null
+    /** Null returns to the sheet or parent scale. */
+    scale?: Scale | null
+    tangent?: TangentEdges | null
+    view?: ViewKind | null
+  }
+  /** Delete views and every view projected or folded from them. Returns all deleted IDs as `deleted`. */
+  delete_drawing_views: {
+    ids: number[]
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+  }
+  /** Add an annotation to a sheet: note, dimension (linear, angular, radius, diameter, arc length, chamfer, ordinate, baseline, chain, angular running or an imported model dimension), balloon, hole callout, center mark, centerline, surface finish, datum feature or target, geometric tolerance, weld symbol, area hatch, revision cloud or symbol, or a table (BOM, hole, revision, general, ISO 2768 general tolerance). With `view` its positions are relative to that view and it moves with it. Text may hold ⌀ ⌴ ⌵ ↧ ± ° and fields such as $PRP:"PartNo". Returns its ID as `id`. */
+  add_annotation: {
+    sheet: number
+    annotation: AnnotationKind
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+    /**
+     * Layer; omitted uses the kind's (DIMENSIONS, NOTES, CENTER, TABLES,
+     * HATCH).
+     */
+    layer?: string | null
+    /**
+     * The view the annotation moves with: its positions are then sheet mm
+     * relative to that view's origin. Omitted places it on the sheet.
+     */
+    view?: number | null
+  }
+  /** Replace an annotation's content, attach it to a view (it then moves with the view) or to the sheet (null) keeping where it is drawn, or change its layer. */
+  update_annotation: {
+    id: number
+    /** Replaces the annotation's content (same or different kind). */
+    annotation?: AnnotationKind | null
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+    layer?: string | null
+    /** Null moves it to the sheet, keeping where it is drawn. */
+    view?: number | null
+  }
+  /** Move annotations by an offset in sheet mm; points on model geometry stay attached. */
+  move_annotations: {
+    ids: number[]
+    /** Offset in sheet mm. */
+    by: [number, number]
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+  }
+  /** Import model items into part views: dimensions marked for drawing (each once, in the view showing it truest; driving), Hole Wizard callouts, cosmetic thread callouts and optionally centerlines and center marks. Returns the new annotation IDs in `added`. */
+  insert_model_items: {
+    sheet: number
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+    items?: ModelItems
+    /**
+     * Part views to import into; omitted uses every part view on the
+     * sheet. Each dimension goes to the view that shows it truest.
+     */
+    views?: number[] | null
+  }
+  /** Change an imported model dimension on the drawing (mm or degrees): the part is edited, rebuilt and saved, and every view of it updates. Fails, changing nothing, when the part would not rebuild. Undo it in the part. */
+  drive_dimension: {
+    /** An imported model dimension. */
+    id: number
+    /** New value: mm, or degrees for angles. */
+    value: number
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+  }
+  /** Balloon the components of an assembly view with their BOM item numbers, laid out around the view (square, circular, top, bottom, left or right). Returns the new IDs in `added`. */
+  auto_balloons: {
+    sheet: number
+    /** An assembly view on the sheet. */
+    view: number
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+    /** One balloon per BOM row instead of one per component. */
+    ignore_multiple?: boolean
+    layout?: BalloonLayout
+  }
+  /** The cells of a table annotation (BOM, hole, revision, general, tolerance) as CSV, returned as `csv` or written to `path`. */
+  table_csv: {
+    /** A table annotation. */
+    id: number
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+    /** Write the CSV here; omitted returns it as `csv`. */
+    path?: string | null
+  }
+  /** Set the drawing's drafting standard (ISO or ANSI base with overrides: text and arrow sizes, line weights, precision, zeros, decimal comma, dual units, extension lines), or load it from an .ofstd file; `save` writes it to an .ofstd file for other drawings. */
+  set_drafting_standard: {
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+    /** Load it from an `.ofstd` file instead. */
+    load?: string | null
+    /** Also save the result to an `.ofstd` file for other drawings. */
+    save?: string | null
+    /** Replaces the drafting standard (base and overrides). */
+    standard?: Standard | null
+  }
+  /** Write chosen sheets (default: all) to a vector PDF (embedded font, true paper size, layers; optional black and white) or a DXF (R12 or 2018; one file for all sheets side by side, or one per sheet) at true scale with layers. Returns the files in `paths`. */
+  export_drawing: {
+    /** `.pdf` or `.dxf` file. */
+    path: string
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+    /** DXF version: `r12` (AC1009) or `r2018` (AC1032, default). */
+    dxf_version?: DxfVersion | null
+    /** PDF: black lines and text instead of each pen's colour. */
+    monochrome?: boolean
+    /**
+     * DXF: one file per sheet (`name-Sheet1.dxf`, ...) instead of all
+     * sheets side by side in one.
+     */
+    per_sheet?: boolean
+    /** Sheet IDs to write; omitted writes every sheet. */
+    sheets?: number[] | null
+  }
+  /** Delete notes and other annotations by ID. */
+  delete_annotations: {
+    ids: number[]
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+  }
+  /** Set drawing properties shown by $PRPSHEET title block fields (DrawnBy, CheckedBy, Revision, Company, Tolerance, Date); null removes one. */
+  set_drawing_properties: {
+    /**
+     * Drawing properties for `$PRPSHEET` fields (`DrawnBy`, `Revision`,
+     * ...); null removes one.
+     */
+    properties: Record<string, string | null>
+    additionalProperties?: unknown
+    /** `full` returns the untrimmed result; the default `summary` omits bulky snapshot fields. */
+    detail?: 'summary' | 'full'
+  }
 }
 
 export type ToolName = keyof ToolArgs
@@ -2273,6 +3640,8 @@ export const TOOL_METHODS = {
   open_part: 'doc.open',
   save_part: 'doc.save',
   export: 'export',
+  set_part_properties: 'doc.properties.set',
+  set_dimension_display: 'doc.dimension_display.set',
   import: 'import',
   undo: 'doc.undo',
   new_assembly: 'asm.new',
@@ -2294,6 +3663,29 @@ export const TOOL_METHODS = {
   clearance: 'asm.clearance',
   bill_of_materials: 'asm.bom',
   import_step_assembly: 'asm.import_step',
+  new_drawing: 'drawing.new',
+  standard_views: 'drawing.views.standard',
+  model_planar_faces: 'drawing.model.faces',
+  update_drawing: 'drawing.update',
+  drawing_info: 'drawing.info',
+  render_sheet: 'drawing.render',
+  add_sheet: 'drawing.sheet.add',
+  update_sheet: 'drawing.sheet.update',
+  delete_sheets: 'drawing.sheet.delete',
+  add_drawing_view: 'drawing.view.add',
+  update_drawing_view: 'drawing.view.update',
+  delete_drawing_views: 'drawing.view.delete',
+  add_annotation: 'drawing.annotation.add',
+  update_annotation: 'drawing.annotation.update',
+  move_annotations: 'drawing.annotation.move',
+  insert_model_items: 'drawing.model_items',
+  drive_dimension: 'drawing.dimension.drive',
+  auto_balloons: 'drawing.balloons.auto',
+  table_csv: 'drawing.table.csv',
+  set_drafting_standard: 'drawing.standard.set',
+  export_drawing: 'drawing.export',
+  delete_annotations: 'drawing.annotation.delete',
+  set_drawing_properties: 'drawing.properties.set',
 } as const satisfies Record<ToolName, string>
 
 /** Schema examples, validated and replayed on the core in CI. */
@@ -2326,6 +3718,8 @@ export const TOOL_EXAMPLES: { [K in ToolName]: ToolArgs[K][] } = {
   open_part: [{"path":"part.ofp"}],
   save_part: [{"path":"part.ofp"}],
   export: [{"path":"part.step"}, {"configuration":2,"path":"part.stl"}],
+  set_part_properties: [{"properties":{"PartNo":{"value":"BRK-1"},"Weight":{"value":"{mass}"}}}],
+  set_dimension_display: [{"key":"f2.end1.depth","show":false}, {"key":"f2.end1.depth","name":"THICKNESS"}],
   import: [{"path":"part.step"}],
   undo: [{}],
   new_assembly: [{}],
@@ -2347,4 +3741,27 @@ export const TOOL_EXAMPLES: { [K in ToolName]: ToolArgs[K][] } = {
   clearance: [{"minimum":50}],
   bill_of_materials: [{"type":"parts_only"}],
   import_step_assembly: [{"path":"assembly.step"}],
+  new_drawing: [{}, {"standard":"ansi"}, {"model":"part.ofp"}],
+  standard_views: [{"model":"part.ofp","sheet":4}, {"isometric":false,"model":"part.ofp","scale":{"den":2,"num":1},"sheet":4}],
+  model_planar_faces: [{"model":"part.ofp"}],
+  update_drawing: [{}],
+  drawing_info: [{}],
+  render_sheet: [{"sheet":1,"summary":true}],
+  add_sheet: [{}, {"scale":{"den":2,"num":1},"size":{"type":"a2"}}],
+  update_sheet: [{"id":1,"scale":{"den":2,"num":1}}, {"id":1,"name":"Plate","properties_view":2}],
+  delete_sheets: [{"ids":[4]}],
+  add_drawing_view: [{"origin":[300,200],"sheet":1,"view":{"model":{"path":"part.ofp"},"orientation":{"type":"isometric"},"type":"model"}}, {"origin":[150,250],"sheet":1,"view":{"parent":2,"placement":"above","type":"projected"}}],
+  update_drawing_view: [{"id":2,"origin":[120,160]}, {"display":"hidden_visible","id":3}, {"break_style":"zig_zag","breaks":[{"from":20,"to":40,"vertical":true}],"id":2}, {"crop":{"center":[30,20],"radius":15,"type":"circle"},"id":2}, {"broken_out":[{"depth":3,"profile":{"center":[30,20],"radius":8,"type":"circle"}}],"id":2}],
+  delete_drawing_views: [{"ids":[3]}],
+  add_annotation: [{"annotation":{"at":[40,60],"text":"BREAK ALL EDGES 0.5","type":"note"},"sheet":1}, {"annotation":{"at":[0,15],"dim":"model","key":"f2.end1.depth","tolerance":{"type":"symmetric","value":0.1},"type":"dimension","view":3},"sheet":1,"view":3}, {"annotation":{"at":[250,220],"rows":[{"characteristic":"flatness","tolerance":"0.05"}],"type":"gtol"},"sheet":1}, {"annotation":{"at":[20,120],"class":"m","table":"general_tolerance","type":"table"},"sheet":1}],
+  update_annotation: [{"annotation":{"at":[100,250],"text":"SEE DETAIL A","type":"note"},"id":5}, {"id":5,"view":2}],
+  move_annotations: [{"by":[10,-5],"ids":[5,8]}],
+  insert_model_items: [{"sheet":1}, {"items":{"axes":true,"dimensions":true,"hole_callouts":false,"threads":false},"sheet":1,"views":[2]}],
+  drive_dimension: [{"id":8,"value":7.5}],
+  auto_balloons: [{"sheet":4,"view":6}, {"ignore_multiple":false,"layout":"circular","sheet":4,"view":6}],
+  table_csv: [{"id":7}],
+  set_drafting_standard: [{"standard":{"base":"ansi"}}, {"standard":{"base":"iso","overrides":{"precision":2,"text_height":5}}}],
+  export_drawing: [{"monochrome":true,"path":"drawing.pdf","sheets":[1]}, {"dxf_version":"r12","path":"drawing.dxf","per_sheet":true}],
+  delete_annotations: [{"ids":[5]}],
+  set_drawing_properties: [{"properties":{"DrawnBy":"AK","Revision":"B"}}],
 }

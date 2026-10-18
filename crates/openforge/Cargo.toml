@@ -10,6 +10,7 @@ repository.workspace = true
 [dependencies]
 of-model.workspace = true
 of-assembly.workspace = true
+of-drawing.workspace = true
 of-io.workspace = true
 of-protocol.workspace = true
 anyhow.workspace = true

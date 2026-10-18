@@ -15,6 +15,7 @@ of-geom = { path = "crates/of-geom" }
 of-sketch = { path = "crates/of-sketch" }
 of-mate = { path = "crates/of-mate" }
 of-assembly = { path = "crates/of-assembly" }
+of-drawing = { path = "crates/of-drawing" }
 of-model = { path = "crates/of-model" }
 of-io = { path = "crates/of-io" }
 of-protocol = { path = "crates/of-protocol" }

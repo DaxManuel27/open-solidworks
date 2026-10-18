@@ -337,6 +337,8 @@ pub fn snapshot(model: &Model) -> Value {
         "equations": model.doc.equations,
         "equation_values": equation_values(&model.doc),
         "configurations": model.doc.configurations,
+        "properties": model.doc.properties,
+        "dimension_display": model.doc.dimension_display,
         "bodies": body_views(&model.doc, model.state()).unwrap_or_default(),
     })
 }

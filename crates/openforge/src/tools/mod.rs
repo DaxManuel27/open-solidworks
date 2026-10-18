@@ -3,6 +3,7 @@
 //! are validated against them and replayed on the core by the tests.
 
 pub mod asm_params;
+pub mod drawing_params;
 pub mod envelope;
 pub mod generate;
 pub mod params;
@@ -15,6 +16,7 @@ use schemars::{JsonSchema, SchemaGenerator};
 use serde_json::{Map, Value, json};
 
 use asm_params::*;
+use drawing_params::*;
 use params::*;
 
 /// One catalog entry.
@@ -165,8 +167,14 @@ pub const TOOLS: &[Tool] = &[
         "Save the part as an .ofp file.",
         [{"path": "part.ofp"}]),
     tool!("export", "export", Export, read_only: false, draft: false,
-        "Export a configuration (default: active) to STEP, IGES or STL, chosen by extension. Fails while active features have errors. Hidden bodies are included.",
+        "Export a configuration (default: active) to STEP, IGES or STL, chosen by extension. Fails while active features have errors. Hidden bodies are included. An open drawing exports every sheet to .pdf or .dxf.",
         [{"path": "part.step"}, {"path": "part.stl", "configuration": 2}]),
+    tool!("set_part_properties", "doc.properties.set", SetProperties, read_only: false, draft: true,
+        "Set part custom properties used by BOMs and drawing title blocks ($PRP:\"PartNo\"); values may link to {mass}, {material}, {volume} or {param:KEY}. Null removes one.",
+        [{"properties": {"PartNo": {"value": "BRK-1"}, "Weight": {"value": "{mass}"}}}]),
+    tool!("set_dimension_display", "doc.dimension_display.set", DimensionDisplay, read_only: false, draft: true,
+        "Choose whether a part dimension (parameter key from part_info) is imported into drawings by insert_model_items, and the name shown under it.",
+        [{"key": "f2.end1.depth", "show": false}, {"key": "f2.end1.depth", "name": "THICKNESS"}]),
     tool!("import", "import", FilePath, read_only: false, draft: false,
         "Import a .step or .iges file as a new body feature.",
         [{"path": "part.step"}]),
@@ -233,6 +241,82 @@ pub const TOOLS: &[Tool] = &[
     tool!("import_step_assembly", "asm.import_step", ImportStep, read_only: false, draft: false,
         "Read a STEP file with several parts into a new assembly: one .ofp per distinct part in `folder`, each instance placed and fixed where the file had it.",
         [{"path": "assembly.step"}]),
+    tool!("new_drawing", "drawing.new", NewDrawing, read_only: false, draft: false,
+        "Replace the open document with a drawing of one sheet (ISO: A3, first angle; ANSI: B, third angle); with `model`, start it with a standard 3 view and isometric of that file. Add views of saved parts or assemblies with add_drawing_view; export writes every sheet to PDF or DXF.",
+        [{}, {"standard": "ansi"}, {"model": "part.ofp"}]),
+    tool!("standard_views", "drawing.views.standard", StandardViews, read_only: false, draft: false,
+        "Add a standard 3 view of a saved part or assembly to a sheet (front, top and side per the sheet's projection) and by default an isometric, laid out and scaled to fit. Returns the view IDs in `views`.",
+        [{"sheet": 4, "model": "part.ofp"}, {"sheet": 4, "model": "part.ofp", "isometric": false, "scale": {"num": 1, "den": 2}}]),
+    tool!("model_planar_faces", "drawing.model.faces", ModelFaces, read_only: true, draft: false,
+        "Planar faces of a saved part or assembly (component path, stable face ref, outward normal, area; largest first), for relative-to-model view orientations.",
+        [{"model": "part.ofp"}]),
+    tool!("update_drawing", "drawing.update", Empty, read_only: false, draft: false,
+        "Mark every view as up to date with its model. Views always draw the saved model; render_sheet reports `stale` views whose model changed since the last update or save.",
+        [{}]),
+    tool!("drawing_info", "drawing.info", Empty, read_only: true, draft: false,
+        "The open drawing: standard, drawing properties, and each sheet's ID, size, scale, projection and format with its views (IDs, kinds, parents, model files, positions) and annotations.",
+        [{}]),
+    tool!("render_sheet", "drawing.render", RenderSheet, read_only: true, draft: false,
+        "Draw a sheet. Returns each view's sheet box, scale, paper axes and error; without `summary` also the display list: lines, arcs, polylines, fills and text in sheet mm, each naming its view and the model edge it shows.",
+        [{"sheet": 1, "summary": true}]),
+    tool!("add_sheet", "drawing.sheet.add", AddSheet, read_only: false, draft: false,
+        "Add a sheet after the last one; omitted fields copy the last sheet. Returns its ID as `id`.",
+        [{}, {"size": {"type": "a2"}, "scale": {"num": 1, "den": 2}}]),
+    tool!("update_sheet", "drawing.sheet.update", UpdateSheet, read_only: false, draft: false,
+        "Rename, resize, rescale or reorder a sheet, change its projection or format, or pick the view whose model fills the title block.",
+        [{"id": 1, "scale": {"num": 1, "den": 2}}, {"id": 1, "name": "Plate", "properties_view": 2}]),
+    tool!("delete_sheets", "drawing.sheet.delete", ItemIds, read_only: false, draft: false,
+        "Delete sheets with everything on them. A drawing keeps at least one sheet.",
+        [{"ids": [4]}]),
+    tool!("add_drawing_view", "drawing.view.add", AddView, read_only: false, draft: false,
+        "Add a view to a sheet: a model view of an .ofp or .ofa file in a named or custom orientation (model Y is up; front looks along -Z), or a view projected or folded from another view. `origin` is where the model origin lands on the sheet, mm. Returns its ID as `id`.",
+        [{"sheet": 1, "view": {"type": "model", "model": {"path": "part.ofp"}, "orientation": {"type": "isometric"}}, "origin": [300, 200]},
+         {"sheet": 1, "view": {"type": "projected", "parent": 2, "placement": "above"}, "origin": [150, 250]}]),
+    tool!("update_drawing_view", "drawing.view.update", UpdateView, read_only: false, draft: false,
+        "Move, rescale, rename or restyle a view, hide model edges or components in it, break it (gaps closed up, dimensions keep true lengths), crop it, add broken-out sections, set section hatching, or replace what it shows.",
+        [{"id": 2, "origin": [120, 160]}, {"id": 3, "display": "hidden_visible"},
+         {"id": 2, "breaks": [{"vertical": true, "from": 20, "to": 40}], "break_style": "zig_zag"},
+         {"id": 2, "crop": {"type": "circle", "center": [30, 20], "radius": 15}},
+         {"id": 2, "broken_out": [{"profile": {"type": "circle", "center": [30, 20], "radius": 8}, "depth": 3}]}]),
+    tool!("delete_drawing_views", "drawing.view.delete", ItemIds, read_only: false, draft: false,
+        "Delete views and every view projected or folded from them. Returns all deleted IDs as `deleted`.",
+        [{"ids": [3]}]),
+    tool!("add_annotation", "drawing.annotation.add", AddAnnotation, read_only: false, draft: false,
+        "Add an annotation to a sheet: note, dimension (linear, angular, radius, diameter, arc length, chamfer, ordinate, baseline, chain, angular running or an imported model dimension), balloon, hole callout, center mark, centerline, surface finish, datum feature or target, geometric tolerance, weld symbol, area hatch, revision cloud or symbol, or a table (BOM, hole, revision, general, ISO 2768 general tolerance). With `view` its positions are relative to that view and it moves with it. Text may hold ⌀ ⌴ ⌵ ↧ ± ° and fields such as $PRP:\"PartNo\". Returns its ID as `id`.",
+        [{"sheet": 1, "annotation": {"type": "note", "at": [40, 60], "text": "BREAK ALL EDGES 0.5"}},
+         {"sheet": 1, "view": 3, "annotation": {"type": "dimension", "dim": "model", "view": 3, "key": "f2.end1.depth", "at": [0, 15], "tolerance": {"type": "symmetric", "value": 0.1}}},
+         {"sheet": 1, "annotation": {"type": "gtol", "at": [250, 220], "rows": [{"characteristic": "flatness", "tolerance": "0.05"}]}},
+         {"sheet": 1, "annotation": {"type": "table", "table": "general_tolerance", "class": "m", "at": [20, 120]}}]),
+    tool!("update_annotation", "drawing.annotation.update", UpdateAnnotation, read_only: false, draft: false,
+        "Replace an annotation's content, attach it to a view (it then moves with the view) or to the sheet (null) keeping where it is drawn, or change its layer.",
+        [{"id": 5, "annotation": {"type": "note", "at": [100, 250], "text": "SEE DETAIL A"}}, {"id": 5, "view": 2}]),
+    tool!("move_annotations", "drawing.annotation.move", MoveAnnotations, read_only: false, draft: false,
+        "Move annotations by an offset in sheet mm; points on model geometry stay attached.",
+        [{"ids": [5, 8], "by": [10, -5]}]),
+    tool!("insert_model_items", "drawing.model_items", ModelItemsParams, read_only: false, draft: false,
+        "Import model items into part views: dimensions marked for drawing (each once, in the view showing it truest; driving), Hole Wizard callouts, cosmetic thread callouts and optionally centerlines and center marks. Returns the new annotation IDs in `added`.",
+        [{"sheet": 1}, {"sheet": 1, "views": [2], "items": {"dimensions": true, "hole_callouts": false, "threads": false, "axes": true}}]),
+    tool!("drive_dimension", "drawing.dimension.drive", DriveDimension, read_only: false, draft: false,
+        "Change an imported model dimension on the drawing (mm or degrees): the part is edited, rebuilt and saved, and every view of it updates. Fails, changing nothing, when the part would not rebuild. Undo it in the part.",
+        [{"id": 8, "value": 7.5}]),
+    tool!("auto_balloons", "drawing.balloons.auto", AutoBalloons, read_only: false, draft: false,
+        "Balloon the components of an assembly view with their BOM item numbers, laid out around the view (square, circular, top, bottom, left or right). Returns the new IDs in `added`.",
+        [{"sheet": 4, "view": 6}, {"sheet": 4, "view": 6, "layout": "circular", "ignore_multiple": false}]),
+    tool!("table_csv", "drawing.table.csv", TableCsv, read_only: true, draft: false,
+        "The cells of a table annotation (BOM, hole, revision, general, tolerance) as CSV, returned as `csv` or written to `path`.",
+        [{"id": 7}]),
+    tool!("set_drafting_standard", "drawing.standard.set", SetStandard, read_only: false, draft: false,
+        "Set the drawing's drafting standard (ISO or ANSI base with overrides: text and arrow sizes, line weights, precision, zeros, decimal comma, dual units, extension lines), or load it from an .ofstd file; `save` writes it to an .ofstd file for other drawings.",
+        [{"standard": {"base": "ansi"}}, {"standard": {"base": "iso", "overrides": {"text_height": 5, "precision": 2}}}]),
+    tool!("export_drawing", "drawing.export", ExportDrawing, read_only: false, draft: false,
+        "Write chosen sheets (default: all) to a vector PDF (embedded font, true paper size, layers; optional black and white) or a DXF (R12 or 2018; one file for all sheets side by side, or one per sheet) at true scale with layers. Returns the files in `paths`.",
+        [{"path": "drawing.pdf", "sheets": [1], "monochrome": true}, {"path": "drawing.dxf", "per_sheet": true, "dxf_version": "r12"}]),
+    tool!("delete_annotations", "drawing.annotation.delete", ItemIds, read_only: false, draft: false,
+        "Delete notes and other annotations by ID.",
+        [{"ids": [5]}]),
+    tool!("set_drawing_properties", "drawing.properties.set", DrawingProperties, read_only: false, draft: false,
+        "Set drawing properties shown by $PRPSHEET title block fields (DrawnBy, CheckedBy, Revision, Company, Tolerance, Date); null removes one.",
+        [{"properties": {"DrawnBy": "AK", "Revision": "B"}}]),
 ];
 
 /// Inline `{"$ref", "properties"}` pairs (serde's internally tagged newtype
@@ -703,6 +787,99 @@ mod tests {
         s
     }
 
+    /// The drawing drawing examples run on, saved as `drawing.ofd` next to
+    /// the example part (`part.ofp`) and assembly (`assembly.ofa`): sheet 1
+    /// with front view 2 at (150, 180) and view 3 projected to its right,
+    /// sheet 4 with isometric assembly view 6 and its BOM table 7, note 5 on
+    /// sheet 1 with a leader to view 2, and the part's imported extrusion
+    /// depth (dimension 8) in view 3.
+    pub(crate) fn example_drawing(dir: &std::path::Path) -> Session {
+        let mut s = example_assembly(dir);
+        let part = dir.join("part.ofp");
+        s.handle("doc.save", json!({ "path": dir.join("assembly.ofa") }))
+            .unwrap();
+        let mut ok = |method: &str, params: Value| {
+            s.handle(method, params)
+                .unwrap_or_else(|e| panic!("{method}: {}", e.message))
+        };
+        ok("drawing.new", json!({}));
+        let front = json!({ "type": "model", "model": { "path": part }, "orientation": { "type": "front" } });
+        ok(
+            "drawing.view.add",
+            json!({ "sheet": 1, "view": front, "origin": [150, 180] }),
+        );
+        let right = json!({ "type": "projected", "parent": 2, "placement": "right" });
+        ok(
+            "drawing.view.add",
+            json!({ "sheet": 1, "view": right, "origin": [260, 180] }),
+        );
+        ok("drawing.sheet.add", json!({}));
+        let leader = json!({ "type": "model", "target": { "view": 2, "entity": { "component": [], "entity": { "type": "front_plane" } } }, "at": [30, 20] });
+        let note = json!({ "type": "note", "at": [100, 250], "text": "$PRP:\"PartNo\"", "leader": leader });
+        ok(
+            "drawing.annotation.add",
+            json!({ "sheet": 1, "annotation": note }),
+        );
+        let asm = json!({ "type": "model", "model": { "path": dir.join("assembly.ofa") }, "orientation": { "type": "isometric" } });
+        ok(
+            "drawing.view.add",
+            json!({ "sheet": 4, "view": asm, "origin": [200, 150] }),
+        );
+        let bom = json!({ "type": "table", "table": "bom", "view": 6, "at": [20, 280] });
+        ok(
+            "drawing.annotation.add",
+            json!({ "sheet": 4, "annotation": bom }),
+        );
+        let depth = json!({ "type": "dimension", "dim": "model", "view": 3, "key": "f2.end1.depth", "at": [0, 15] });
+        ok(
+            "drawing.annotation.add",
+            json!({ "sheet": 1, "view": 3, "annotation": depth }),
+        );
+        ok("doc.save", json!({ "path": dir.join("drawing.ofd") }));
+        s
+    }
+
+    /// The fixture a catalog example runs on.
+    pub(crate) fn example_for(method: &str, dir: &std::path::Path) -> Session {
+        if method.starts_with("asm.") && method != "asm.new" {
+            example_assembly(dir)
+        } else if method.starts_with("drawing.") && method != "drawing.new" {
+            example_drawing(dir)
+        } else {
+            example_part()
+        }
+    }
+
+    #[test]
+    fn example_drawing_matches_its_description() {
+        let dir =
+            std::env::temp_dir().join(format!("openforge-drawing-example-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut s = example_drawing(&dir);
+        let info = s.handle("drawing.info", json!({})).unwrap();
+        let sheets = info["drawing"]["sheets"].as_array().unwrap();
+        assert_eq!(sheets.len(), 2);
+        assert_eq!(sheets[1]["id"], 4);
+        assert_eq!(sheets[0]["views"][1]["id"], 3);
+        assert_eq!(sheets[0]["annotations"][0]["id"], 5);
+        assert_eq!(sheets[0]["annotations"][1]["id"], 8);
+        assert_eq!(sheets[1]["views"][0]["id"], 6);
+        assert_eq!(sheets[1]["annotations"][0]["id"], 7);
+        // Saved model paths are relative to the drawing.
+        assert_eq!(sheets[0]["views"][0]["kind"]["model"]["path"], "part.ofp");
+        let r = s
+            .handle("drawing.render", json!({ "sheet": 1, "summary": true }))
+            .unwrap();
+        for v in r["views"].as_array().unwrap() {
+            assert!(v.get("error").is_none(), "{v}");
+        }
+        assert!(r.get("dangling").is_none(), "{r}");
+        let r = s.handle("drawing.render", json!({ "sheet": 4 })).unwrap();
+        assert!(r["views"][0].get("error").is_none(), "{}", r["views"]);
+        assert!(r.get("dangling").is_none(), "{}", r["dangling"]);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
     #[test]
     fn example_assembly_matches_its_description() {
         let dir =
@@ -717,6 +894,9 @@ mod tests {
     }
 
     fn errors(s: &mut Session) -> Vec<(u64, String)> {
+        if s.drawing().is_some() {
+            return Vec::new();
+        }
         let info = s.handle("doc.info", json!({})).unwrap();
         info["features"]
             .as_array()
@@ -762,13 +942,21 @@ mod tests {
                 if let Some(folder) = example.get_mut("folder") {
                     *folder = json!(dir.join("hardware"));
                 }
+                if let Some(model) = example.get_mut("model").filter(|m| m.is_string()) {
+                    *model = json!(dir.join(model.as_str().unwrap()));
+                }
                 let method = entry.tool.method;
-                let mut s = if method.starts_with("asm.") && method != "asm.new" {
-                    example_assembly(&dir)
-                } else {
+                if method == "drawing.new" {
+                    // Drawings are made from the example part.
                     example_part()
-                };
+                        .handle("doc.save", json!({ "path": dir.join("part.ofp") }))
+                        .unwrap();
+                }
+                let mut s = example_for(method, &dir);
                 let volume = |s: &mut Session| {
+                    if s.drawing().is_some() {
+                        return 0.0;
+                    }
                     s.handle("mass_properties", json!({})).unwrap()["volume"]
                         .as_f64()
                         .unwrap()

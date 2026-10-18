@@ -39,11 +39,100 @@ import {
   MovePanel,
 } from './assembly'
 import { MatePanel } from './mates'
+import {
+  AnnotationPropertiesPanel,
+  AreaHatchPanel,
+  AutoBalloonPanel,
+  BalloonPanel,
+  CenterMarkPanel,
+  CenterlinePanel,
+  HoleCalloutPanel,
+  NotePanel,
+  RevisionCloudPanel,
+  SymbolPanel,
+  TablePanel,
+} from '../drawing/panels/annotate'
+import { ModelItemsPanel, SmartDimensionPanel } from '../drawing/panels/dimensions'
+import {
+  DraftingStandardPanel,
+  DrawingExportPanel,
+  DrawingPropertiesPanel,
+  PartPropertiesPanel,
+  SheetPropertiesPanel,
+} from '../drawing/panels/sheet'
+import {
+  AuxiliaryViewPanel,
+  BreakViewPanel,
+  BrokenOutPanel,
+  CropViewPanel,
+  DetailViewPanel,
+  ModelViewPanel,
+  ProjectedViewPanel,
+  SectionViewPanel,
+  StandardViewsPanel,
+  ViewPropertiesPanel,
+} from '../drawing/panels/views'
 
 /** The PropertyManager for the open panel. Keyed so each opening starts fresh. */
 export function PanelHost({ panel }: { panel: Panel }) {
   const key = `${panel.type}:${panel.editing ?? 'new'}:${panel.sketch ?? ''}:${panel.variant ?? ''}`
   switch (panel.type) {
+    case 'sheet_properties':
+      return <SheetPropertiesPanel key={key} editing={panel.editing} />
+    case 'drawing_properties':
+      return <DrawingPropertiesPanel key={key} />
+    case 'part_properties':
+      return <PartPropertiesPanel key={key} />
+    case 'drafting_standard':
+      return <DraftingStandardPanel key={key} />
+    case 'drawing_export':
+      return <DrawingExportPanel key={key} />
+    case 'standard_views':
+      return <StandardViewsPanel key={key} />
+    case 'model_view':
+      return <ModelViewPanel key={key} />
+    case 'projected_view':
+      return <ProjectedViewPanel key={key} />
+    case 'auxiliary_view':
+      return <AuxiliaryViewPanel key={key} />
+    case 'section_view':
+      return <SectionViewPanel key={key} variant={panel.variant} />
+    case 'detail_view':
+      return <DetailViewPanel key={key} />
+    case 'crop_view':
+      return <CropViewPanel key={key} />
+    case 'broken_out':
+      return <BrokenOutPanel key={key} />
+    case 'break_view':
+      return <BreakViewPanel key={key} />
+    case 'view_properties':
+      return <ViewPropertiesPanel key={key} editing={panel.editing} />
+    case 'smart_dimension':
+      return <SmartDimensionPanel key={key} variant={panel.variant} />
+    case 'model_items':
+      return <ModelItemsPanel key={key} />
+    case 'note':
+      return <NotePanel key={key} />
+    case 'balloon':
+      return <BalloonPanel key={key} />
+    case 'auto_balloon':
+      return <AutoBalloonPanel key={key} />
+    case 'symbol':
+      return <SymbolPanel key={key} variant={panel.variant} />
+    case 'hole_callout':
+      return <HoleCalloutPanel key={key} />
+    case 'center_mark':
+      return <CenterMarkPanel key={key} />
+    case 'centerline':
+      return <CenterlinePanel key={key} />
+    case 'area_hatch':
+      return <AreaHatchPanel key={key} />
+    case 'revision_cloud':
+      return <RevisionCloudPanel key={key} variant={panel.variant} />
+    case 'table':
+      return <TablePanel key={key} variant={panel.variant} />
+    case 'annotation_properties':
+      return <AnnotationPropertiesPanel key={key} editing={panel.editing} />
     case 'asm_insert':
       return <InsertComponentsPanel key={key} />
     case 'hardware':

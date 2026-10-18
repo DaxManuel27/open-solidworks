@@ -2,6 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import { useStore } from './store'
 import { Toolbar, ToolbarControl } from './toolbars/controls'
 import {
+  annotationGroups,
+  drawingEvaluateGroups,
+  drawingGroups,
+  drawingTabOrder,
+  drawingTabs,
   assemblyEvaluateGroups,
   assemblyGroups,
   assemblyTabOrder,
@@ -22,8 +27,9 @@ export function CommandManager() {
   const tab = useStore((s) => s.tab)
   const editing = useStore((s) => !!s.sketch)
   const isAssembly = useStore((s) => !!s.assembly)
-  const availableTabs = isAssembly ? assemblyTabs : partTabs
-  const tabOrder = isAssembly ? assemblyTabOrder : partTabOrder
+  const isDrawing = useStore((s) => !!s.drawing)
+  const availableTabs = isDrawing ? drawingTabs : isAssembly ? assemblyTabs : partTabs
+  const tabOrder = isDrawing ? drawingTabOrder : isAssembly ? assemblyTabOrder : partTabOrder
   const wasEditing = useRef(editing)
   useEffect(() => {
     if (wasEditing.current && !editing) useStore.getState().setTab('features')
@@ -32,15 +38,21 @@ export function CommandManager() {
   const track = useRef<HTMLDivElement>(null)
   const [overflow, setOverflow] = useState({ left: false, right: false })
   const groups =
-    tab === 'assembly'
-      ? assemblyGroups
-      : tab === 'evaluate'
-        ? isAssembly
-          ? assemblyEvaluateGroups
-          : evaluateGroups
-        : tab === 'features'
-          ? featureGroups
-          : sketchGroups(editing)
+    tab === 'drawing'
+      ? drawingGroups
+      : tab === 'annotation'
+        ? annotationGroups
+        : tab === 'assembly'
+          ? assemblyGroups
+          : tab === 'evaluate'
+            ? isDrawing
+              ? drawingEvaluateGroups
+              : isAssembly
+                ? assemblyEvaluateGroups
+                : evaluateGroups
+            : tab === 'features'
+              ? featureGroups
+              : sketchGroups(editing)
   useEffect(() => {
     const el = track.current!
     const update = () =>
@@ -57,7 +69,7 @@ export function CommandManager() {
       observer.disconnect()
       el.removeEventListener('scroll', update)
     }
-  }, [tab, editing, isAssembly])
+  }, [tab, editing, isAssembly, isDrawing])
   return (
     <header className="command-manager">
       <StandardToolbar />

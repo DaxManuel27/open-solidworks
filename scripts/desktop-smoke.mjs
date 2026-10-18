@@ -8,6 +8,7 @@ import assert from 'node:assert/strict'
 import { assistantSmoke } from './assistant-smoke.mjs'
 import { phase2Smoke } from './phase-2-smoke.mjs'
 import { assemblySmoke } from './assembly-smoke.mjs'
+import { drawingSmoke } from './drawing-smoke.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 process.env.OPENFORGE_CORE = join(
@@ -97,12 +98,17 @@ async function run(win) {
     const r = await window.openforge.call(${JSON.stringify(method)}, ${JSON.stringify(params)});
     if (!r.ok) throw new Error(r.error); return r.value;
   })()`)
-  const click = (label) =>
-    js(`(() => {
-    const b = [...document.querySelectorAll('button')].find(b => (b.getAttribute('aria-label') ?? b.querySelector('.command-label')?.textContent ?? b.textContent).trim() === ${JSON.stringify(label)});
-    if (!b || b.disabled) throw new Error('Button unavailable: ' + ${JSON.stringify(label)});
-    b.click();
-  })()`)
+  // Commands are disabled while an earlier operation finishes (closing a panel
+  // ends its edit asynchronously), so wait for the button before clicking.
+  const click = async (label) => {
+    const find = `[...document.querySelectorAll('button')].find(b => (b.getAttribute('aria-label') ?? b.querySelector('.command-label')?.textContent ?? b.textContent).trim() === ${JSON.stringify(label)})`
+    try {
+      await wait(() => js(`(() => { const b = ${find}; return !!b && !b.disabled })()`), label)
+    } catch {
+      throw new Error(`Button unavailable: ${label}`)
+    }
+    await js(`${find}.click()`)
+  }
   const menu = (command) => win.webContents.send('menu', command)
   const key = (value) =>
     js(
@@ -230,7 +236,7 @@ async function run(win) {
   assert.equal(await js(`document.querySelector('[data-command="print"]').disabled`), true)
   assert.match(
     await js(`document.querySelector('[data-command="print"]').title`),
-    /Not implemented/,
+    /Make a drawing to print/,
   )
   assert.match(
     await js(`document.querySelector('[data-command="cut"]').title`),
@@ -269,12 +275,8 @@ async function run(win) {
   await key('ArrowRight')
   assert.equal(await js(`document.activeElement.getAttribute('data-command')`), 'open')
   await key('End')
-  assert.equal(await js(`document.activeElement.getAttribute('data-command')`), 'select')
+  assert.equal(await js(`document.activeElement.getAttribute('data-command')`), 'options')
   for (const id of [
-    'print',
-    'rebuild',
-    'properties',
-    'options',
     'direct',
     'zoomArea',
     'previousView',
@@ -642,11 +644,28 @@ async function run(win) {
       },
     },
   })
+  await drawingSmoke({
+    js,
+    call,
+    click,
+    wait,
+    temp,
+    win,
+    shots: process.env.OPENFORGE_SMOKE_SHOTS,
+    dialogs: {
+      open: (path) => {
+        nextOpen = path
+      },
+      save: (path) => {
+        nextSave = path
+      },
+    },
+  })
   const screenshot = await win.capturePage()
   const artifact = process.env.OPENFORGE_SMOKE_SCREENSHOT
   if (artifact) writeFileSync(artifact, screenshot.toPNG())
   console.log(
-    'Desktop smoke passed: toolbar layout/themes, keyboard/menu isolation, sketch tools, dropdown panels, views, draw/extrude/revolve, body visibility/copy/split retention, scoped formulas, configurations, spatial sketches, hollow sweeps, domes, cosmetic threads, ribs with formula entry, modeled threads, boundaries, tangent lofts, undo/redo, save/reopen/import/export, assemblies (insert, mates, collision drag, patterns, interference, explode, BOM, save/reopen)',
+    'Desktop smoke passed: toolbar layout/themes, keyboard/menu isolation, sketch tools, dropdown panels, views, draw/extrude/revolve, body visibility/copy/split retention, scoped formulas, configurations, spatial sketches, hollow sweeps, domes, cosmetic threads, ribs with formula entry, modeled threads, boundaries, tangent lofts, undo/redo, save/reopen/import/export, assemblies (insert, mates, collision drag, patterns, interference, explode, BOM, save/reopen), drawings (make drawing, model items, driving dimensions, smart dimensions, notes, section/detail views, revision table, BOM with auto balloons, PDF/DXF export, undo/redo, save/reopen)',
   )
 }
 

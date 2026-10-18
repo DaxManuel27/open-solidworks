@@ -1,0 +1,22 @@
+[package]
+name = "of-drawing"
+description = "Drawing documents: sheets, views, annotations and tables, with PDF and DXF output"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+of-assembly.workspace = true
+of-model.workspace = true
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+pdf-writer = "0.15"
+subsetter = "0.2"
+ttf-parser = "0.25"
+miniz_oxide = "0.9"
+
+[lints]
+workspace = true

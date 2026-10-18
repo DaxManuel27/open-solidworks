@@ -6,6 +6,8 @@ export interface CoreInfo {
   protocol_version: number
   scene_version: number
   part_file_version: number
+  assembly_file_version?: number
+  drawing_file_version?: number
   capabilities: string[]
 }
 

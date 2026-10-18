@@ -241,8 +241,8 @@ fn trim(value: &mut Value, full: bool, mutating: bool) {
         return;
     }
     // A mutation's full snapshot is summarized by the envelope; part_info
-    // returns it on request.
-    if mutating && o.contains_key("features") {
+    // and drawing_info return it on request.
+    if mutating && (o.contains_key("features") || o.contains_key("drawing")) {
         o.retain(|k, _| {
             matches!(
                 k.as_str(),
@@ -688,12 +688,16 @@ mod tests {
                 if let Some(folder) = example.get_mut("folder") {
                     *folder = json!(dir.join("hardware"));
                 }
+                if let Some(model) = example.get_mut("model").filter(|m| m.is_string()) {
+                    *model = json!(dir.join(model.as_str().unwrap()));
+                }
                 let method = entry.tool.method;
-                let mut s = if method.starts_with("asm.") && method != "asm.new" {
-                    crate::tools::tests::example_assembly(&dir)
-                } else {
+                if method == "drawing.new" {
                     example_part()
-                };
+                        .handle("doc.save", json!({ "path": dir.join("part.ofp") }))
+                        .unwrap();
+                }
+                let mut s = crate::tools::tests::example_for(method, &dir);
                 match entry.tool.method {
                     "import" => drop(s.handle("export", example.clone()).unwrap()),
                     "doc.open" => drop(s.handle("doc.save", example.clone()).unwrap()),

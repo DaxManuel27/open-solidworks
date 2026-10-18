@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 import { CallFailed, call } from './core'
+import type { DrawingSnapshot } from './drawing/types'
+import { syncSheet, useDrawing } from './drawing/state'
 import type {
   AsmGeometry,
   AsmInstance,
@@ -120,6 +122,34 @@ export type PanelType =
   | 'asm_reference'
   | 'asm_measure'
   | 'asm_mass'
+  | 'sheet_properties'
+  | 'drawing_properties'
+  | 'part_properties'
+  | 'standard_views'
+  | 'model_view'
+  | 'projected_view'
+  | 'auxiliary_view'
+  | 'section_view'
+  | 'detail_view'
+  | 'crop_view'
+  | 'broken_out'
+  | 'break_view'
+  | 'view_properties'
+  | 'smart_dimension'
+  | 'model_items'
+  | 'note'
+  | 'balloon'
+  | 'auto_balloon'
+  | 'symbol'
+  | 'hole_callout'
+  | 'center_mark'
+  | 'centerline'
+  | 'area_hatch'
+  | 'revision_cloud'
+  | 'table'
+  | 'drafting_standard'
+  | 'drawing_export'
+  | 'annotation_properties'
 
 export interface Panel {
   type: PanelType
@@ -139,7 +169,7 @@ export interface Toast {
   kind: 'error' | 'info'
 }
 
-export type Tab = 'features' | 'sketch' | 'evaluate' | 'assembly'
+export type Tab = 'features' | 'sketch' | 'evaluate' | 'assembly' | 'drawing' | 'annotation'
 
 export type ViewName =
   'front' | 'back' | 'left' | 'right' | 'top' | 'bottom' | 'iso' | 'normal' | 'fit'
@@ -202,6 +232,8 @@ interface State {
   asmComponents: string[][]
   asmTarget: AsmPickTarget | null
   asmMarks: AsmMarks
+  /** The open drawing, when the document is one; `snapshot` then mirrors its file state. */
+  drawing: DrawingSnapshot | null
 }
 
 interface Actions {
@@ -261,6 +293,12 @@ interface Actions {
   openComponent(key: string[]): Promise<void>
   /** Take an assembly result as the current document state. */
   adoptAssembly(a: AsmSnapshot): Snapshot
+  /** Take a drawing result as the current document state. */
+  adoptDrawing(d: DrawingSnapshot): Snapshot
+  newDrawing(): Promise<void>
+  /** Open a new drawing window of the saved part or assembly. */
+  makeDrawing(): Promise<void>
+  print(): Promise<void>
 }
 
 let toastId = 1
@@ -274,7 +312,7 @@ function fileName(path: string | null, fallback = 'Part1'): string {
     path
       .split(/[\\/]/)
       .pop()
-      ?.replace(/\.of[pa]$/i, '') ?? fallback
+      ?.replace(/\.of[pad]$/i, '') ?? fallback
   )
 }
 
@@ -297,6 +335,30 @@ function asPartSnapshot(a: AsmSnapshot): Snapshot {
     dirty: a.dirty,
     can_undo: a.can_undo,
     can_redo: a.can_redo,
+    editing: null,
+  }
+}
+
+/** The part-shaped file state the shell reads while a drawing is open. */
+function drawingAsPart(d: DrawingSnapshot): Snapshot {
+  return {
+    generation: '',
+    configurations: { active: 1, next_id: 2, items: [] },
+    variables: {},
+    equations: {},
+    equation_values: {},
+    parameters: [],
+    revision: d.revision,
+    features: [],
+    rollback: null,
+    // Drawings are dimensioned per their drafting standard; panels use mm.
+    units: { length: 'mm', angle: 'deg', mass: 'kg', decimals: 2 },
+    material: null,
+    effective_material: null,
+    path: d.path,
+    dirty: d.dirty,
+    can_undo: d.can_undo,
+    can_redo: d.can_redo,
     editing: null,
   }
 }
@@ -337,11 +399,12 @@ export const useStore = create<State & Actions>((set, get) => ({
   asmComponents: [],
   asmTarget: null,
   asmMarks: { faces: [], meshes: [] },
+  drawing: null,
 
   async init() {
     try {
       const info = await call<CoreInfo>('core.info')
-      if (info.protocol_version !== 4 || info.scene_version !== 4)
+      if (info.protocol_version !== 5 || info.scene_version !== 4)
         throw new Error(
           'The core and desktop versions do not match. Rebuild both before opening a part.',
         )
@@ -352,6 +415,9 @@ export const useStore = create<State & Actions>((set, get) => ({
         else await get().run('doc.info')
       } else if (!get().snapshot && launch.kind === 'assembly') {
         await get().run('asm.new')
+      } else if (!get().snapshot && launch.kind === 'drawing') {
+        if (!(await get().run('drawing.new', launch.model ? { model: launch.model } : {})))
+          await get().run('drawing.new')
       } else {
         await get().run('doc.info')
       }
@@ -364,10 +430,16 @@ export const useStore = create<State & Actions>((set, get) => ({
     ++previewSequence
     set({ busy: true, previewScene: null, previewError: null })
     try {
-      const result = await call<Snapshot | AsmSnapshot>(method, params)
+      const result = await call<Snapshot | AsmSnapshot | DrawingSnapshot>(method, params)
       if ((result as AsmSnapshot).kind === 'assembly')
         return get().adoptAssembly(result as AsmSnapshot)
+      if ((result as DrawingSnapshot).kind === 'drawing')
+        return get().adoptDrawing(result as DrawingSnapshot)
       const snap = result as Snapshot
+      if (get().drawing) {
+        set({ drawing: null, tab: 'features', panel: null })
+        useDrawing.setState({ sheet: null, render: null, selection: [], target: null })
+      }
       if (get().assembly) {
         // Back to a part: drop every assembly state.
         set({
@@ -446,9 +518,11 @@ export const useStore = create<State & Actions>((set, get) => ({
     let path = get().snapshot?.path ?? null
     const assembly = !!get().assembly
     if (as || !path) {
-      path = assembly
-        ? await window.openforge.saveDialog('assembly', `${fileName(path, 'Assembly1')}.ofa`)
-        : await window.openforge.saveDialog('part', `${fileName(path)}.ofp`)
+      path = get().drawing
+        ? await window.openforge.saveDialog('drawing', `${fileName(path, 'Draw1')}.ofd`)
+        : assembly
+          ? await window.openforge.saveDialog('assembly', `${fileName(path, 'Assembly1')}.ofa`)
+          : await window.openforge.saveDialog('part', `${fileName(path)}.ofp`)
       if (!path) return false
     }
     const r = await get().run('doc.save', { path })
@@ -558,15 +632,16 @@ export const useStore = create<State & Actions>((set, get) => ({
   openPanel(p) {
     ++previewSequence
     set({ panel: p, previewScene: null, previewError: null, highlights: [], pickTarget: null })
-    if (p.editing !== undefined) void get().run('edit.begin', { id: p.editing })
+    // Drawing panels edit views and annotations, not features.
+    if (p.editing !== undefined && !get().drawing) void get().run('edit.begin', { id: p.editing })
   },
 
   async closePanel() {
     ++previewSequence
     const editing = get().panel?.editing
     set({ panel: null, previewScene: null, previewError: null, highlights: [], pickTarget: null })
-    await call('feature.preview', { feature: null })
-    if (editing !== undefined) await get().run('edit.end')
+    if (!get().drawing) await call('feature.preview', { feature: null })
+    if (editing !== undefined && !get().drawing) await get().run('edit.end')
   },
 
   async preview(params, editing) {
@@ -844,6 +919,75 @@ export const useStore = create<State & Actions>((set, get) => ({
     const title = `${fileName(a.path, 'Assembly1')}${a.dirty ? ' •' : ''} — OpenForge`
     window.openforge.setDocState(title, a.dirty, a.path)
     return snap
+  },
+
+  adoptDrawing(d) {
+    const snap = drawingAsPart(d)
+    const switched = !get().drawing
+    if (!switched && d.revision < (get().drawing?.revision ?? -1)) return snap
+    set({
+      drawing: d,
+      snapshot: snap,
+      scene: null,
+      ...(switched
+        ? {
+            tab: 'drawing' as Tab,
+            // Panels of the previous document do not apply.
+            panel: null,
+            pickTarget: null,
+            previewScene: null,
+            sketch: null,
+            selection: [],
+            assembly: null,
+            asmScene: null,
+            asmPreview: null,
+            asmSelection: [],
+            asmComponents: [],
+            asmTarget: null,
+          }
+        : {}),
+    })
+    syncSheet(d)
+    const title = `${fileName(d.path, 'Draw1')}${d.dirty ? ' •' : ''} — OpenForge`
+    window.openforge.setDocState(title, d.dirty, d.path)
+    return snap
+  },
+
+  async newDrawing() {
+    if (get().snapshot?.dirty && !confirm('Discard unsaved changes?')) return
+    set({ sketch: null, panel: null, selection: [], previewScene: null })
+    await get().run('drawing.new')
+  },
+
+  async makeDrawing() {
+    const s = get()
+    if (s.drawing) {
+      const path = await window.openforge.openDialog('model')
+      if (path) window.openforge.openDrawing(path)
+      return
+    }
+    let path = s.snapshot?.path ?? null
+    if (!path || s.snapshot?.dirty) {
+      if (!confirm('The drawing shows the saved file. Save it now?')) return
+      if (!(await s.save())) return
+      path = get().snapshot?.path ?? null
+    }
+    if (path) window.openforge.openDrawing(path)
+  },
+
+  async print() {
+    if (!get().drawing) {
+      get().toast('Printing is for drawings: make a drawing of this model first', 'info')
+      return
+    }
+    try {
+      const path = await window.openforge.printPath()
+      await call('drawing.export', { path })
+      await window.openforge.openPrint(path)
+      get().toast('Opened the drawing as a PDF to print at true size', 'info')
+    } catch (e) {
+      get().toast((e as Error).message)
+    }
   },
 
   async openComponent(key) {

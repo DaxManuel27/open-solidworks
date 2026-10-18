@@ -225,6 +225,36 @@ pub struct SetMaterial {
     pub density: Option<f64>,
 }
 
+#[derive(Deserialize, JsonSchema)]
+pub struct SetProperties {
+    /// Part custom properties for BOMs and title blocks (`PartNo`,
+    /// `Description`, ...); values may link to `{mass}`, `{material}` or
+    /// `{param:f2.end1.depth}`. Null removes one.
+    pub properties: BTreeMap<String, Option<of_model::properties::Property>>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct DimensionDisplay {
+    /// Parameter key from part_info, such as `f2.end1.depth` or
+    /// `f1.dimension.4`.
+    pub key: String,
+    /// Import it into drawings with model items.
+    #[serde(default)]
+    pub show: Option<bool>,
+    /// Name shown under the value in drawings; null removes it.
+    #[serde(default, deserialize_with = "some_value")]
+    pub name: Option<Option<String>>,
+}
+
+/// Distinguish an explicit `null` from a missing field.
+fn some_value<'de, D, T>(d: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    T::deserialize(d).map(Some)
+}
+
 /// A feature definition: a `type` tag, its fields, and an optional body scope.
 #[derive(Deserialize)]
 pub struct FeatureInput {

@@ -379,6 +379,10 @@ pub struct Document {
     /// Custom properties for BOMs and title blocks.
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub properties: std::collections::BTreeMap<String, properties::Property>,
+    /// How dimensions appear in drawings, by parameter key (`f2.end1.depth`,
+    /// `f1.dimension.4`). Dimensions not listed are shown (part file v5).
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub dimension_display: std::collections::BTreeMap<String, DimensionDisplay>,
     pub units: Units,
     /// Material name from [`materials::LIBRARY`], or a custom density.
     #[serde(default)]
@@ -398,11 +402,36 @@ impl Default for Document {
             equations: Default::default(),
             body_display: Default::default(),
             properties: Default::default(),
+            dimension_display: Default::default(),
             units: Units::default(),
             material: None,
             features: Vec::new(),
             rollback: None,
             next_id: 1,
+        }
+    }
+}
+
+/// Drawing display of one dimension.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DimensionDisplay {
+    /// Imported into drawings by model items.
+    #[serde(default = "shown")]
+    pub show: bool,
+    /// Name shown with the value in drawings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+
+fn shown() -> bool {
+    true
+}
+
+impl Default for DimensionDisplay {
+    fn default() -> Self {
+        DimensionDisplay {
+            show: true,
+            name: None,
         }
     }
 }

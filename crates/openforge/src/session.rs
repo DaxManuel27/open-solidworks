@@ -34,6 +34,8 @@ pub struct Session {
     editing: Option<FeatureId>,
     /// The open assembly, when the document is an assembly rather than a part.
     assembly: Option<Box<crate::asm::AsmSession>>,
+    /// The open drawing, when the document is a drawing.
+    drawing: Option<Box<crate::drawing::DrawSession>>,
 }
 
 type R = Result<Value, RpcError>;
@@ -92,10 +94,16 @@ impl Session {
             redo: Vec::new(),
             editing: None,
             assembly: None,
+            drawing: None,
         }
     }
 
     pub fn open(path: PathBuf) -> Result<Session, String> {
+        if crate::drawing::is_drawing(&path) {
+            let mut s = Session::new();
+            s.drawing = Some(Box::new(crate::drawing::DrawSession::open(&path)?));
+            return Ok(s);
+        }
         if of_assembly::file::is_assembly(&path) {
             let mut s = Session::new();
             s.assembly = Some(Box::new(crate::asm::AsmSession::open(&path)?));
@@ -215,6 +223,20 @@ impl Session {
         self.assembly.as_deref()
     }
 
+    /// The open drawing, if the document is one.
+    pub fn drawing(&self) -> Option<&crate::drawing::DrawSession> {
+        self.drawing.as_deref()
+    }
+
+    /// Methods an open drawing answers besides `drawing.*`.
+    fn for_drawing(method: &str) -> bool {
+        method.starts_with("drawing.")
+            || matches!(
+                method,
+                "doc.info" | "doc.save" | "doc.undo" | "doc.redo" | "export"
+            )
+    }
+
     /// Methods an open assembly answers; the rest stay with parts.
     fn for_assembly(method: &str) -> bool {
         method.starts_with("asm.")
@@ -301,6 +323,60 @@ impl Session {
                 o.insert("generation".into(), json!(self.generation));
             }
             return result;
+        }
+        // Drawings: like assemblies, new and open switch document kind.
+        let opens_drawing = method == "doc.open"
+            && params
+                .get("path")
+                .and_then(Value::as_str)
+                .is_some_and(|p| crate::drawing::is_drawing(Path::new(p)));
+        if method == "drawing.new" || opens_drawing {
+            let d = if opens_drawing {
+                let p: FilePath = args(params)?;
+                crate::drawing::DrawSession::open(&p.path).map_err(fail)?
+            } else {
+                crate::drawing::DrawSession::new(&args(params)?)?
+            };
+            let revision = self.revision;
+            *self = Session::new();
+            self.drawing = Some(Box::new(d));
+            self.revision = revision + 1;
+            let mut v = self.drawing.as_ref().unwrap().full();
+            v["revision"] = json!(self.revision);
+            v["generation"] = json!(self.generation);
+            return Ok(v);
+        }
+        if let Some(d) = self.drawing.as_mut()
+            && !Self::for_any(method)
+        {
+            if method == "doc.new" || method == "doc.open" {
+                self.drawing = None;
+            } else if Self::for_drawing(method) {
+                let before = d.revision();
+                let mut result = d.handle(method, params);
+                if d.revision() != before {
+                    self.revision += 1;
+                }
+                if let Ok(Value::Object(o)) = &mut result {
+                    o.insert("revision".into(), json!(self.revision));
+                    o.insert("generation".into(), json!(self.generation));
+                }
+                return result;
+            } else {
+                return Err(RpcError::coded(
+                    ErrorCode::NotAllowed,
+                    format!(
+                        "{method} is not available in a drawing; open the part or assembly to edit it"
+                    ),
+                ));
+            }
+        } else if method.starts_with("drawing.") {
+            return Err(RpcError::coded(
+                ErrorCode::NotAllowed,
+                format!(
+                    "{method} needs a drawing; start one with drawing.new or open an .ofd file"
+                ),
+            ));
         }
         if let Some(a) = self.assembly.as_mut()
             && !Self::for_any(method)
@@ -625,6 +701,7 @@ impl Session {
                 scene_version: of_protocol::SCENE_VERSION,
                 part_file_version: file::VERSION,
                 assembly_file_version: of_assembly::file::VERSION,
+                drawing_file_version: of_drawing::file::VERSION,
                 capabilities: vec![
                     "revisioned_preview".into(),
                     "assistant_drafts".into(),
@@ -673,6 +750,8 @@ impl Session {
                     "hardware_library".into(),
                     "step_assembly_structure".into(),
                     "part_v4_read".into(),
+                    "part_v5_read".into(),
+                    "drawings".into(),
                 ],
             })),
             "body.display" => {
@@ -753,6 +832,60 @@ impl Session {
                 };
                 self.checkpoint();
                 self.model.doc.material = m;
+                Ok(self.snapshot())
+            }
+            "doc.properties.set" => {
+                let p: SetProperties = args(params)?;
+                let mut doc = self.model.doc.clone();
+                for (name, v) in p.properties {
+                    match v {
+                        Some(prop) => {
+                            prop.validate(&name).map_err(RpcError::params)?;
+                            doc.properties.insert(name.trim().to_string(), prop);
+                        }
+                        None => {
+                            doc.properties.remove(&name);
+                        }
+                    }
+                }
+                self.checkpoint();
+                self.model.doc = doc;
+                Ok(self.snapshot())
+            }
+            "doc.dimension_display.set" => {
+                let p: DimensionDisplay = args(params)?;
+                if !self
+                    .model
+                    .doc
+                    .features
+                    .iter()
+                    .flat_map(of_model::equations::parameters)
+                    .any(|t| t.key == p.key)
+                {
+                    return Err(RpcError::coded(
+                        ErrorCode::UnknownParameter,
+                        "unknown parameter",
+                    ));
+                }
+                let mut d = self
+                    .model
+                    .doc
+                    .dimension_display
+                    .get(&p.key)
+                    .cloned()
+                    .unwrap_or_default();
+                if let Some(show) = p.show {
+                    d.show = show;
+                }
+                if let Some(name) = p.name {
+                    d.name = name.map(|n| n.trim().to_string()).filter(|n| !n.is_empty());
+                }
+                self.checkpoint();
+                if d == of_model::DimensionDisplay::default() {
+                    self.model.doc.dimension_display.remove(&p.key);
+                } else {
+                    self.model.doc.dimension_display.insert(p.key, d);
+                }
                 Ok(self.snapshot())
             }
             "doc.rollback" => {

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::Document;
 
 pub const FORMAT: &str = "openforge-part";
-pub const VERSION: u32 = 4;
+pub const VERSION: u32 = 5;
 
 #[derive(Serialize, Deserialize)]
 struct PartFile {
@@ -45,10 +45,12 @@ pub fn from_str(text: &str) -> Result<Document, String> {
     if f.version == 0 {
         return Err("unsupported part file version 0".into());
     }
-    // V1 has no Phase 2 fields and V3 no custom properties. Their serde defaults are the migration contract;
-    // retain every existing feature ID, authored parameter and topology name.
+    // V1 has no Phase 2 fields, V3 no custom properties and V4 no drawing
+    // display of dimensions (every dimension is shown). Their serde defaults
+    // are the migration contract; retain every existing feature ID, authored
+    // parameter and topology name.
     let doc: Document = match f.version {
-        1..=4 => serde_json::from_value(f.document)
+        1..=5 => serde_json::from_value(f.document)
             .map_err(|e| format!("not a valid version {} document: {e}", f.version))?,
         _ => unreachable!("newer versions were rejected above"),
     };
