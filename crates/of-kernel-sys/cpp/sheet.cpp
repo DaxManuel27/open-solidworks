@@ -396,6 +396,9 @@ std::unique_ptr<Shape> fold_faces(const Shape &s, rust::Slice<const uint32_t> fa
     inv.c = -(inv.a * m.c + inv.b * m.f);
     inv.f = -(inv.d * m.c + inv.e * m.f);
     TopoDS_Face image = flat_face(face, m, plane, false);
+    std::fprintf(stderr, "OFTRACE face=%u m=[%.9g %.9g %.9g; %.9g %.9g %.9g] inv=[%.9g %.9g %.9g; %.9g %.9g %.9g] surf=%s\n", faces[i],
+                 m.a, m.b, m.c, m.d, m.e, m.f, inv.a, inv.b, inv.c, inv.d, inv.e, inv.f,
+                 BRep_Tool::Surface(face)->DynamicType()->Name());
     BRepAlgoAPI_Common common(region.shape, image);
     common.SetFuzzyValue(1e-7);
     common.Build();
@@ -416,6 +419,19 @@ std::unique_ptr<Shape> fold_faces(const Shape &s, rust::Slice<const uint32_t> fa
           Handle(Geom_Curve) c3 = BRep_Tool::Curve(e, f, l);
           if (c3.IsNull()) continue;
           Handle(Geom2d_Curve) c2 = GeomAPI::To2d(new Geom_TrimmedCurve(c3, f, l), pln);
+          {
+            Handle(Geom2d_Curve) b2 = c2;
+            while (b2->IsKind(STANDARD_TYPE(Geom2d_TrimmedCurve))) b2 = Handle(Geom2d_TrimmedCurve)::DownCast(b2)->BasisCurve();
+            gp_Pnt2d p0 = c2->Value(c2->FirstParameter()), p1 = c2->Value(c2->LastParameter());
+            std::fprintf(stderr, "OFTRACE   c3=%s f=%.9g l=%.9g c2=%s basis=%s c2f=%.9g c2l=%.9g p0=(%.9g %.9g) p1=(%.9g %.9g)\n",
+                         c3->DynamicType()->Name(), f, l, c2->DynamicType()->Name(), b2->DynamicType()->Name(),
+                         c2->FirstParameter(), c2->LastParameter(), p0.X(), p0.Y(), p1.X(), p1.Y());
+            if (b2->IsKind(STANDARD_TYPE(Geom2d_Line))) {
+              gp_Lin2d ln = Handle(Geom2d_Line)::DownCast(b2)->Lin2d();
+              std::fprintf(stderr, "OFTRACE   line loc=(%.9g %.9g) dir=(%.9g %.9g)\n", ln.Location().X(), ln.Location().Y(),
+                           ln.Direction().X(), ln.Direction().Y());
+            }
+          }
           BRepBuilderAPI_MakeEdge me(mapped(c2, c2->FirstParameter(), c2->LastParameter(), inv, nf, nl),
                                      surface, nf, nl);
           if (!me.IsDone()) throw std::runtime_error("could not map a cut edge onto the sheet");
