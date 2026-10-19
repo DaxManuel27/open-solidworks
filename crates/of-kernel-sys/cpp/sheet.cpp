@@ -109,6 +109,65 @@ Handle(Geom2d_Curve) mapped(const Handle(Geom2d_Curve) &curve, double first, dou
   return bs;
 }
 
+// The face mapped into the plane by `m`, its edges rebuilt from their
+// parameter curves. With `straighten`, curved edges become straight. When
+// `edges` is given, `origin` records the edge of the source each new edge
+// was mapped from.
+TopoDS_Face flat_face(const TopoDS_Face &face, const Affine &m, const Handle(Geom_Plane) &plane,
+                      bool straighten, const TopTools_IndexedMapOfShape *edges = nullptr,
+                      TopTools_DataMapOfShapeInteger *origin = nullptr) {
+  TopoDS_Wire outer = BRepTools::OuterWire(face);
+  TopoDS_Wire outer_new;
+  std::vector<TopoDS_Wire> inner;
+  for (TopExp_Explorer wx(face, TopAbs_WIRE); wx.More(); wx.Next()) {
+    const TopoDS_Wire &w = TopoDS::Wire(wx.Current());
+    BRepBuilderAPI_MakeWire mw;
+    for (BRepTools_WireExplorer ex(w, face); ex.More(); ex.Next()) {
+      const TopoDS_Edge &e = ex.Current();
+      if (BRep_Tool::Degenerated(e)) continue;
+      double f, l;
+      Handle(Geom2d_Curve) pc = BRep_Tool::CurveOnSurface(e, face, f, l);
+      if (pc.IsNull()) throw std::runtime_error("a face edge has no parameter curve");
+      double nf, nl;
+      Handle(Geom2d_Curve) c = mapped(pc, f, l, m, nf, nl);
+      if (straighten && !c->IsKind(STANDARD_TYPE(Geom2d_Line)) &&
+          !c->IsKind(STANDARD_TYPE(Geom2d_Circle))) {
+        gp_Pnt2d a = c->Value(nf), b = c->Value(nl);
+        if (a.Distance(b) > 1e-9) {
+          c = new Geom2d_Line(a, gp_Dir2d(gp_Vec2d(a, b)));
+          nf = 0;
+          nl = a.Distance(b);
+        }
+      }
+      BRepBuilderAPI_MakeEdge me(c, plane, nf, nl);
+      if (!me.IsDone()) throw std::runtime_error("could not map an edge into the flat");
+      TopoDS_Edge ne = me.Edge();
+      BRepLib::BuildCurves3d(ne);
+      if (e.Orientation() == TopAbs_REVERSED) ne.Reverse();
+      mw.Add(ne);
+      if (!mw.IsDone()) throw std::runtime_error("a mapped face boundary is not connected");
+      // The wire may copy the edge to share vertices; remember the copy.
+      if (edges) {
+        int k = edges->FindIndex(e);
+        if (k > 0) origin->Bind(mw.Edge(), k - 1);
+      }
+    }
+    if (!mw.IsDone()) continue;
+    if (w.IsSame(outer))
+      outer_new = mw.Wire();
+    else
+      inner.push_back(mw.Wire());
+  }
+  if (outer_new.IsNull()) throw std::runtime_error("a face has no outer boundary");
+  BRepBuilderAPI_MakeFace mf(plane, outer_new, true);
+  for (const TopoDS_Wire &w : inner) mf.Add(w);
+  if (!mf.IsDone()) throw std::runtime_error("could not build a flat face");
+  // A mirrored map reverses the loops; only reorient them, so edges stay.
+  ShapeFix_Face fixer(mf.Face());
+  fixer.FixOrientation();
+  return fixer.Face();
+}
+
 } // namespace
 
 FaceFrame face_frame(const Shape &s, uint32_t index) {
@@ -165,54 +224,7 @@ std::unique_ptr<Shape> flatten(const Shape &s, rust::Slice<const uint32_t> faces
              maps[6 * i + 3], maps[6 * i + 4], maps[6 * i + 5]};
     // Simplified bends: curved edges of bend faces become straight.
     const bool straighten = simplify && BRepAdaptor_Surface(face).GetType() != GeomAbs_Plane;
-    TopoDS_Wire outer = BRepTools::OuterWire(face);
-    TopoDS_Wire outer_new;
-    std::vector<TopoDS_Wire> inner;
-    for (TopExp_Explorer wx(face, TopAbs_WIRE); wx.More(); wx.Next()) {
-      const TopoDS_Wire &w = TopoDS::Wire(wx.Current());
-      BRepBuilderAPI_MakeWire mw;
-      for (BRepTools_WireExplorer ex(w, face); ex.More(); ex.Next()) {
-        const TopoDS_Edge &e = ex.Current();
-        if (BRep_Tool::Degenerated(e)) continue;
-        double f, l;
-        Handle(Geom2d_Curve) pc = BRep_Tool::CurveOnSurface(e, face, f, l);
-        if (pc.IsNull()) throw std::runtime_error("a face edge has no parameter curve");
-        double nf, nl;
-        Handle(Geom2d_Curve) c = mapped(pc, f, l, m, nf, nl);
-        if (straighten && !c->IsKind(STANDARD_TYPE(Geom2d_Line)) &&
-            !c->IsKind(STANDARD_TYPE(Geom2d_Circle))) {
-          gp_Pnt2d a = c->Value(nf), b = c->Value(nl);
-          if (a.Distance(b) > 1e-9) {
-            c = new Geom2d_Line(a, gp_Dir2d(gp_Vec2d(a, b)));
-            nf = 0;
-            nl = a.Distance(b);
-          }
-        }
-        BRepBuilderAPI_MakeEdge me(c, plane, nf, nl);
-        if (!me.IsDone()) throw std::runtime_error("could not map an edge into the flat");
-        TopoDS_Edge ne = me.Edge();
-        BRepLib::BuildCurves3d(ne);
-        if (e.Orientation() == TopAbs_REVERSED) ne.Reverse();
-        mw.Add(ne);
-        if (!mw.IsDone()) throw std::runtime_error("a mapped face boundary is not connected");
-        // The wire may copy the edge to share vertices; remember the copy.
-        int k = edges.FindIndex(e);
-        if (k > 0) origin.Bind(mw.Edge(), k - 1);
-      }
-      if (!mw.IsDone()) continue;
-      if (w.IsSame(outer))
-        outer_new = mw.Wire();
-      else
-        inner.push_back(mw.Wire());
-    }
-    if (outer_new.IsNull()) throw std::runtime_error("a face has no outer boundary");
-    BRepBuilderAPI_MakeFace mf(plane, outer_new, true);
-    for (const TopoDS_Wire &w : inner) mf.Add(w);
-    if (!mf.IsDone()) throw std::runtime_error("could not build a flat face");
-    // A mirrored map reverses the loops; only reorient them, so edges stay.
-    ShapeFix_Face fixer(mf.Face());
-    fixer.FixOrientation();
-    flat.Append(fixer.Face());
+    flat.Append(flat_face(face, m, plane, straighten, &edges, &origin));
   }
   if (flat.IsEmpty()) throw std::invalid_argument("nothing to flatten");
 
@@ -359,42 +371,6 @@ std::unique_ptr<Shape> polyhedron(rust::Slice<const double> points,
 
 namespace ofk {
 
-namespace {
-
-// The face of `s` mapped into the plane, as in `flatten`.
-TopoDS_Face flat_image(const TopoDS_Face &face, const Affine &m, const Handle(Geom_Plane) &plane) {
-  TopoDS_Wire outer = BRepTools::OuterWire(face);
-  TopoDS_Wire outer_new;
-  std::vector<TopoDS_Wire> inner;
-  for (TopExp_Explorer wx(face, TopAbs_WIRE); wx.More(); wx.Next()) {
-    const TopoDS_Wire &w = TopoDS::Wire(wx.Current());
-    BRepBuilderAPI_MakeWire mw;
-    for (BRepTools_WireExplorer ex(w, face); ex.More(); ex.Next()) {
-      const TopoDS_Edge &e = ex.Current();
-      if (BRep_Tool::Degenerated(e)) continue;
-      double f, l, nf, nl;
-      Handle(Geom2d_Curve) pc = BRep_Tool::CurveOnSurface(e, face, f, l);
-      if (pc.IsNull()) throw std::runtime_error("a face edge has no parameter curve");
-      BRepBuilderAPI_MakeEdge me(mapped(pc, f, l, m, nf, nl), plane, nf, nl);
-      TopoDS_Edge ne = me.Edge();
-      BRepLib::BuildCurves3d(ne);
-      mw.Add(ne);
-    }
-    if (!mw.IsDone()) continue;
-    if (w.IsSame(outer))
-      outer_new = mw.Wire();
-    else
-      inner.push_back(mw.Wire());
-  }
-  BRepBuilderAPI_MakeFace mf(plane, outer_new, true);
-  for (const TopoDS_Wire &w : inner) mf.Add(w);
-  ShapeFix_Face fixer(mf.Face());
-  fixer.FixOrientation();
-  return fixer.Face();
-}
-
-} // namespace
-
 std::unique_ptr<Shape> fold_faces(const Shape &s, rust::Slice<const uint32_t> faces,
                                   rust::Slice<const double> maps, const Frame &frame,
                                   const Shape &region, rust::Vec<uint32_t> &owners) {
@@ -418,7 +394,7 @@ std::unique_ptr<Shape> fold_faces(const Shape &s, rust::Slice<const uint32_t> fa
     Affine inv{m.e / det, -m.b / det, 0, -m.d / det, m.a / det, 0};
     inv.c = -(inv.a * m.c + inv.b * m.f);
     inv.f = -(inv.d * m.c + inv.e * m.f);
-    TopoDS_Face image = flat_image(face, m, plane);
+    TopoDS_Face image = flat_face(face, m, plane, false);
     BRepAlgoAPI_Common common(region.shape, image);
     common.SetFuzzyValue(1e-7);
     common.Build();
