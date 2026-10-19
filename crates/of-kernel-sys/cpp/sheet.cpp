@@ -430,18 +430,13 @@ std::unique_ptr<Shape> fold_faces(const Shape &s, rust::Slice<const uint32_t> fa
             builder.UpdateVertex(TopoDS::Vertex(vx.Current()), tol);
           if (e.Orientation() == TopAbs_REVERSED) ne.Reverse();
           mw.Add(ne);
-          std::fprintf(stderr, "OFDEBUG cut edge tol=%.3g\n", tol);
-          if (!mw.IsDone()) {
-            gp_Pnt a = BRep_Tool::Pnt(TopExp::FirstVertex(ne, true)), b = BRep_Tool::Pnt(TopExp::LastVertex(ne, true));
-            std::fprintf(stderr, "OFDEBUG not connected: error=%d tol=%.3g new edge (%.6f %.6f %.6f)-(%.6f %.6f %.6f)\n",
-                         (int)mw.Error(), tol, a.X(), a.Y(), a.Z(), b.X(), b.Y(), b.Z());
-            for (TopExp_Explorer vx(mw.Wire(), TopAbs_VERTEX); vx.More(); vx.Next()) {
-              gp_Pnt p = BRep_Tool::Pnt(TopoDS::Vertex(vx.Current()));
-              std::fprintf(stderr, "OFDEBUG   wire vertex (%.6f %.6f %.6f) tol=%.3g dA=%.3g dB=%.3g\n", p.X(), p.Y(), p.Z(),
-                           BRep_Tool::Tolerance(TopoDS::Vertex(vx.Current())), p.Distance(a), p.Distance(b));
-            }
-            throw std::runtime_error("a mapped cut boundary is not connected");
+          {
+            gp_Pnt sa = BRep_Tool::Pnt(TopExp::FirstVertex(e, true)), sb = BRep_Tool::Pnt(TopExp::LastVertex(e, true));
+            gp_Pnt ma = BRep_Tool::Pnt(TopExp::FirstVertex(ne, true)), mb = BRep_Tool::Pnt(TopExp::LastVertex(ne, true));
+            std::fprintf(stderr, "OFTRACE face=%u src=(%.6f %.6f %.6f)->(%.6f %.6f %.6f) map=(%.6f %.6f %.6f)->(%.6f %.6f %.6f) ok=%d\n",
+                         faces[i], sa.X(), sa.Y(), sa.Z(), sb.X(), sb.Y(), sb.Z(), ma.X(), ma.Y(), ma.Z(), mb.X(), mb.Y(), mb.Z(), (int)mw.IsDone());
           }
+          if (!mw.IsDone()) throw std::runtime_error("a mapped cut boundary is not connected");
         }
         if (!mw.IsDone()) continue;
         if (w.IsSame(outer))
@@ -449,6 +444,7 @@ std::unique_ptr<Shape> fold_faces(const Shape &s, rust::Slice<const uint32_t> fa
         else
           inner.push_back(mw.Wire());
       }
+      std::fprintf(stderr, "OFTRACE piece done face=%u\n", faces[i]);
       if (outer_new.IsNull()) continue;
       BRepBuilderAPI_MakeFace mf(surface, outer_new, true);
       for (const TopoDS_Wire &w : inner) mf.Add(w);

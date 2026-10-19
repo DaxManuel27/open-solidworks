@@ -37,7 +37,7 @@ jobs:
         run: cargo test -p of-drawing --test sheet_corpus --test views --no-run
       - name: Enclosure test output
         continue-on-error: true
-        run: cargo test -q -p of-drawing --test sheet_corpus -- --exact enclosure_flat_dxf_and_drawing --nocapture 2>&1 | grep -E 'OFDEBUG.*not|OFDEBUG   |panicked|failed|test result' | head -60; cargo test -q -p of-drawing --test sheet_corpus -- --exact enclosure_flat_dxf_and_drawing --nocapture 2>&1 | grep -oE 'tol=[0-9.e+-]+' | sort | uniq -c | sort -rn | head
+        run: cargo test -q -p of-drawing --test sheet_corpus -- --exact enclosure_flat_dxf_and_drawing --nocapture 2>&1 | grep -E 'OFTRACE|panicked|failed|test result' | head -200
       - name: Each test alone, one process per test
         continue-on-error: true
         run: |
