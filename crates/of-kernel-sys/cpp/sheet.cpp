@@ -15,7 +15,6 @@
 #include <BRepTools.hxx>
 #include <BRepTools_History.hxx>
 #include <BRepTools_WireExplorer.hxx>
-#include <cstdio>
 #include <BRep_Builder.hxx>
 #include <BRep_Tool.hxx>
 #include <Geom2dConvert.hxx>
@@ -396,9 +395,6 @@ std::unique_ptr<Shape> fold_faces(const Shape &s, rust::Slice<const uint32_t> fa
     inv.c = -(inv.a * m.c + inv.b * m.f);
     inv.f = -(inv.d * m.c + inv.e * m.f);
     TopoDS_Face image = flat_face(face, m, plane, false);
-    std::fprintf(stderr, "OFTRACE face=%u m=[%.9g %.9g %.9g; %.9g %.9g %.9g] inv=[%.9g %.9g %.9g; %.9g %.9g %.9g] surf=%s\n", faces[i],
-                 m.a, m.b, m.c, m.d, m.e, m.f, inv.a, inv.b, inv.c, inv.d, inv.e, inv.f,
-                 BRep_Tool::Surface(face)->DynamicType()->Name());
     BRepAlgoAPI_Common common(region.shape, image);
     common.SetFuzzyValue(1e-7);
     common.Build();
@@ -419,39 +415,13 @@ std::unique_ptr<Shape> fold_faces(const Shape &s, rust::Slice<const uint32_t> fa
           Handle(Geom_Curve) c3 = BRep_Tool::Curve(e, f, l);
           if (c3.IsNull()) continue;
           Handle(Geom2d_Curve) c2 = GeomAPI::To2d(new Geom_TrimmedCurve(c3, f, l), pln);
-          {
-            Handle(Geom2d_Curve) b2 = c2;
-            while (b2->IsKind(STANDARD_TYPE(Geom2d_TrimmedCurve))) b2 = Handle(Geom2d_TrimmedCurve)::DownCast(b2)->BasisCurve();
-            gp_Pnt2d p0 = c2->Value(c2->FirstParameter()), p1 = c2->Value(c2->LastParameter());
-            std::fprintf(stderr, "OFTRACE   c3=%s f=%.9g l=%.9g c2=%s basis=%s c2f=%.9g c2l=%.9g p0=(%.9g %.9g) p1=(%.9g %.9g)\n",
-                         c3->DynamicType()->Name(), f, l, c2->DynamicType()->Name(), b2->DynamicType()->Name(),
-                         c2->FirstParameter(), c2->LastParameter(), p0.X(), p0.Y(), p1.X(), p1.Y());
-            if (b2->IsKind(STANDARD_TYPE(Geom2d_Line))) {
-              gp_Lin2d ln = Handle(Geom2d_Line)::DownCast(b2)->Lin2d();
-              std::fprintf(stderr, "OFTRACE   line loc=(%.9g %.9g) dir=(%.9g %.9g)\n", ln.Location().X(), ln.Location().Y(),
-                           ln.Direction().X(), ln.Direction().Y());
-            }
-          }
-          BRepBuilderAPI_MakeEdge me(mapped(c2, c2->FirstParameter(), c2->LastParameter(), inv, nf, nl),
-                                     surface, nf, nl);
+          // mapped() sets nf and nl, so call it before they are read.
+          Handle(Geom2d_Curve) c = mapped(c2, c2->FirstParameter(), c2->LastParameter(), inv, nf, nl);
+          BRepBuilderAPI_MakeEdge me(c, surface, nf, nl);
           if (!me.IsDone()) throw std::runtime_error("could not map a cut edge onto the sheet");
           TopoDS_Edge ne = me.Edge();
           BRepLib::BuildCurves3d(ne);
-          // The boolean leaves the cut boundary connected only to within its
-          // vertex tolerances; give the mapped vertices the same slack.
-          double tol = BRep_Tool::Tolerance(e);
-          for (TopExp_Explorer vx(e, TopAbs_VERTEX); vx.More(); vx.Next())
-            tol = std::max(tol, BRep_Tool::Tolerance(TopoDS::Vertex(vx.Current())));
-          for (TopExp_Explorer vx(ne, TopAbs_VERTEX); vx.More(); vx.Next())
-            builder.UpdateVertex(TopoDS::Vertex(vx.Current()), tol);
-          if (e.Orientation() == TopAbs_REVERSED) ne.Reverse();
           mw.Add(ne);
-          {
-            gp_Pnt sa = BRep_Tool::Pnt(TopExp::FirstVertex(e, true)), sb = BRep_Tool::Pnt(TopExp::LastVertex(e, true));
-            gp_Pnt ma = BRep_Tool::Pnt(TopExp::FirstVertex(ne, true)), mb = BRep_Tool::Pnt(TopExp::LastVertex(ne, true));
-            std::fprintf(stderr, "OFTRACE face=%u src=(%.6f %.6f %.6f)->(%.6f %.6f %.6f) map=(%.6f %.6f %.6f)->(%.6f %.6f %.6f) ok=%d\n",
-                         faces[i], sa.X(), sa.Y(), sa.Z(), sb.X(), sb.Y(), sb.Z(), ma.X(), ma.Y(), ma.Z(), mb.X(), mb.Y(), mb.Z(), (int)mw.IsDone());
-          }
           if (!mw.IsDone()) throw std::runtime_error("a mapped cut boundary is not connected");
         }
         if (!mw.IsDone()) continue;
@@ -460,7 +430,6 @@ std::unique_ptr<Shape> fold_faces(const Shape &s, rust::Slice<const uint32_t> fa
         else
           inner.push_back(mw.Wire());
       }
-      std::fprintf(stderr, "OFTRACE piece done face=%u\n", faces[i]);
       if (outer_new.IsNull()) continue;
       BRepBuilderAPI_MakeFace mf(surface, outer_new, true);
       for (const TopoDS_Wire &w : inner) mf.Add(w);
