@@ -1,25 +1,25 @@
 name: CI
 
+# Temporary: diagnose the of-drawing test segfaults on Linux and Windows.
+# This branch is deleted once the cause is known.
+
 on:
   push:
-    branches: [main, 'phase-*']
-  pull_request:
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+    branches: ['phase-5-ci-debug']
 
 jobs:
-  check:
-    name: Core and desktop (${{ matrix.os }})
+  crash:
+    name: Drawing crash (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     defaults:
       run:
         shell: bash -el {0}
+    env:
+      RUST_BACKTRACE: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: mamba-org/setup-micromamba@v3
@@ -32,60 +32,48 @@ jobs:
           echo "LD_LIBRARY_PATH=$CONDA_PREFIX/lib" >> "$GITHUB_ENV"
           echo "DYLD_FALLBACK_LIBRARY_PATH=$CONDA_PREFIX/lib" >> "$GITHUB_ENV"
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-      - run: cargo fmt --check
-      - run: cargo clippy --all-targets --all-features -- -D warnings
-      - run: cargo test
-      - name: Phase 2 kernel feasibility regressions
-        run: cargo test -p of-kernel-sys --features kernel-probes --test phase2_probes
-      - run: cargo build
-      - name: Generated tool types and protocol tables are current
-        run: cargo run -q -p openforge -- generate --check
-      - name: Catalog conformance
-        run: pnpm conformance
-      - name: Performance budgets (debug build, scaled for hosted runners)
-        run: pnpm perf:check
-        env:
-          OPENFORGE_BUDGET_SCALE: 4
-      - name: Assembly performance budgets
-        run: pnpm perf:asm:check
-        env:
-          OPENFORGE_BUDGET_SCALE: 4
-      - name: Drawing performance budgets
-        run: pnpm perf:draw:check
-        env:
-          OPENFORGE_BUDGET_SCALE: 4
-      - name: Sheet metal and weldment performance budgets
-        run: pnpm perf:phase5:check
-        env:
-          OPENFORGE_BUDGET_SCALE: 4
-      - run: pnpm install --frozen-lockfile
-      - name: Benchmark replay (recorded transcripts, no model calls)
-        run: pnpm bench
-      - run: pnpm lint
-      - run: pnpm format:check
-      - run: pnpm typecheck
-      - run: pnpm build
-      - name: Desktop smoke (Linux)
+      - name: Build the drawing tests
+        run: cargo test -p of-drawing --test sheet_corpus --test views --no-run
+      - name: Each test alone, one process per test
+        continue-on-error: true
+        run: |
+          for t in sheet_corpus views; do
+            for name in $(cargo test -q -p of-drawing --test $t -- --list 2>/dev/null | sed -n 's/: test$//p'); do
+              cargo test -q -p of-drawing --test $t -- --exact "$name" >/dev/null 2>&1
+              echo "alone $t::$name exit=$?"
+            done
+          done
+      - name: Whole binaries, one thread
+        continue-on-error: true
+        run: |
+          for i in 1 2 3; do
+            for t in sheet_corpus views; do
+              cargo test -q -p of-drawing --test $t -- --test-threads=1 >/dev/null 2>&1
+              echo "serial $t run $i exit=$?"
+            done
+          done
+      - name: Whole binaries, parallel
+        continue-on-error: true
+        run: |
+          for i in 1 2 3; do
+            for t in sheet_corpus views; do
+              cargo test -q -p of-drawing --test $t >/dev/null 2>&1
+              echo "parallel $t run $i exit=$?"
+            done
+          done
+      - name: Native backtrace under gdb
         if: runner.os == 'Linux'
-        run: xvfb-run -a pnpm --filter @openforge/desktop smoke --no-sandbox
-        env:
-          OPENFORGE_SMOKE_SCREENSHOT: desktop-smoke.png
-      - name: Desktop smoke (macOS and Windows)
-        if: runner.os != 'Linux'
-        run: pnpm --filter @openforge/desktop smoke
-        env:
-          OPENFORGE_SMOKE_SCREENSHOT: desktop-smoke.png
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: desktop-smoke-${{ runner.os }}
-          path: apps/desktop/desktop-smoke.png
-          if-no-files-found: ignore
+        continue-on-error: true
+        run: |
+          command -v gdb || { sudo apt-get update -q && sudo apt-get install -y -q gdb; }
+          for t in sheet_corpus views; do
+            bin=$(cargo test -p of-drawing --test $t --no-run 2>&1 | grep -oE "target/debug/deps/$t-[0-9a-f]+" | head -1)
+            for i in 1 2 3; do
+              echo "=== gdb $t attempt $i"
+              (cd crates/of-drawing && gdb -q -batch -ex 'set pagination off' -ex 'set print thread-events off' \
+                -ex run -ex 'info threads' -ex 'thread apply all bt 50' --args "../../$bin" --test-threads=4) 2>&1 \
+                | tee gdb-$t-$i.txt | grep -vE '^\[(New|Thread)' | tail -400
+              grep -q 'SIGSEGV\|SIGABRT' gdb-$t-$i.txt && break
+            done
+          done
