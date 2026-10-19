@@ -420,6 +420,7 @@ std::unique_ptr<Shape> fold_faces(const Shape &s, rust::Slice<const uint32_t> fa
           if (!me.IsDone()) throw std::runtime_error("could not map a cut edge onto the sheet");
           TopoDS_Edge ne = me.Edge();
           BRepLib::BuildCurves3d(ne);
+          if (e.Orientation() == TopAbs_REVERSED) ne.Reverse();
           mw.Add(ne);
           if (!mw.IsDone()) throw std::runtime_error("a mapped cut boundary is not connected");
         }
